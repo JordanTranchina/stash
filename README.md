@@ -10,7 +10,8 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 - **Web App** - Access your saves from any device
 - **Kindle Sync** - Import highlights from your Kindle library
 - **Full-Text Search** - Find anything you've saved
-- **Text-to-Speech** - Listen to articles with neural voices (free)
+- **Text-to-Speech** - Basic audio generation (Edge TTS)
+- **AI Podcast** - Turn articles into a conversational podcast (Planned)
 - **iOS Shortcut** - Save from Safari on iPhone/iPad
 - **Bookmarklet** - Works in any browser
 
@@ -49,6 +50,10 @@ stash/
 - **Frontend**: Vanilla JS, HTML, CSS (no framework bloat)
 - **Backend**: Supabase (PostgreSQL + REST API)
 - **Hosting**: Any static host (Vercel, Netlify, GitHub Pages)
+
+## Roadmap
+
+**Listen Later** (AI Podcast) is currently in development. This feature will evolve the basic TTS functionality into a full-blown conversational podcast generator using LLMs. See [Product Spec.md](Product%20Spec.md) for details.
 
 ## Screenshots
 

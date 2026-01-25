@@ -1,5 +1,7 @@
 # **Product Spec: Listen Later (Stash-to-Podcast RSS)**
 
+> [!NOTE] This is a planned feature that builds significantly upon the existing basic TTS functionality.
+
 ## **1\. Overview**
 
 Listen Later is a "Software for One" utility that transforms articles saved in a user's **Stash** (open-source read-it-later app) into a conversational AI podcast. It automates extraction, scriptwriting, audio generation, and RSS distribution, allowing the user to listen to their reading list in any standard podcast player.
