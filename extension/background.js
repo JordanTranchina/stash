@@ -17,7 +17,13 @@ chrome.runtime.onStartup.addListener(() => {
 
 async function initSupabase() {
   supabase = new SupabaseClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-  await supabase.init();
+  // In Single User Mode, we must ensure we are NOT using a stale session from a different user
+  // We rely on the 'Allow specific user saves' RLS policy utilizing the Anon Key
+  if (CONFIG.USER_ID) {
+    await supabase.signOut();
+  } else {
+    await supabase.init();
+  }
 }
 
 // Context menu for "Save highlight to Stash"
@@ -37,6 +43,8 @@ function setupContextMenu() {
   });
 }
 
+// ... context menu setup ...
+
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!supabase) await initSupabase();
@@ -51,7 +59,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Save highlighted text
 async function saveHighlight(tab, selectionText) {
   try {
-    await supabase.insert('saves', {
+    const result = await supabase.insert('saves', {
       user_id: CONFIG.USER_ID,
       url: tab.url,
       title: tab.title,
@@ -64,6 +72,7 @@ async function saveHighlight(tab, selectionText) {
       action: 'showToast',
       message: 'Highlight saved!',
     });
+    return { success: true };
   } catch (err) {
     console.error('Save highlight failed:', err);
     chrome.tabs.sendMessage(tab.id, {
@@ -71,15 +80,20 @@ async function saveHighlight(tab, selectionText) {
       message: 'Failed to save: ' + err.message,
       isError: true,
     });
+    return { success: false, error: err.message };
   }
 }
 
 // Save full page
 async function savePage(tab) {
+  if (!supabase) await initSupabase();
   try {
     console.log('savePage called for:', tab.url);
+    
+    // ... extraction logic ...
+    // (We keep the existing extraction logic, just ensuring error handling bubbles up)
+    
     let article;
-
     // Extract from current page - inject content script first if needed
     console.log('Extracting article...');
 
@@ -97,13 +111,12 @@ async function savePage(tab) {
       article = await chrome.tabs.sendMessage(tab.id, { action: 'extractArticle' });
     }
 
-    console.log('Article extracted:', article?.title, 'content length:', article?.content?.length);
-
     if (!article) {
       throw new Error('Failed to extract article content');
     }
 
-    console.log('Inserting into Supabase...');
+    console.log('Inserting into Supabase...', { user_id: CONFIG.USER_ID });
+    
     const result = await supabase.insert('saves', {
       user_id: CONFIG.USER_ID,
       url: tab.url,
@@ -122,6 +135,8 @@ async function savePage(tab) {
       action: 'showToast',
       message: 'Page saved!',
     });
+    
+    return { success: true };
   } catch (err) {
     console.error('Save page failed:', err);
     chrome.tabs.sendMessage(tab.id, {
@@ -129,6 +144,7 @@ async function savePage(tab) {
       message: 'Failed to save: ' + err.message,
       isError: true,
     });
+    return { success: false, error: err.message };
   }
 }
 
@@ -137,8 +153,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'savePage') {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       if (tabs[0]) {
-        await savePage(tabs[0]);
-        sendResponse({ success: true });
+        const result = await savePage(tabs[0]);
+        sendResponse(result);
+      } else {
+        sendResponse({ success: false, error: 'No active tab' });
       }
     });
     return true;

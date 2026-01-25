@@ -16,7 +16,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const selection = window.getSelection().toString().trim();
     sendResponse({ selection });
   }
-  return true;
 });
 
 async function extractArticle() {
