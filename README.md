@@ -1,6 +1,6 @@
 # Stash
 
-A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle notes to your own database.
+A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle notes to your own database. TEST!
 
 **Your data. Your server. No subscription.**
 
@@ -52,7 +52,7 @@ stash/
 
 ## Screenshots
 
-*Coming soon*
+_Coming soon_
 
 ## License
 
