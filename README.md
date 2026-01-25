@@ -54,6 +54,10 @@ stash/
 
 _Coming soon_
 
+## Future Work
+
+- **E2E Testing**: Set up automated end-to-end testing for the extension using Playwright.
+
 ## License
 
 MIT

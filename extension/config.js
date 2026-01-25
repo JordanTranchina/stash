@@ -9,7 +9,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpudG5tdnhraXJyb3N4anF1dW95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNjQ1MDgsImV4cCI6MjA4NDk0MDUwOH0.NnWNtHivG1aOKtVgZ9YeL2dW7SL4DCwIQaQu_ktqN6U',
 
   // Your web app URL (after deploying to Vercel/Netlify)
-  WEB_APP_URL: 'http://localhost:3000',
+  WEB_APP_URL: 'https://stash-lemon-zeta.vercel.app',
 
   // Your user ID from Supabase (Authentication > Users)
   // For multi-user mode, this can be removed and auth will be required
