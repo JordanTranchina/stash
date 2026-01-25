@@ -66,6 +66,7 @@ Listen Later is a "Software for One" utility that transforms articles saved in a
 - **On-Demand Generation:** Integrate a "Generate Podcast Now" button directly within the Stash UI to trigger the pipeline for the current queue immediately.
 - **Custom Personalities:** Allow the user to define specific host "vibes" or topics of interest via a simple settings panel.
 - **Interactive RSS:** Support for "chapters" in the MP3 so the user can skip to specific articles mentioned in the audio.
+- **E2E Testing**: Set up automated end-to-end testing for the extension using Playwright.
 
 ## **7\. Success Metrics**
 
