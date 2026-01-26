@@ -28,9 +28,9 @@ except ImportError:
     sys.exit(1)
 
 # Configuration - UPDATE THESE VALUES
-SUPABASE_URL = "https://YOUR_PROJECT_ID.supabase.co"
-SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY"
-USER_ID = "YOUR_USER_ID"
+SUPABASE_URL = "https://jntnmvxkirrosxjquuoy.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpudG5tdnhraXJyb3N4anF1dW95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNjQ1MDgsImV4cCI6MjA4NDk0MDUwOH0.NnWNtHivG1aOKtVgZ9YeL2dW7SL4DCwIQaQu_ktqN6U"
+USER_ID = "6c7a3a96-16cd-4702-ac7b-0c7a4a81346d"
 CHECK_INTERVAL = 120  # seconds between checks
 LOG_FILE = Path(__file__).parent / "tts.log"
 
@@ -46,9 +46,11 @@ def log(msg):
     """Log message to file and stdout."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {msg}"
-    print(line)
+    print(line, flush=True)
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 def get_headers():
     """Get Supabase API headers."""
