@@ -1,3 +1,5 @@
 google-generativeai
 python-dotenv
 requests
+edge-tts
+aiofiles
