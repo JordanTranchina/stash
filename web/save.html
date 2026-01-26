@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,43 +8,57 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Quick Save - Stash</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f9fafb;
       min-height: 100vh;
       padding: 20px;
     }
+
     .container {
       max-width: 400px;
       margin: 0 auto;
       padding-top: 40px;
     }
+
     h1 {
       font-size: 24px;
       margin-bottom: 24px;
       text-align: center;
     }
+
     .form {
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
-    input, textarea {
+
+    input,
+    textarea {
       padding: 14px 16px;
       border: 1px solid #e5e7eb;
       border-radius: 10px;
       font-size: 16px;
       -webkit-appearance: none;
     }
-    input:focus, textarea:focus {
+
+    input:focus,
+    textarea:focus {
       outline: none;
       border-color: #6366f1;
     }
+
     textarea {
       min-height: 100px;
       resize: vertical;
     }
+
     .btn {
       padding: 16px;
       background: #6366f1;
@@ -55,8 +70,15 @@
       cursor: pointer;
       -webkit-appearance: none;
     }
-    .btn:active { background: #4f46e5; }
-    .btn:disabled { opacity: 0.6; }
+
+    .btn:active {
+      background: #4f46e5;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+    }
+
     .status {
       text-align: center;
       padding: 12px;
@@ -64,16 +86,19 @@
       margin-top: 16px;
       display: none;
     }
+
     .status.success {
       display: block;
       background: #d1fae5;
       color: #065f46;
     }
+
     .status.error {
       display: block;
       background: #fee2e2;
       color: #991b1b;
     }
+
     .hint {
       font-size: 13px;
       color: #6b7280;
@@ -82,6 +107,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <h1>Quick Save</h1>
@@ -101,6 +127,9 @@
       SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY',
       USER_ID: 'YOUR_USER_ID',
     };
+  </script>
+  <script src="db.js"></script>
+  <script>
 
     document.getElementById('save-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -111,23 +140,19 @@
       const title = document.getElementById('title').value.trim();
       const highlight = document.getElementById('highlight').value.trim();
 
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
+      document.getElementById('save-btn').textContent = 'Saving...';
       status.className = 'status';
 
+      const data = {
+        user_id: CONFIG.USER_ID,
+        url: url,
+        title: title || new URL(url).hostname,
+        site_name: new URL(url).hostname.replace('www.', ''),
+        source: 'mobile-web',
+        highlight: highlight || null
+      };
+
       try {
-        const data = {
-          user_id: CONFIG.USER_ID,
-          url: url,
-          title: title || new URL(url).hostname,
-          site_name: new URL(url).hostname.replace('www.', ''),
-          source: 'mobile-web',
-        };
-
-        if (highlight) {
-          data.highlight = highlight;
-        }
-
         const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
           method: 'POST',
           headers: {
@@ -141,20 +166,34 @@
         if (res.ok) {
           status.textContent = 'Saved!';
           status.className = 'status success';
-          document.getElementById('url').value = '';
-          document.getElementById('title').value = '';
-          document.getElementById('highlight').value = '';
+          resetForm();
         } else {
           throw new Error('Save failed');
         }
       } catch (err) {
-        status.textContent = 'Failed to save. Check the URL.';
-        status.className = 'status error';
+        console.warn('Online save failed, attempting offline save...', err);
+        // Fallback to IndexedDB
+        try {
+          await window.StashDB.savePendingShare(data);
+          status.textContent = 'Offline? Saved to queue for later sync.';
+          status.className = 'status success'; // It is a success in offline mode
+          resetForm();
+        } catch (dbErr) {
+          console.error('Offline save failed', dbErr);
+          status.textContent = 'Failed to save. Check the URL.';
+          status.className = 'status error';
+        }
       }
 
       btn.disabled = false;
       btn.textContent = 'Save to Stash';
     });
+
+    function resetForm() {
+      document.getElementById('url').value = '';
+      document.getElementById('title').value = '';
+      document.getElementById('highlight').value = '';
+    }
 
     // Auto-paste from clipboard on focus (if permitted)
     document.getElementById('url').addEventListener('focus', async () => {
@@ -165,8 +204,9 @@
         if (text.startsWith('http')) {
           urlInput.value = text;
         }
-      } catch (e) {}
+      } catch (e) { }
     });
   </script>
 </body>
+
 </html>

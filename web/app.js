@@ -262,6 +262,29 @@ class StashApp {
     document.getElementById('digest-enabled').addEventListener('change', () => {
       this.updateDigestOptionsState();
     });
+
+    // PWA: Online/Offline Status
+    window.addEventListener('online', () => this.updateOnlineStatus());
+    window.addEventListener('offline', () => this.updateOnlineStatus());
+    
+    // PWA: Install Prompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredPrompt = e;
+      const installBtn = document.getElementById('pwa-install-btn');
+      installBtn.classList.remove('hidden');
+      
+      installBtn.addEventListener('click', () => {
+        installBtn.classList.add('hidden');
+        this.deferredPrompt.prompt();
+        this.deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('User accepted the install prompt');
+          }
+          this.deferredPrompt = null;
+        });
+      });
+    });
   }
 
   setupRealtime() {
@@ -379,10 +402,20 @@ class StashApp {
     const container = document.getElementById('saves-container');
     const loading = document.getElementById('loading');
     const empty = document.getElementById('empty-state');
+    
+    // OFFLINE: Load from IndexedDB first for instant render
+    const cachedSaves = await window.StashDB.getArticles();
+    if (cachedSaves && cachedSaves.length > 0) {
+        this.saves = cachedSaves;
+        // Apply local sort/filter if needed, but for now just render raw dump or basic sort
+        // We'll skip complex filtering on cached data for MVP or do basic JS sort
+        this.renderSaves(); 
+    } else {
+        // Only show spinner if we have NO data
+        loading.classList.remove('hidden');
+    }
 
-    loading.classList.remove('hidden');
-    container.innerHTML = '';
-
+    // ONLINE: Fetch fresh data
     const sortValue = document.getElementById('sort-select').value;
     const [column, direction] = sortValue.split('.');
 
@@ -413,13 +446,21 @@ class StashApp {
 
     if (error) {
       console.error('Error loading saves:', error);
+      // If we have cached data, we are fine. Maybe show a toast?
+      // For now, silent fail to offline mode is acceptable behavior
       return;
     }
 
     this.saves = data || [];
+    
+    // UPDATE CACHE: Save latest data to IndexedDB
+    if (this.saves.length > 0) {
+        window.StashDB.saveArticles(this.saves);
+    }
 
     if (this.saves.length === 0) {
       empty.classList.remove('hidden');
+      container.innerHTML = ''; // Clear any cached data if server says empty (edge case)
     } else {
       empty.classList.add('hidden');
       // Use special rendering for weekly view
@@ -625,6 +666,26 @@ class StashApp {
         </div>
       </div>
     `;
+  }
+
+  updateOnlineStatus() {
+    const toast = document.getElementById('toast');
+    const msg = document.getElementById('toast-message');
+    
+    if (navigator.onLine) {
+        msg.textContent = "Back online";
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 3000);
+        
+        // Synced? Maybe trigger a reload or sync
+        // For MVP, just let user know.
+        // If we want to be fancy, we could try to sync pending items here.
+    } else {
+        msg.textContent = "You are offline. Showing cached content.";
+        toast.classList.remove('hidden');
+        // Keep it visible? Or hide after 5s?
+        setTimeout(() => toast.classList.add('hidden'), 5000);
+    }
   }
 
   getWeekDateRange() {
