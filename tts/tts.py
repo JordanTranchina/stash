@@ -46,9 +46,11 @@ def log(msg):
     """Log message to file and stdout."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {msg}"
-    print(line)
+    print(line, flush=True)
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 def get_headers():
     """Get Supabase API headers."""
