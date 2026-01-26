@@ -94,3 +94,4 @@ To ensure articles are readable offline, we cannot rely on Supabase connectivity
 ## **6. Future Upgrades**
 
 - **Background Sync API:** Use the Service Worker `sync` event to automatically retry failed saves when connectivity returns. (Requires more advanced SW logic).
+- **Pending Queue Auto-Sync:** Currently, offline saves sit in a "Pending" IndexedDB queue. We need to implement logic (on app open or "back online" event) to iterate through this queue and push items to Supabase automatically.
