@@ -2,8 +2,11 @@ import os
 import json
 import requests
 import google.generativeai as genai
+import asyncio
+from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+import edge_tts
 from extract import fetch_recent_articles
 
 # Load environment variables
@@ -86,6 +89,35 @@ def generate_script(articles):
         print(f"Error generating script: {e}")
         return None
 
+async def generate_audio(script, output_dir="podcast/temp_audio"):
+    """Generate audio files for each line of the script using edge-tts."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    audio_files = []
+    
+    print(f"Generating audio for {len(script)} lines...")
+    
+    for i, line in enumerate(script):
+        speaker = line.get("speaker", "Alex")
+        text = line.get("text", "")
+        
+        # Select voice based on speaker
+        # Alex: Andrew (Male), Taylor: Ava (Female)
+        voice = "en-US-AndrewNeural" if speaker == "Alex" else "en-US-AvaNeural"
+        
+        filename = output_path / f"line_{i:03d}.mp3"
+        communicate = edge_tts.Communicate(text, voice)
+        
+        try:
+            await communicate.save(str(filename))
+            audio_files.append(str(filename))
+        except Exception as e:
+            print(f"Error generating audio for line {i}: {e}")
+    
+    print(f"Generated {len(audio_files)} audio clips in {output_dir}")
+    return audio_files
+
 def save_to_supabase(script, articles):
     """Save the generated script and metadata to Supabase."""
     if not all([SUPABASE_URL, SUPABASE_KEY, USER_ID]):
@@ -135,7 +167,9 @@ def save_script_locally(script, filename="podcast/script.json"):
         json.dump(script, f, indent=2)
     print(f"Script saved locally to {filename}")
 
-if __name__ == "__main__":
+    print(f"Script saved locally to {filename}")
+
+async def main():
     # Integration test: Fetch articles and generate script
     print("Fetching articles...")
     articles = fetch_recent_articles(limit=3) # Limit to 3 for testing
@@ -151,7 +185,14 @@ if __name__ == "__main__":
             print("\nPreview of first 3 lines:")
             for line in script[:3]:
                 print(f"{line['speaker']}: {line['text']}")
+                
+            # Generate Audio
+            await generate_audio(script)
+            
         else:
             print("Failed to generate script.")
     else:
         print("No recent articles found to process.")
+
+if __name__ == "__main__":
+    asyncio.run(main())

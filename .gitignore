@@ -29,3 +29,9 @@ supabase/.temp/
 venv/
 __pycache__/
 *.pyc
+
+# Podcast
+podcast/temp_audio/
+podcast/script.json
+.venv/
+.env
