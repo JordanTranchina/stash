@@ -125,26 +125,22 @@
   <script src="db.js"></script>
   <script>
 
-    document.getElementById('save-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
 
-      const btn = document.getElementById('save-btn');
-      const status = document.getElementById('status');
-      const url = document.getElementById('url').value.trim();
-      const title = document.getElementById('title').value.trim();
-      const highlight = document.getElementById('highlight').value.trim();
+    const saveForm = document.getElementById('save-form');
+    const saveBtn = document.getElementById('save-btn');
+    const statusEl = document.getElementById('status');
+    const urlInput = document.getElementById('url');
+    const titleInput = document.getElementById('title');
+    const highlightInput = document.getElementById('highlight');
 
-      document.getElementById('save-btn').textContent = 'Saving...';
-      status.className = 'status';
-
-      const data = {
-        user_id: CONFIG.USER_ID,
-        url: url,
-        title: title || new URL(url).hostname,
-        site_name: new URL(url).hostname.replace('www.', ''),
-        source: 'mobile-web',
-        highlight: highlight || null
-      };
+    // 1. Common Save Logic
+    async function handleSave(data) {
+      // UI Updates
+      saveBtn.textContent = 'Saving...';
+      saveBtn.disabled = true;
+      statusEl.className = 'status';
+      statusEl.textContent = 'Saving to Stash...';
+      statusEl.style.display = 'block';
 
       try {
         const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
@@ -158,9 +154,16 @@
         });
 
         if (res.ok) {
-          status.textContent = 'Saved!';
-          status.className = 'status success';
+          statusEl.textContent = 'Saved!';
+          statusEl.className = 'status success';
+
+          // If auto-saved, redirect after a brief pause
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1500);
+
           resetForm();
+          return true;
         } else {
           throw new Error('Save failed');
         }
@@ -169,29 +172,97 @@
         // Fallback to IndexedDB
         try {
           await window.StashDB.savePendingShare(data);
-          status.textContent = 'Offline? Saved to queue for later sync.';
-          status.className = 'status success'; // It is a success in offline mode
+          statusEl.textContent = 'Offline? Saved to queue for later sync.';
+          statusEl.className = 'status success';
+
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 2000);
+
           resetForm();
+          return true;
         } catch (dbErr) {
           console.error('Offline save failed', dbErr);
-          status.textContent = 'Failed to save. Check the URL.';
-          status.className = 'status error';
+          statusEl.textContent = 'Failed to save. Check the URL.';
+          statusEl.className = 'status error';
+
+          // Re-enable form on failure so user can fix/retry
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save to Stash';
+          return false;
         }
       }
+    }
 
-      btn.disabled = false;
-      btn.textContent = 'Save to Stash';
+    // 2. Form Submit Handler
+    saveForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const url = urlInput.value.trim();
+      const title = titleInput.value.trim();
+      const highlight = highlightInput.value.trim();
+
+      const data = {
+        user_id: CONFIG.USER_ID,
+        url: url,
+        title: title || new URL(url).hostname,
+        site_name: new URL(url).hostname.replace('www.', ''),
+        source: 'mobile-web',
+        highlight: highlight || null
+      };
+
+      await handleSave(data);
     });
 
     function resetForm() {
-      document.getElementById('url').value = '';
-      document.getElementById('title').value = '';
-      document.getElementById('highlight').value = '';
+      urlInput.value = '';
+      titleInput.value = '';
+      highlightInput.value = '';
     }
 
+    // 3. Auto-Save Logic (Query Params)
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      let pUrl = params.get('url') || '';
+      const pTitle = params.get('title') || '';
+      const pText = params.get('text') || '';
+
+      // Intelligent handling: Android often sends the URL in the 'text' field if not explicitly separated
+      // If we miss the URL param but text looks like a URL, swap them.
+      if (!pUrl && pText.startsWith('http')) {
+        pUrl = pText;
+      }
+
+      // Pre-fill fields
+      if (pUrl) urlInput.value = pUrl;
+      if (pTitle) titleInput.value = pTitle;
+      // If text was used as URL, don't double it in highlight
+      if (pText && pText !== pUrl) highlightInput.value = pText;
+
+      // If we have a URL, TRIGGER AUTO-SAVE
+      if (pUrl) {
+        // Prepare data
+        const data = {
+          user_id: CONFIG.USER_ID,
+          url: pUrl,
+          title: pTitle || new URL(pUrl).hostname,
+          site_name: new URL(pUrl).hostname.replace('www.', ''),
+          source: 'share-target',
+          highlight: (pText && pText !== pUrl) ? pText : null
+        };
+
+        // Hide form initially to make it look "magical", or just let the status take over
+        // Let's just run it. The status message will appear.
+        handleSave(data);
+      } else {
+        // No URL? Just fallback to "Paste from clipboard" check
+        checkClipboard();
+      }
+    });
+
     // Auto-paste from clipboard on focus (if permitted)
-    document.getElementById('url').addEventListener('focus', async () => {
-      const urlInput = document.getElementById('url');
+    async function checkClipboard() {
+      // Only if input is empty
       if (urlInput.value) return;
       try {
         const text = await navigator.clipboard.readText();
@@ -199,7 +270,8 @@
           urlInput.value = text;
         }
       } catch (e) { }
-    });
+    }
+    urlInput.addEventListener('focus', checkClipboard);
   </script>
 </body>
 
