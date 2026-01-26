@@ -32,6 +32,7 @@ class StashApp {
     this.loadData();
 
     this.bindEvents();
+    this.setupRealtime();
   }
 
   // Theme Management
@@ -261,6 +262,35 @@ class StashApp {
     document.getElementById('digest-enabled').addEventListener('change', () => {
       this.updateDigestOptionsState();
     });
+  }
+
+  setupRealtime() {
+    this.supabase
+      .channel('public:saves')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'saves' }, (payload) => {
+        const updatedSave = payload.new;
+        
+        // Update local data
+        const index = this.saves.findIndex(s => s.id === updatedSave.id);
+        if (index !== -1) {
+          this.saves[index] = updatedSave;
+          
+          // If this save is currently open in reading pane, refresh it
+          if (this.currentSave && this.currentSave.id === updatedSave.id) {
+            // Only refresh if audio_url changed (avoid unnecessary re-renders)
+            if (this.currentSave.audio_url !== updatedSave.audio_url) {
+              this.openReadingPane(updatedSave);
+            }
+          }
+          
+          // Update list view card if visible (e.g. remove "Generating..." or update title)
+          // For simplicity, we'll just re-render the list if it's the current view
+          if (this.currentView === 'all' || this.currentView === 'articles') {
+            this.renderSaves();
+          }
+        }
+      })
+      .subscribe();
   }
 
   showAuthScreen() {
