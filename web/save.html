@@ -18,13 +18,17 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f9fafb;
       min-height: 100vh;
-      padding: 20px;
+      display: flex; /* Center for the spinner view */
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
 
+    /* Standard Form View */
     .container {
+      width: 100%;
       max-width: 400px;
-      margin: 0 auto;
-      padding-top: 40px;
+      padding: 20px;
     }
 
     h1 {
@@ -45,6 +49,7 @@
       border: 1px solid #e5e7eb;
       border-radius: 10px;
       font-size: 16px;
+      width: 100%;
       -webkit-appearance: none;
     }
 
@@ -69,6 +74,7 @@
       font-weight: 600;
       cursor: pointer;
       -webkit-appearance: none;
+      width: 100%;
     }
 
     .btn:active {
@@ -105,11 +111,99 @@
       text-align: center;
       margin-top: 24px;
     }
+
+    /* Stealth / Overlay View */
+    .overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #f9fafb; /* Match body bg */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #e5e7eb;
+      border-top: 4px solid #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .overlay-text {
+      font-size: 18px;
+      font-weight: 500;
+      color: #4b5563;
+    }
+
+    .checkmark {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: block;
+      stroke-width: 2;
+      stroke: #10b981; /* Green */
+      stroke-miterlimit: 10;
+      margin-bottom: 20px;
+      box-shadow: inset 0px 0px 0px #10b981;
+      animation: fill .4s ease-in-out .4s forwards, scale .3s ease-in-out .9s both;
+    }
+
+    .checkmark__circle {
+      stroke-dasharray: 166;
+      stroke-dashoffset: 166;
+      stroke-width: 2;
+      stroke-miterlimit: 10;
+      stroke: #10b981;
+      fill: none;
+      animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+    }
+
+    .checkmark__check {
+      transform-origin: 50% 50%;
+      stroke-dasharray: 48;
+      stroke-dashoffset: 48;
+      animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+    }
+
+    @keyframes stroke {
+      100% { stroke-dashoffset: 0; }
+    }
   </style>
 </head>
 
 <body>
-  <div class="container">
+
+  <!-- Stealth Overlay -->
+  <div id="saving-overlay" class="overlay hidden">
+    <div class="spinner" id="spinner"></div>
+    <!-- SVG Checkmark initially hidden -->
+    <svg class="checkmark hidden" id="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+      <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none" />
+      <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
+    </svg>
+    <div class="overlay-text" id="overlay-text">Saving...</div>
+  </div>
+
+  <!-- Standard Form -->
+  <div class="container" id="main-container">
     <h1>Quick Save</h1>
     <form class="form" id="save-form">
       <input type="url" id="url" placeholder="https://..." required>
@@ -125,22 +219,30 @@
   <script src="db.js"></script>
   <script>
 
-
     const saveForm = document.getElementById('save-form');
     const saveBtn = document.getElementById('save-btn');
     const statusEl = document.getElementById('status');
     const urlInput = document.getElementById('url');
     const titleInput = document.getElementById('title');
     const highlightInput = document.getElementById('highlight');
+    
+    // UI Elements
+    const mainContainer = document.getElementById('main-container');
+    const overlay = document.getElementById('saving-overlay');
+    const spinner = document.getElementById('spinner');
+    const checkmark = document.getElementById('checkmark');
+    const overlayText = document.getElementById('overlay-text');
 
     // 1. Common Save Logic
-    async function handleSave(data) {
-      // UI Updates
-      saveBtn.textContent = 'Saving...';
-      saveBtn.disabled = true;
-      statusEl.className = 'status';
-      statusEl.textContent = 'Saving to Stash...';
-      statusEl.style.display = 'block';
+    async function handleSave(data, isAuto = false) {
+      if (!isAuto) {
+        // Form UI updates
+        saveBtn.textContent = 'Saving...';
+        saveBtn.disabled = true;
+        statusEl.className = 'status';
+        statusEl.textContent = 'Saving to Stash...';
+        statusEl.style.display = 'block';
+      }
 
       try {
         const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
@@ -154,15 +256,7 @@
         });
 
         if (res.ok) {
-          statusEl.textContent = 'Saved!';
-          statusEl.className = 'status success';
-
-          // If auto-saved, redirect after a brief pause
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 1500);
-
-          resetForm();
+          handleSuccess(isAuto);
           return true;
         } else {
           throw new Error('Save failed');
@@ -172,32 +266,74 @@
         // Fallback to IndexedDB
         try {
           await window.StashDB.savePendingShare(data);
-          statusEl.textContent = 'Offline? Saved to queue for later sync.';
-          statusEl.className = 'status success';
-
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 2000);
-
-          resetForm();
+          handleSuccess(isAuto, true); // true = offline success
           return true;
         } catch (dbErr) {
           console.error('Offline save failed', dbErr);
-          statusEl.textContent = 'Failed to save. Check the URL.';
-          statusEl.className = 'status error';
-
-          // Re-enable form on failure so user can fix/retry
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Save to Stash';
+          
+          if (isAuto) {
+             // If auto-save fails, verify we show user the error in the form
+             showForm();
+             statusEl.textContent = 'Failed to save. Check the URL.';
+             statusEl.className = 'status error';
+          } else {
+             statusEl.textContent = 'Failed to save. Check the URL.';
+             statusEl.className = 'status error';
+             saveBtn.disabled = false;
+             saveBtn.textContent = 'Save to Stash';
+          }
           return false;
         }
+      }
+    }
+    
+    function handleSuccess(isAuto, isOffline = false) {
+      const msg = isOffline ? 'Saved to pending queue!' : 'Saved!';
+      
+      if (isAuto) {
+        // Animation success
+        spinner.classList.add('hidden');
+        checkmark.classList.remove('hidden');
+        overlayText.textContent = msg;
+        
+        setTimeout(() => {
+          // Attempt to close window or return
+          try {
+             window.close(); // Works in many PWAs / Custom Tabs
+          } catch(e) {}
+          
+          // Fallback if window doesn't close
+          if (document.visibilityState !== 'hidden') {
+             try {
+                window.history.back(); // Return to previous app
+             } catch(e) {}
+          }
+          
+          // Ultimate fallback - just in case neither worked after another second
+          setTimeout(() => {
+             overlayText.innerHTML = `
+               ${msg}<br><br>
+               <button class="btn" style="background:#10b981; width:auto; padding: 10px 24px;" onclick="window.location.href='/'">Go to Stash</button>
+             `;
+          }, 1000);
+          
+        }, 1200);
+        
+      } else {
+        // Form success
+        statusEl.textContent = msg;
+        statusEl.className = 'status success';
+        resetForm();
+        setTimeout(() => {
+           window.location.href = '/';
+        }, 1500);
       }
     }
 
     // 2. Form Submit Handler
     saveForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-
+      
       const url = urlInput.value.trim();
       const title = titleInput.value.trim();
       const highlight = highlightInput.value.trim();
@@ -211,13 +347,23 @@
         highlight: highlight || null
       };
 
-      await handleSave(data);
+      await handleSave(data, false);
     });
 
     function resetForm() {
       urlInput.value = '';
       titleInput.value = '';
       highlightInput.value = '';
+    }
+    
+    function showForm() {
+       overlay.classList.add('hidden');
+       mainContainer.classList.remove('hidden');
+    }
+    
+    function showOverlay() {
+       mainContainer.classList.add('hidden');
+       overlay.classList.remove('hidden');
     }
 
     // 3. Auto-Save Logic (Query Params)
@@ -227,21 +373,19 @@
       const pTitle = params.get('title') || '';
       const pText = params.get('text') || '';
 
-      // Intelligent handling: Android often sends the URL in the 'text' field if not explicitly separated
-      // If we miss the URL param but text looks like a URL, swap them.
       if (!pUrl && pText.startsWith('http')) {
         pUrl = pText;
       }
 
-      // Pre-fill fields
+      // Pre-fill fields always (in case of error fallback)
       if (pUrl) urlInput.value = pUrl;
       if (pTitle) titleInput.value = pTitle;
-      // If text was used as URL, don't double it in highlight
       if (pText && pText !== pUrl) highlightInput.value = pText;
 
-      // If we have a URL, TRIGGER AUTO-SAVE
+      // If we have a URL, TRIGGER STEALTH AUTO-SAVE
       if (pUrl) {
-        // Prepare data
+        showOverlay();
+        
         const data = {
           user_id: CONFIG.USER_ID,
           url: pUrl,
@@ -250,19 +394,17 @@
           source: 'share-target',
           highlight: (pText && pText !== pUrl) ? pText : null
         };
-
-        // Hide form initially to make it look "magical", or just let the status take over
-        // Let's just run it. The status message will appear.
-        handleSave(data);
+        
+        handleSave(data, true);
       } else {
-        // No URL? Just fallback to "Paste from clipboard" check
+        // Normal manual mode
+        showForm();
         checkClipboard();
       }
     });
 
     // Auto-paste from clipboard on focus (if permitted)
     async function checkClipboard() {
-      // Only if input is empty
       if (urlInput.value) return;
       try {
         const text = await navigator.clipboard.readText();
