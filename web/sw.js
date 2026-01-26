@@ -1,19 +1,22 @@
 // Stash Service Worker
-const CACHE_NAME = 'stash-v1';
-const ASSETS = [
+const CACHE_NAME = 'stash-v2';
+const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
+  '/db.js',
   '/config.js',
   '/manifest.json',
+  '/icons/icon192.png',
+  '/icons/icon512.png'
 ];
 
 // Install
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
+      return cache.addAll(STATIC_ASSETS);
     })
   );
   self.skipWaiting();
@@ -31,29 +34,36 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch - Network first, fallback to cache
+// Fetch Strategy
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
 
-  // Skip API requests (let them go to network)
-  if (event.request.url.includes('supabase.co')) return;
+  // 1. API Requests (Supabase): Network only (handled by app.js/db.js)
+  if (url.hostname.includes('supabase.co')) {
+    return;
+  }
 
+  // 2. Navigation (HTML): Network First, fall back to Cache
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .catch(() => {
+          return caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
+  // 3. Static Assets (JS/CSS/Images): Stale-While-Revalidate
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Clone and cache successful responses
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        // Fallback to cache
-        return caches.match(event.request);
-      })
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, networkResponse.clone());
+        });
+        return networkResponse;
+      });
+      return cachedResponse || fetchPromise;
+    })
   );
 });
