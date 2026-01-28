@@ -8,6 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import edge_tts
 from extract import fetch_recent_articles
+from assembly import assemble_episode
 
 # Load environment variables
 load_dotenv()
@@ -188,6 +189,21 @@ async def main():
                 
             # Generate Audio
             await generate_audio(script)
+
+            # Assemble Episode
+            print("Assembling episode...")
+            metadata = {
+                "title": f"Listen Later: {datetime.now().strftime('%B %d, %Y')}",
+                "artist": "Listen Later",
+                "album": "Stash Podcast",
+                "description": "Discussing: " + ", ".join([art["title"] for art in articles])
+            }
+            final_audio = assemble_episode("podcast/temp_audio", "podcast/output/episode.mp3", metadata)
+            
+            if final_audio:
+                print(f"Podcast generated successfully: {final_audio}")
+            else:
+                print("Failed to assemble episode.")
             
         else:
             print("Failed to generate script.")
