@@ -29,7 +29,7 @@ except ImportError:
 
 # Configuration - UPDATE THESE VALUES
 SUPABASE_URL = "https://jntnmvxkirrosxjquuoy.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpudG5tdnhraXJyb3N4anF1dW95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNjQ1MDgsImV4cCI6MjA4NDk0MDUwOH0.NnWNtHivG1aOKtVgZ9YeL2dW7SL4DCwIQaQu_ktqN6U"
+SUPABASE_KEY = "sb_publishable_56A0I5tN0tvybD2yJ81UKQ_Fn2ibI1s"
 USER_ID = "6c7a3a96-16cd-4702-ac7b-0c7a4a81346d"
 CHECK_INTERVAL = 120  # seconds between checks
 LOG_FILE = Path(__file__).parent / "tts.log"
