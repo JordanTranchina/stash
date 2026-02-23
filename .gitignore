@@ -35,6 +35,5 @@ podcast/temp_audio/
 podcast/script.json
 .venv/
 .env
-podcast/.env
-.vercel
-.env*.local
+**/.env*
+.vercel/
