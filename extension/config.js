@@ -6,7 +6,7 @@ const CONFIG = {
   SUPABASE_URL: 'https://jntnmvxkirrosxjquuoy.supabase.co',
 
   // Your Supabase anon/public key (from Project Settings > API)
-  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpudG5tdnhraXJyb3N4anF1dW95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNjQ1MDgsImV4cCI6MjA4NDk0MDUwOH0.NnWNtHivG1aOKtVgZ9YeL2dW7SL4DCwIQaQu_ktqN6U',
+  SUPABASE_ANON_KEY: 'sb_publishable_56A0I5tN0tvybD2yJ81UKQ_Fn2ibI1s',
 
   // Your web app URL (after deploying to Vercel/Netlify)
   WEB_APP_URL: 'https://stash-lemon-zeta.vercel.app',
