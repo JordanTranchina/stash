@@ -35,3 +35,4 @@ podcast/temp_audio/
 podcast/script.json
 .venv/
 .env
+**/.env*
