@@ -36,3 +36,4 @@ podcast/script.json
 .venv/
 .env
 **/.env*
+.vercel/
