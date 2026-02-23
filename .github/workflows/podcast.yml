@@ -30,3 +30,10 @@ jobs:
           USER_ID: ${{ secrets.USER_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python podcast/script.py
+
+      - name: Upload Podcast Episode
+        uses: actions/upload-artifact@v4
+        with:
+          name: podcast-episode
+          path: podcast/output/episode.mp3
+          if-no-files-found: error
