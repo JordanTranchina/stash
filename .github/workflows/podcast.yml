@@ -36,4 +36,4 @@ jobs:
         with:
           name: podcast-episode
           path: podcast/output/episode.mp3
-          if-no-files-found: error
+          if-no-files-found: warn
