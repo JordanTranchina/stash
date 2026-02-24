@@ -45,10 +45,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Install dependencies
-        run: PUPPETEER_SKIP_DOWNLOAD=true npm ci
+        run: PUPPETEER_SKIP_DOWNLOAD=true npm install
 
       - name: Run unit tests
         run: npm test
@@ -68,7 +67,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Install Chromium dependencies
         run: |
@@ -78,7 +76,7 @@ jobs:
             libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2
 
       - name: Install dependencies (with Puppeteer Chrome)
-        run: npm ci
+        run: npm install
 
       - name: Run E2E tests
         run: npm run test:e2e
