@@ -19,7 +19,13 @@ const INDEX_URL = `file://${path.resolve(__dirname, '../../web/index.html')}`;
 beforeAll(async () => {
   browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: puppeteer.executablePath(),
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+    ],
   });
   page = await browser.newPage();
 

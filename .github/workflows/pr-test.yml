@@ -73,10 +73,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 \
-            libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2
+            libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+            libasound2t64 || sudo apt-get install -y libasound2
 
       - name: Install dependencies (with Puppeteer Chrome)
+        env:
+          PUPPETEER_CACHE_DIR: /tmp/.puppeteer-cache
         run: npm install
 
       - name: Run E2E tests
+        env:
+          PUPPETEER_CACHE_DIR: /tmp/.puppeteer-cache
         run: npm run test:e2e
