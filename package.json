@@ -1,0 +1,23 @@
+{
+  "name": "stash-tests",
+  "version": "1.0.0",
+  "description": "Test suite for the Stash web app and Chrome extension",
+  "scripts": {
+    "test": "jest --testPathPattern=tests/unit",
+    "test:e2e": "jest --testPathPattern=tests/e2e --testTimeout=30000",
+    "test:all": "jest --testTimeout=30000"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0",
+    "puppeteer": "^22.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/unit/**/*.test.js",
+      "**/tests/e2e/**/*.test.js"
+    ],
+    "transform": {}
+  }
+}
