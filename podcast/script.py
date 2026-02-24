@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import edge_tts
 from extract import fetch_recent_articles
 from assembly import assemble_episode
+from supabase import create_client, Client
 
 # Load environment variables
 load_dotenv()
@@ -17,6 +18,10 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 USER_ID = os.getenv("USER_ID")
+
+supabase_client: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # System prompt for Alex and Taylor
 SYSTEM_PROMPT = """
@@ -162,6 +167,45 @@ def save_to_supabase(script, articles):
         print(f"Error saving to Supabase: {e}")
         return None
 
+def upload_audio_to_supabase(file_path, episode_id):
+    """Uploads the podcast MP3 to Supabase Storage and returns the public URL."""
+    if not supabase_client:
+        print("Error: Supabase client not initialized. Cannot upload audio.")
+        return None
+
+    filename = f"episode_{episode_id}.mp3"
+    
+    try:
+        with open(file_path, 'rb') as f:
+            supabase_client.storage.from_("podcasts").upload(
+                path=filename,
+                file=f,
+                file_options={"content-type": "audio/mpeg"}
+            )
+        print(f"Uploaded audio to Supabase Storage: {filename}")
+        
+        # Get public URL
+        res = supabase_client.storage.from_("podcasts").get_public_url(filename)
+        return res
+    except Exception as e:
+        print(f"Error uploading audio to Supabase: {e}")
+        return None
+
+def update_episode_audio_url(episode_id, audio_url):
+    """Updates the database record with the public audio URL."""
+    if not supabase_client:
+        return False
+        
+    try:
+        supabase_client.table("podcast_episodes").update(
+            {"audio_url": audio_url}
+        ).eq("id", episode_id).execute()
+        print(f"Updated database record for episode {episode_id} with audio URL.")
+        return True
+    except Exception as e:
+        print(f"Error updating database with audio URL: {e}")
+        return False
+
 def save_script_locally(script, filename="podcast/script.json"):
     """Save the generated script to a local file."""
     with open(filename, "w") as f:
@@ -181,7 +225,7 @@ async def main():
         
         if script:
             save_script_locally(script)
-            save_to_supabase(script, articles)
+            episode_id = save_to_supabase(script, articles)
             
             print("\nPreview of first 3 lines:")
             for line in script[:3]:
@@ -202,6 +246,11 @@ async def main():
             
             if final_audio:
                 print(f"Podcast generated successfully: {final_audio}")
+                if episode_id:
+                    print("Uploading audio to Supabase...")
+                    audio_url = upload_audio_to_supabase("podcast/output/episode.mp3", episode_id)
+                    if audio_url:
+                        update_episode_audio_url(episode_id, audio_url)
             else:
                 print("Failed to assemble episode.")
             
