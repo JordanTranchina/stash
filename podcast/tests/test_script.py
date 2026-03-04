@@ -51,11 +51,10 @@ class TestGenerateScript:
 
     def test_parses_clean_json_response(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-        mock_model = MagicMock()
-        mock_model.generate_content.return_value.text = json.dumps(SAMPLE_SCRIPT)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = json.dumps(SAMPLE_SCRIPT)
 
-        with patch("script.genai.configure"), \
-             patch("script.genai.GenerativeModel", return_value=mock_model):
+        with patch("script.genai.Client", return_value=mock_client):
             result = script.generate_script(SAMPLE_ARTICLES)
 
         assert result == SAMPLE_SCRIPT
@@ -64,22 +63,20 @@ class TestGenerateScript:
         """Gemini sometimes returns ```json ... ``` — we must strip that."""
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
         fenced = f"```json\n{json.dumps(SAMPLE_SCRIPT)}\n```"
-        mock_model = MagicMock()
-        mock_model.generate_content.return_value.text = fenced
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = fenced
 
-        with patch("script.genai.configure"), \
-             patch("script.genai.GenerativeModel", return_value=mock_model):
+        with patch("script.genai.Client", return_value=mock_client):
             result = script.generate_script(SAMPLE_ARTICLES)
 
         assert result == SAMPLE_SCRIPT
 
     def test_returns_none_on_gemini_exception(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = Exception("API error")
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
 
-        with patch("script.genai.configure"), \
-             patch("script.genai.GenerativeModel", return_value=mock_model):
+        with patch("script.genai.Client", return_value=mock_client):
             result = script.generate_script(SAMPLE_ARTICLES)
 
         assert result is None
