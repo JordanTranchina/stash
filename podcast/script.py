@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 import requests
 import google.generativeai as genai
 import asyncio
@@ -191,16 +192,44 @@ def upload_audio_to_supabase(file_path, episode_id):
         print(f"Error uploading audio to Supabase: {e}")
         return None
 
-def update_episode_audio_url(episode_id, audio_url):
-    """Updates the database record with the public audio URL."""
+def get_audio_metadata(file_path):
+    """Returns (duration_seconds, size_bytes) for an MP3 using ffprobe + os.path."""
+    size_bytes = os.path.getsize(file_path)
+    duration_seconds = None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        duration_seconds = int(float(result.stdout.decode().strip()))
+    except Exception as e:
+        print(f"Warning: could not probe audio duration: {e}")
+    return duration_seconds, size_bytes
+
+
+def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_bytes=None):
+    """Updates the database record with the audio URL, duration, and file size."""
     if not supabase_client:
         return False
-        
+
+    update_data = {"audio_url": audio_url}
+    if duration_seconds is not None:
+        update_data["duration_seconds"] = duration_seconds
+    if size_bytes is not None:
+        update_data["size_bytes"] = size_bytes
+
     try:
         supabase_client.table("podcast_episodes").update(
-            {"audio_url": audio_url}
+            update_data
         ).eq("id", episode_id).execute()
-        print(f"Updated database record for episode {episode_id} with audio URL.")
+        print(f"Updated episode {episode_id}: audio_url, duration={duration_seconds}s, size={size_bytes}B")
         return True
     except Exception as e:
         print(f"Error updating database with audio URL: {e}")
@@ -250,7 +279,8 @@ async def main():
                     print("Uploading audio to Supabase...")
                     audio_url = upload_audio_to_supabase("podcast/output/episode.mp3", episode_id)
                     if audio_url:
-                        update_episode_audio_url(episode_id, audio_url)
+                        duration_seconds, size_bytes = get_audio_metadata("podcast/output/episode.mp3")
+                        update_episode_audio_url(episode_id, audio_url, duration_seconds, size_bytes)
             else:
                 print("Failed to assemble episode.")
             

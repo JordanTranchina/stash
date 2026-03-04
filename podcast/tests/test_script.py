@@ -184,7 +184,8 @@ class TestUpdateEpisodeAudioUrl:
         script.supabase_client = original
         assert result is False
 
-    def test_calls_update_with_correct_args(self):
+    def test_calls_update_with_audio_url_only(self):
+        """When duration and size are None, only audio_url is in the payload."""
         mock_client = MagicMock()
         mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value = None
 
@@ -198,3 +199,52 @@ class TestUpdateEpisodeAudioUrl:
             {"audio_url": "https://cdn.example.com/ep.mp3"}
         )
         assert result is True
+
+    def test_includes_duration_and_size_when_provided(self):
+        """When duration and size are given, all three fields appear in the payload."""
+        mock_client = MagicMock()
+        mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value = None
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.update_episode_audio_url(
+            "ep-001", "https://cdn.example.com/ep.mp3",
+            duration_seconds=1234, size_bytes=5000000
+        )
+        script.supabase_client = original
+
+        mock_client.table.return_value.update.assert_called_with({
+            "audio_url": "https://cdn.example.com/ep.mp3",
+            "duration_seconds": 1234,
+            "size_bytes": 5000000,
+        })
+        assert result is True
+
+
+# ---------------------------------------------------------------------------
+# get_audio_metadata
+# ---------------------------------------------------------------------------
+
+class TestGetAudioMetadata:
+    def test_returns_size_and_duration_on_success(self, tmp_path):
+        fake_mp3 = tmp_path / "episode.mp3"
+        fake_mp3.write_bytes(b"x" * 4096)
+
+        mock_result = MagicMock()
+        mock_result.stdout = b"123.7\n"
+
+        with patch("script.subprocess.run", return_value=mock_result):
+            duration, size = script.get_audio_metadata(str(fake_mp3))
+
+        assert duration == 123
+        assert size == 4096
+
+    def test_returns_none_duration_when_ffprobe_fails(self, tmp_path):
+        fake_mp3 = tmp_path / "episode.mp3"
+        fake_mp3.write_bytes(b"x" * 2048)
+
+        with patch("script.subprocess.run", side_effect=Exception("ffprobe not found")):
+            duration, size = script.get_audio_metadata(str(fake_mp3))
+
+        assert duration is None
+        assert size == 2048
