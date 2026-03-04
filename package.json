@@ -18,6 +18,10 @@
       "**/tests/unit/**/*.test.js",
       "**/tests/e2e/**/*.test.js"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/.claude/worktrees/"
+    ],
     "transform": {}
   }
 }
