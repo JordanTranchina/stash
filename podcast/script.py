@@ -2,7 +2,8 @@ import os
 import json
 import subprocess
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import asyncio
 from pathlib import Path
 from datetime import datetime
@@ -61,13 +62,7 @@ def generate_script(articles):
         print("No articles to summarize.")
         return None
 
-    genai.configure(api_key=gemini_api_key)
-    
-    # Using Gemini Flash for reliability and speed
-    model = genai.GenerativeModel(
-        model_name="gemini-flash-latest",
-        system_instruction=SYSTEM_PROMPT
-    )
+    client = genai.Client(api_key=gemini_api_key)
 
     # Prepare article content for the prompt
     articles_payload = []
@@ -81,7 +76,13 @@ def generate_script(articles):
     prompt = f"Here are the articles to discuss today:\n\n{json.dumps(articles_payload, indent=2)}"
 
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+            ),
+        )
         
         # Clean up the response text in case Gemini adds markdown code blocks
         content = response.text.strip()
