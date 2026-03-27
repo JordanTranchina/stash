@@ -30,6 +30,7 @@ class StashApp {
     // Skip auth - go straight to main screen
     this.showMainScreen();
     this.loadData();
+    this.syncPendingShares();
 
     this.bindEvents();
     this.setupRealtime();
@@ -668,22 +669,55 @@ class StashApp {
     `;
   }
 
+  async syncPendingShares() {
+    if (!navigator.onLine) return;
+    let pending;
+    try {
+      pending = await window.StashDB.getPendingShares();
+    } catch (e) {
+      return;
+    }
+    if (!pending.length) return;
+
+    let synced = 0;
+    for (const { key, data } of pending) {
+      try {
+        const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
+          method: 'POST',
+          headers: {
+            'apikey': CONFIG.SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) {
+          await window.StashDB.deletePendingShare(key);
+          synced++;
+        }
+      } catch (e) {
+        // Leave in queue, try again next time
+      }
+    }
+    if (synced > 0) {
+      this.loadSaves();
+    }
+  }
+
   updateOnlineStatus() {
     const toast = document.getElementById('toast');
     const msg = document.getElementById('toast-message');
-    
+
     if (navigator.onLine) {
         msg.textContent = "Back online";
         toast.classList.remove('hidden');
         setTimeout(() => toast.classList.add('hidden'), 3000);
-        
-        // Synced? Maybe trigger a reload or sync
-        // For MVP, just let user know.
-        // If we want to be fancy, we could try to sync pending items here.
+
+        this.syncPendingShares();
     } else {
         msg.textContent = "You are offline. Showing cached content.";
         toast.classList.remove('hidden');
-        // Keep it visible? Or hide after 5s?
         setTimeout(() => toast.classList.add('hidden'), 5000);
     }
   }

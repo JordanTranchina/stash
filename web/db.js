@@ -73,5 +73,36 @@ window.StashDB = {
              transaction.oncomplete = () => resolve();
              transaction.onerror = () => reject(transaction.error);
         });
+    },
+
+    async getPendingShares() {
+        const db = await dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_PENDING], 'readonly');
+            const store = transaction.objectStore(STORE_PENDING);
+            const request = store.getAll();
+            const keyRequest = store.getAllKeys();
+            let results, keys;
+            request.onsuccess = () => {
+                results = request.result;
+                if (keys !== undefined) resolve(results.map((r, i) => ({ key: keys[i], data: r })));
+            };
+            keyRequest.onsuccess = () => {
+                keys = keyRequest.result;
+                if (results !== undefined) resolve(results.map((r, i) => ({ key: keys[i], data: r })));
+            };
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async deletePendingShare(key) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_PENDING], 'readwrite');
+        const store = transaction.objectStore(STORE_PENDING);
+        store.delete(key);
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
     }
 };
