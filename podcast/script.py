@@ -25,34 +25,97 @@ supabase_client: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# System prompt for Alex and Taylor
-SYSTEM_PROMPT = """
-You are the witty, insightful, and casual producers and hosts of "Listen Later," a personalized daily podcast. 
+# Default host personalities (used when the user has not customized them, issue #13).
+DEFAULT_PODCAST_PREFS = {
+    "host_a_name": "Alex",
+    "host_a_persona": "Confident, tech-savvy, fast-talking, slightly cynical but enthusiastic about good ideas.",
+    "host_b_name": "Taylor",
+    "host_b_persona": "Curious, witty, plays the \"straight man\" to the other host's intensity, focuses on the \"why this matters\" and human impact.",
+    "tone": "\"Hard Fork-esque\" — smart, accessible, and conversational.",
+}
+
+
+def fetch_podcast_preferences():
+    """Load the user's custom host personalities from user_preferences.
+
+    Returns a dict with host_a_name/persona, host_b_name/persona and tone,
+    falling back to DEFAULT_PODCAST_PREFS for any value that is unset.
+    """
+    prefs = dict(DEFAULT_PODCAST_PREFS)
+
+    if not supabase_client or not USER_ID:
+        return prefs
+
+    try:
+        res = (
+            supabase_client.table("user_preferences")
+            .select(
+                "podcast_host_a_name, podcast_host_a_persona, "
+                "podcast_host_b_name, podcast_host_b_persona, podcast_tone"
+            )
+            .eq("user_id", USER_ID)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        if rows:
+            row = rows[0]
+            mapping = {
+                "host_a_name": row.get("podcast_host_a_name"),
+                "host_a_persona": row.get("podcast_host_a_persona"),
+                "host_b_name": row.get("podcast_host_b_name"),
+                "host_b_persona": row.get("podcast_host_b_persona"),
+                "tone": row.get("podcast_tone"),
+            }
+            # Only override defaults with non-empty values.
+            for key, value in mapping.items():
+                if value:
+                    prefs[key] = value
+    except Exception as e:
+        print(f"Warning: could not load podcast preferences, using defaults: {e}")
+
+    return prefs
+
+
+def build_system_prompt(prefs):
+    """Construct the Gemini system prompt from the given host preferences."""
+    host_a = prefs["host_a_name"]
+    host_b = prefs["host_b_name"]
+    return f"""
+You are the witty, insightful, and casual producers and hosts of "Listen Later," a personalized daily podcast.
 Your goal is to summarize a set of articles stashed by the user.
 
 PERSONAS:
-- ALEX: Confident, tech-savvy, fast-talking, slightly cynical but enthusiastic about good ideas. 
-- TAYLOR: Curious, witty, plays the "straight man" to Alex's intensity, focuses on the "why this matters" and human impact.
+- {host_a.upper()}: {prefs["host_a_persona"]}
+- {host_b.upper()}: {prefs["host_b_persona"]}
 
 TONE:
-- "Hard Fork-esque" (smart, accessible, conversational).
+- {prefs["tone"]}
 - Don't just read summaries; analyze why the user might have saved these and how they relate to each other.
 - Use natural transitions between articles.
-- Avoid sounding like a dry news report. Use "Alex:" and "Taylor:" prefixes for dialogue.
+- Avoid sounding like a dry news report. Use "{host_a}:" and "{host_b}:" prefixes for dialogue.
 
 OUTPUT FORMAT:
-Return a JSON array of objects. Each object must have a "speaker" (Alex or Taylor) and "text" (their dialogue line).
+Return a JSON array of objects. Each object must have a "speaker" (exactly "{host_a}" or "{host_b}") and "text" (their dialogue line).
 Example:
 [
-  { "speaker": "Alex", "text": "Taylor, did you see this piece on local-first software?" },
-  { "speaker": "Taylor", "text": "I did! It's such a shift from the last decade of cloud-only thinking." }
+  {{ "speaker": "{host_a}", "text": "{host_b}, did you see this piece on local-first software?" }},
+  {{ "speaker": "{host_b}", "text": "I did! It's such a shift from the last decade of cloud-only thinking." }}
 ]
 
 Do not include any other text, markdown, or explanations. Only return the raw JSON array.
 """
 
-def generate_script(articles):
-    """Generate a conversational script based on the provided articles."""
+
+# Backwards-compatible default prompt (Alex/Taylor) for callers/tests that import it.
+SYSTEM_PROMPT = build_system_prompt(DEFAULT_PODCAST_PREFS)
+
+def generate_script(articles, prefs=None):
+    """Generate a conversational script based on the provided articles.
+
+    If ``prefs`` is None the user's custom host personalities are loaded from
+    Supabase (falling back to the Alex/Taylor defaults).
+    """
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     if not gemini_api_key:
         print("Error: GEMINI_API_KEY not found. Please set it in your environment.")
@@ -61,6 +124,10 @@ def generate_script(articles):
     if not articles:
         print("No articles to summarize.")
         return None
+
+    if prefs is None:
+        prefs = fetch_podcast_preferences()
+    system_prompt = build_system_prompt(prefs)
 
     client = genai.Client(api_key=gemini_api_key)
 
@@ -80,7 +147,7 @@ def generate_script(articles):
             model="gemini-2.0-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
+                system_instruction=system_prompt,
             ),
         )
         
@@ -97,22 +164,29 @@ def generate_script(articles):
         print(f"Error generating script: {e}")
         return None
 
-async def generate_audio(script, output_dir="podcast/temp_audio"):
-    """Generate audio files for each line of the script using edge-tts."""
+# Voices assigned to host slot A and slot B respectively.
+VOICE_A = "en-US-AndrewNeural"  # Confident, male
+VOICE_B = "en-US-AvaNeural"     # Friendly, female
+
+
+async def generate_audio(script, output_dir="podcast/temp_audio", host_a_name="Alex"):
+    """Generate audio files for each line of the script using edge-tts.
+
+    ``host_a_name`` is the speaker mapped to VOICE_A; every other speaker gets VOICE_B.
+    """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     audio_files = []
-    
+
     print(f"Generating audio for {len(script)} lines...")
-    
+
     for i, line in enumerate(script):
-        speaker = line.get("speaker", "Alex")
+        speaker = line.get("speaker", host_a_name)
         text = line.get("text", "")
-        
-        # Select voice based on speaker
-        # Alex: Andrew (Male), Taylor: Ava (Female)
-        voice = "en-US-AndrewNeural" if speaker == "Alex" else "en-US-AvaNeural"
+
+        # Select voice by host slot: host A -> VOICE_A, everyone else -> VOICE_B
+        voice = VOICE_A if speaker == host_a_name else VOICE_B
         
         filename = output_path / f"line_{i:03d}.mp3"
         communicate = edge_tts.Communicate(text, voice)
@@ -250,19 +324,22 @@ async def main():
     articles = fetch_recent_articles(limit=3) # Limit to 3 for testing
     
     if articles:
-        print(f"Generating script for {len(articles)} articles...")
-        script = generate_script(articles)
-        
+        # Load custom host personalities once and reuse for script + audio (#13)
+        prefs = fetch_podcast_preferences()
+        print(f"Generating script for {len(articles)} articles "
+              f"(hosts: {prefs['host_a_name']} & {prefs['host_b_name']})...")
+        script = generate_script(articles, prefs=prefs)
+
         if script:
             save_script_locally(script)
             episode_id = save_to_supabase(script, articles)
-            
+
             print("\nPreview of first 3 lines:")
             for line in script[:3]:
                 print(f"{line['speaker']}: {line['text']}")
-                
+
             # Generate Audio
-            await generate_audio(script)
+            await generate_audio(script, host_a_name=prefs["host_a_name"])
 
             # Assemble Episode
             print("Assembling episode...")

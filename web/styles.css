@@ -1240,16 +1240,25 @@ select {
   color: var(--text);
 }
 
-.digest-form input[type="email"] {
+.digest-form input[type="email"],
+.digest-form input[type="text"],
+.digest-form textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 14px;
   background: var(--bg);
   color: var(--text);
+  font-family: inherit;
 }
 
-.digest-form input[type="email"]:focus {
+.digest-form textarea {
+  resize: vertical;
+}
+
+.digest-form input[type="email"]:focus,
+.digest-form input[type="text"]:focus,
+.digest-form textarea:focus {
   outline: none;
   border-color: var(--primary);
 }

@@ -83,6 +83,77 @@ class TestGenerateScript:
 
 
 # ---------------------------------------------------------------------------
+# Custom host personalities (#13)
+# ---------------------------------------------------------------------------
+
+class TestPodcastPreferences:
+    def test_defaults_when_no_supabase_client(self, monkeypatch):
+        monkeypatch.setattr(script, "supabase_client", None)
+        prefs = script.fetch_podcast_preferences()
+        assert prefs == script.DEFAULT_PODCAST_PREFS
+
+    def test_custom_personas_from_db(self, monkeypatch):
+        mock_client = MagicMock()
+        (mock_client.table.return_value.select.return_value
+            .eq.return_value.limit.return_value.execute.return_value.data) = [{
+                "podcast_host_a_name": "Sam",
+                "podcast_host_a_persona": "Dry and precise.",
+                "podcast_host_b_name": "Kai",
+                "podcast_host_b_persona": "Warm and rambly.",
+                "podcast_tone": "Late-night radio.",
+            }]
+        monkeypatch.setattr(script, "supabase_client", mock_client)
+        monkeypatch.setattr(script, "USER_ID", "user-001")
+
+        prefs = script.fetch_podcast_preferences()
+        assert prefs["host_a_name"] == "Sam"
+        assert prefs["host_b_name"] == "Kai"
+        assert prefs["tone"] == "Late-night radio."
+
+    def test_partial_override_falls_back_to_defaults(self, monkeypatch):
+        mock_client = MagicMock()
+        (mock_client.table.return_value.select.return_value
+            .eq.return_value.limit.return_value.execute.return_value.data) = [{
+                "podcast_host_a_name": "Sam",
+                "podcast_host_a_persona": None,
+                "podcast_host_b_name": None,
+                "podcast_host_b_persona": None,
+                "podcast_tone": None,
+            }]
+        monkeypatch.setattr(script, "supabase_client", mock_client)
+        monkeypatch.setattr(script, "USER_ID", "user-001")
+
+        prefs = script.fetch_podcast_preferences()
+        assert prefs["host_a_name"] == "Sam"
+        assert prefs["host_b_name"] == "Taylor"  # default retained
+        assert prefs["host_a_persona"] == script.DEFAULT_PODCAST_PREFS["host_a_persona"]
+
+    def test_build_system_prompt_uses_host_names(self):
+        prefs = dict(script.DEFAULT_PODCAST_PREFS,
+                     host_a_name="Sam", host_b_name="Kai")
+        prompt = script.build_system_prompt(prefs)
+        assert "SAM:" in prompt and "KAI:" in prompt
+        assert '"speaker" (exactly "Sam" or "Kai")' in prompt
+
+    def test_generate_script_uses_supplied_prefs(self, monkeypatch):
+        """When prefs are passed explicitly, the DB is not queried and host names
+        appear in the system_instruction sent to Gemini."""
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        prefs = dict(script.DEFAULT_PODCAST_PREFS, host_a_name="Sam", host_b_name="Kai")
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = json.dumps(SAMPLE_SCRIPT)
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.fetch_podcast_preferences") as mock_fetch:
+            script.generate_script(SAMPLE_ARTICLES, prefs=prefs)
+
+        mock_fetch.assert_not_called()
+        sent_config = mock_client.models.generate_content.call_args[1]["config"]
+        assert "SAM:" in sent_config.system_instruction
+
+
+# ---------------------------------------------------------------------------
 # save_to_supabase
 # ---------------------------------------------------------------------------
 
