@@ -233,6 +233,24 @@
     const checkmark = document.getElementById('checkmark');
     const overlayText = document.getElementById('overlay-text');
 
+    // Ensure the Service Worker controls this page so Background Sync can fire.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+
+    // Ask the Service Worker to retry the pending queue once connectivity returns.
+    // Falls back silently on browsers without the Background Sync API — app.js's
+    // syncPendingShares() still drains the queue on next app open / online event.
+    async function requestBackgroundSync() {
+      if (!('serviceWorker' in navigator) || !('SyncManager' in self)) return;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.sync.register('sync-pending-saves');
+      } catch (e) {
+        // Background Sync unavailable; fallback handles it.
+      }
+    }
+
     // 1. Common Save Logic
     async function handleSave(data, isAuto = false) {
       if (!isAuto) {
@@ -267,6 +285,7 @@
         // Fallback to IndexedDB
         try {
           await window.StashDB.savePendingShare(data);
+          requestBackgroundSync(); // retry automatically when connectivity returns
           handleSuccess(isAuto, true); // true = offline success
           return true;
         } catch (dbErr) {
