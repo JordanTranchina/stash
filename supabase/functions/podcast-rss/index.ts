@@ -33,11 +33,14 @@ serve(async () => {
 
     const { data: episodes, error } = await supabase
       .from("podcast_episodes")
-      .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at")
+      .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters")
       .order("created_at", { ascending: false })
       .limit(10);
 
     if (error) throw error;
+
+    // Base URL for the companion chapters endpoint (Podcasting 2.0 chapters).
+    const chaptersBase = `${Deno.env.get("SUPABASE_URL")}/functions/v1/podcast-chapters`;
 
     const items = (episodes ?? [])
       .map((ep) => {
@@ -48,6 +51,12 @@ serve(async () => {
         const enclosureLength = ep.size_bytes ?? 0;
         const audioUrl = escapeXml(ep.audio_url ?? "");
 
+        // Only advertise chapters when the episode actually has them.
+        const hasChapters = Array.isArray(ep.chapters) && ep.chapters.length > 0;
+        const chaptersTag = hasChapters
+          ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}`)}" type="application/json+chapters"/>`
+          : "";
+
         return `    <item>
       <title>${title}</title>
       <description>${description}</description>
@@ -55,7 +64,7 @@ serve(async () => {
       <guid isPermaLink="false">${ep.id}</guid>
       <enclosure url="${audioUrl}" length="${enclosureLength}" type="audio/mpeg"/>
       <itunes:duration>${duration}</itunes:duration>
-      <itunes:explicit>false</itunes:explicit>
+      <itunes:explicit>false</itunes:explicit>${chaptersTag}
     </item>`;
       })
       .join("\n");
@@ -63,7 +72,8 @@ serve(async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
-  xmlns:content="http://purl.org/rss/modules/content/">
+  xmlns:content="http://purl.org/rss/modules/content/"
+  xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
     <title>Stash: Listen Later</title>
     <link>https://stash.app</link>

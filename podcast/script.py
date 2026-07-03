@@ -41,11 +41,16 @@ TONE:
 - Avoid sounding like a dry news report. Use "Alex:" and "Taylor:" prefixes for dialogue.
 
 OUTPUT FORMAT:
-Return a JSON array of objects. Each object must have a "speaker" (Alex or Taylor) and "text" (their dialogue line).
+Return a JSON array of objects. Each object must have:
+- "speaker": "Alex" or "Taylor"
+- "text": their dialogue line
+- "article_index": the 0-based index (into the provided articles list) of the article this line is primarily about, or null for the intro, outro, and cross-article transitions.
+Group the lines so all discussion of one article is contiguous, and move through the articles in order.
 Example:
 [
-  { "speaker": "Alex", "text": "Taylor, did you see this piece on local-first software?" },
-  { "speaker": "Taylor", "text": "I did! It's such a shift from the last decade of cloud-only thinking." }
+  { "speaker": "Alex", "text": "Welcome back to Listen Later!", "article_index": null },
+  { "speaker": "Alex", "text": "Taylor, did you see this piece on local-first software?", "article_index": 0 },
+  { "speaker": "Taylor", "text": "I did! It's such a shift from the last decade of cloud-only thinking.", "article_index": 0 }
 ]
 
 Do not include any other text, markdown, or explanations. Only return the raw JSON array.
@@ -64,10 +69,11 @@ def generate_script(articles):
 
     client = genai.Client(api_key=gemini_api_key)
 
-    # Prepare article content for the prompt
+    # Prepare article content for the prompt (index lets the model tag lines for chapters)
     articles_payload = []
-    for art in articles:
+    for i, art in enumerate(articles):
         articles_payload.append({
+            "index": i,
             "title": art["title"],
             "site": art["site_name"],
             "content": art["content"]
@@ -125,6 +131,62 @@ async def generate_audio(script, output_dir="podcast/temp_audio"):
     
     print(f"Generated {len(audio_files)} audio clips in {output_dir}")
     return audio_files
+
+def compute_line_durations(audio_files):
+    """Probe each per-line audio clip and return its duration in seconds."""
+    durations = []
+    for path in audio_files:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    path,
+                ],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+            )
+            durations.append(float(result.stdout.decode().strip()))
+        except Exception as e:
+            print(f"Warning: could not probe duration for {path}: {e}")
+            durations.append(0.0)
+    return durations
+
+
+def build_chapters(script, durations, articles):
+    """Build chapter markers (#14) mapping playback time to the article discussed.
+
+    Each script line carries an optional 0-based ``article_index``. The first line
+    of each article opens a chapter at that line's cumulative start time, titled
+    with the article title. A leading "Intro" chapter is added when the episode
+    opens with non-article lines. Returns [] when no article lines are tagged.
+    """
+    chapters = []
+    seen = set()
+    cumulative = 0.0
+
+    for i, line in enumerate(script):
+        idx = line.get("article_index")
+        if isinstance(idx, str) and idx.strip().isdigit():
+            idx = int(idx)
+
+        if isinstance(idx, int) and 0 <= idx < len(articles) and idx not in seen:
+            title = articles[idx].get("title") or f"Article {idx + 1}"
+            chapters.append({"startTime": round(cumulative, 3), "title": title})
+            seen.add(idx)
+
+        cumulative += durations[i] if i < len(durations) else 0.0
+
+    if not chapters:
+        return []
+
+    # Ensure the first chapter starts at 0 (add an Intro if the episode opens
+    # with untagged lines before the first article).
+    if chapters[0]["startTime"] > 0.5:
+        chapters.insert(0, {"startTime": 0.0, "title": "Intro"})
+
+    return chapters
+
 
 def save_to_supabase(script, articles):
     """Save the generated script and metadata to Supabase."""
@@ -215,8 +277,9 @@ def get_audio_metadata(file_path):
     return duration_seconds, size_bytes
 
 
-def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_bytes=None):
-    """Updates the database record with the audio URL, duration, and file size."""
+def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_bytes=None,
+                             chapters=None):
+    """Updates the database record with the audio URL, duration, size, and chapters."""
     if not supabase_client:
         return False
 
@@ -225,6 +288,8 @@ def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_
         update_data["duration_seconds"] = duration_seconds
     if size_bytes is not None:
         update_data["size_bytes"] = size_bytes
+    if chapters is not None:
+        update_data["chapters"] = chapters
 
     try:
         supabase_client.table("podcast_episodes").update(
@@ -262,7 +327,14 @@ async def main():
                 print(f"{line['speaker']}: {line['text']}")
                 
             # Generate Audio
-            await generate_audio(script)
+            audio_files = await generate_audio(script)
+
+            # Build chapters (#14) from per-line durations and article tags
+            line_durations = compute_line_durations(audio_files)
+            chapters = build_chapters(script, line_durations, articles)
+            total_duration = sum(line_durations)
+            if chapters:
+                print(f"Built {len(chapters)} chapters.")
 
             # Assemble Episode
             print("Assembling episode...")
@@ -272,8 +344,11 @@ async def main():
                 "album": "Stash Podcast",
                 "description": "Discussing: " + ", ".join([art["title"] for art in articles])
             }
-            final_audio = assemble_episode("podcast/temp_audio", "podcast/output/episode.mp3", metadata)
-            
+            final_audio = assemble_episode(
+                "podcast/temp_audio", "podcast/output/episode.mp3", metadata,
+                chapters=chapters, total_duration=total_duration,
+            )
+
             if final_audio:
                 print(f"Podcast generated successfully: {final_audio}")
                 if episode_id:
@@ -281,7 +356,10 @@ async def main():
                     audio_url = upload_audio_to_supabase("podcast/output/episode.mp3", episode_id)
                     if audio_url:
                         duration_seconds, size_bytes = get_audio_metadata("podcast/output/episode.mp3")
-                        update_episode_audio_url(episode_id, audio_url, duration_seconds, size_bytes)
+                        update_episode_audio_url(
+                            episode_id, audio_url, duration_seconds, size_bytes,
+                            chapters=chapters or None,
+                        )
             else:
                 print("Failed to assemble episode.")
             
