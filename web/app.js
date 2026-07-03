@@ -790,6 +790,7 @@ class StashApp {
       kindle: 'Kindle Highlights',
       archived: 'Archived',
       stats: 'Stats',
+      podcasts: 'Podcasts',
     };
     document.getElementById('view-title').textContent = titles[view] || 'Saves';
 
@@ -797,9 +798,79 @@ class StashApp {
       this.showStats();
     } else if (view === 'kindle') {
       this.loadKindleHighlights();
+    } else if (view === 'podcasts') {
+      this.loadPodcasts();
     } else {
       this.loadSaves();
     }
+  }
+
+  // Podcasts view (Listen Later, #12)
+  async loadPodcasts() {
+    const container = document.getElementById('saves-container');
+    const loading = document.getElementById('loading');
+    const empty = document.getElementById('empty-state');
+
+    empty.classList.add('hidden');
+    loading.classList.remove('hidden');
+    container.innerHTML = '';
+
+    const { data, error } = await this.supabase
+      .from('podcast_episodes')
+      .select('id, title, description, audio_url, duration_seconds, created_at')
+      .order('created_at', { ascending: false });
+
+    loading.classList.add('hidden');
+
+    const episodes = (!error && data) ? data : [];
+    const generateBtn = `
+      <a class="btn primary podcast-generate-btn" href="${CONFIG.PODCAST_WORKFLOW_URL}" target="_blank" rel="noopener"
+         title="Opens the GitHub Actions workflow — click 'Run workflow' to generate a new episode now.">
+        🎙️ Generate Podcast Now
+      </a>`;
+
+    if (episodes.length === 0) {
+      container.innerHTML = `
+        <div class="podcasts-view">
+          <div class="podcasts-header">
+            <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast. Subscribe with the RSS feed in any podcast app, or generate a new episode on demand.</p>
+            ${generateBtn}
+          </div>
+          <div class="podcasts-empty">
+            <div class="empty-icon">🎧</div>
+            <h3>No episodes yet</h3>
+            <p>Generate your first episode, or wait for the daily "Morning Brief" to run.</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const cards = episodes.map(ep => {
+      const date = new Date(ep.created_at).toLocaleDateString('en-US', {
+        month: 'long', day: 'numeric', year: 'numeric'
+      });
+      const duration = ep.duration_seconds ? this.formatTime(ep.duration_seconds) : '';
+      return `
+        <div class="podcast-episode" data-id="${ep.id}">
+          <div class="podcast-episode-header">
+            <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
+            <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
+          </div>
+          ${ep.description ? `<div class="podcast-episode-desc">${this.escapeHtml(ep.description)}</div>` : ''}
+          ${ep.audio_url
+            ? `<audio class="podcast-audio" controls preload="none" src="${this.escapeHtml(ep.audio_url)}"></audio>`
+            : `<div class="podcast-episode-pending">⏳ Audio is still being generated…</div>`}
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="podcasts-view">
+        <div class="podcasts-header">
+          <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast. Subscribe with the RSS feed in any podcast app, or generate a new episode on demand.</p>
+          ${generateBtn}
+        </div>
+        <div class="podcasts-list">${cards}</div>
+      </div>`;
   }
 
   async search(query) {
