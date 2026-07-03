@@ -31,7 +31,10 @@ const dbPromise = new Promise((resolve, reject) => {
     };
 });
 
-window.StashDB = {
+// Exposed on `self` (not `window`) so this file can be imported into the
+// Service Worker via importScripts() for Background Sync, while remaining
+// accessible as window.StashDB in page contexts (self === window there).
+self.StashDB = {
     async getArticles() {
         const db = await dbPromise;
         return new Promise((resolve, reject) => {

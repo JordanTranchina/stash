@@ -669,8 +669,25 @@ class StashApp {
     `;
   }
 
+  // Ask the Service Worker to retry the pending-save queue when connectivity
+  // returns. No-op on browsers without the Background Sync API; syncPendingShares
+  // remains the immediate fallback on app open / online.
+  async requestBackgroundSync() {
+    if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.sync.register('sync-pending-saves');
+    } catch (e) {
+      // Background Sync unavailable; ignore.
+    }
+  }
+
   async syncPendingShares() {
-    if (!navigator.onLine) return;
+    if (!navigator.onLine) {
+      // Offline: hand off to Background Sync so queued saves retry later.
+      this.requestBackgroundSync();
+      return;
+    }
     let pending;
     try {
       pending = await window.StashDB.getPendingShares();
