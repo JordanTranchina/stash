@@ -264,6 +264,25 @@ class StashApp {
       this.updateDigestOptionsState();
     });
 
+    // Podcast Settings Modal (host personalities)
+    const podcastModal = document.getElementById('podcast-modal');
+
+    document.getElementById('podcast-settings-btn').addEventListener('click', () => {
+      this.showPodcastModal();
+    });
+    podcastModal.querySelector('.modal-overlay').addEventListener('click', () => {
+      this.hidePodcastModal();
+    });
+    podcastModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+      this.hidePodcastModal();
+    });
+    document.getElementById('podcast-cancel-btn').addEventListener('click', () => {
+      this.hidePodcastModal();
+    });
+    document.getElementById('podcast-save-btn').addEventListener('click', () => {
+      this.savePodcastPreferences();
+    });
+
     // PWA: Online/Offline Status
     window.addEventListener('online', () => this.updateOnlineStatus());
     window.addEventListener('offline', () => this.updateOnlineStatus());
@@ -1680,6 +1699,84 @@ class StashApp {
 
     } catch (error) {
       console.error('Error saving digest preferences:', error);
+      status.textContent = 'Error saving preferences. Please try again.';
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Settings';
+    }
+  }
+
+  // Podcast Settings Methods (custom host personalities, #13)
+  showPodcastModal() {
+    const modal = document.getElementById('podcast-modal');
+    modal.classList.remove('hidden');
+    this.loadPodcastPreferences();
+  }
+
+  hidePodcastModal() {
+    const modal = document.getElementById('podcast-modal');
+    modal.classList.add('hidden');
+    document.getElementById('podcast-status').classList.add('hidden');
+  }
+
+  async loadPodcastPreferences() {
+    try {
+      const { data, error } = await this.supabase
+        .from('user_preferences')
+        .select('podcast_host_a_name, podcast_host_a_persona, podcast_host_b_name, podcast_host_b_persona, podcast_tone')
+        .eq('user_id', this.user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
+        throw error;
+      }
+
+      const prefs = data || {};
+      document.getElementById('podcast-host-a-name').value = prefs.podcast_host_a_name || '';
+      document.getElementById('podcast-host-a-persona').value = prefs.podcast_host_a_persona || '';
+      document.getElementById('podcast-host-b-name').value = prefs.podcast_host_b_name || '';
+      document.getElementById('podcast-host-b-persona').value = prefs.podcast_host_b_persona || '';
+      document.getElementById('podcast-tone').value = prefs.podcast_tone || '';
+    } catch (error) {
+      console.error('Error loading podcast preferences:', error);
+    }
+  }
+
+  async savePodcastPreferences() {
+    const status = document.getElementById('podcast-status');
+    const saveBtn = document.getElementById('podcast-save-btn');
+
+    // Empty string -> null so the pipeline falls back to defaults.
+    const clean = (id) => document.getElementById(id).value.trim() || null;
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      const { error } = await this.supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: this.user.id,
+          podcast_host_a_name: clean('podcast-host-a-name'),
+          podcast_host_a_persona: clean('podcast-host-a-persona'),
+          podcast_host_b_name: clean('podcast-host-b-name'),
+          podcast_host_b_persona: clean('podcast-host-b-persona'),
+          podcast_tone: clean('podcast-tone'),
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (error) throw error;
+
+      status.textContent = 'Saved! Your next podcast will use these hosts.';
+      status.className = 'digest-status success';
+      status.classList.remove('hidden');
+
+      setTimeout(() => this.hidePodcastModal(), 1500);
+    } catch (error) {
+      console.error('Error saving podcast preferences:', error);
       status.textContent = 'Error saving preferences. Please try again.';
       status.className = 'digest-status error';
       status.classList.remove('hidden');
