@@ -11,7 +11,7 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 - **Kindle Sync** - Import highlights from your Kindle library
 - **Full-Text Search** - Find anything you've saved
 - **Text-to-Speech** - Basic audio generation (Edge TTS)
-- **AI Podcast** - Turn articles into a conversational podcast (Planned)
+- **Listen Later** - Turn your saved articles into a conversational AI podcast with an RSS feed
 - **iOS Shortcut** - Save from Safari on iPhone/iPad
 - **Bookmarklet** - Works in any browser
 
@@ -51,13 +51,23 @@ stash/
 - **Backend**: Supabase (PostgreSQL + REST API)
 - **Hosting**: Any static host (Vercel, Netlify, GitHub Pages)
 
-## Roadmap
+## Listen Later (AI Podcast)
 
-**Listen Later** (AI Podcast) is currently in development. This feature will evolve the basic TTS functionality into a full-blown conversational podcast generator using LLMs. See [Product Spec.md](Product%20Spec.md) for details.
+**Listen Later** turns your saved articles into a two-host conversational podcast, distributed as a standard RSS feed you can subscribe to in any podcast app. A daily GitHub Action extracts recent unarchived articles, an LLM writes the script, Edge TTS voices the hosts, and the stitched MP3 (with per-article chapters) is published to Supabase Storage. You can also customize the host personalities or generate an episode on demand from the app. See [Product Spec.md](documentation/Product%20Spec.md) for details.
 
 ## Screenshots
 
-_Coming soon_
+### Your saves
+![All saves](documentation/screenshots/01-all-saves.png)
+
+### Reading view with text-to-speech
+![Reading pane](documentation/screenshots/02-reading-pane.png)
+
+### Listen Later podcast feed
+![Podcasts view](documentation/screenshots/03-podcasts.png)
+
+### Custom host personalities
+![Podcast settings](documentation/screenshots/04-podcast-settings.png)
 
 ## License
 
