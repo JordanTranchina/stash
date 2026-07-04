@@ -153,6 +153,20 @@
       color: #4b5563;
     }
 
+    .view-in-stash {
+      margin-top: 24px;
+      width: auto;
+      padding: 12px 28px;
+      background: #10b981; /* Green, matching the success checkmark */
+      text-decoration: none;
+      display: inline-block;
+      text-align: center;
+    }
+
+    .view-in-stash:active {
+      background: #059669;
+    }
+
     .checkmark {
       width: 60px;
       height: 60px;
@@ -200,6 +214,9 @@
       <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
     </svg>
     <div class="overlay-text" id="overlay-text">Saving...</div>
+    <!-- Shown on success so the user can jump straight into Stash to read
+         what they just saved (in-app browsers / PWAs often can't auto-close). -->
+    <a id="view-in-stash" class="btn view-in-stash hidden" href="/">View in Stash</a>
   </div>
 
   <!-- Standard Form -->
@@ -233,6 +250,7 @@
     const spinner = document.getElementById('spinner');
     const checkmark = document.getElementById('checkmark');
     const overlayText = document.getElementById('overlay-text');
+    const viewInStashBtn = document.getElementById('view-in-stash');
 
     // Ensure the Service Worker controls this page so Background Sync can fire.
     if ('serviceWorker' in navigator) {
@@ -310,30 +328,21 @@
         spinner.classList.add('hidden');
         checkmark.classList.remove('hidden');
         overlayText.textContent = msg;
-        
+
+        // Always surface a clear "View in Stash" action. Share-sheet custom
+        // tabs can close themselves, but iOS PWAs / in-app browsers usually
+        // can't — so we give the user an explicit way into the app.
+        viewInStashBtn.classList.remove('hidden');
+
         setTimeout(() => {
-          // Attempt to close window or return
+          // Try to close the window (works for share-sheet Custom Tabs and
+          // script-opened windows). Where it can't, the "View in Stash"
+          // button above stays put so the user is never stranded.
           try {
-             window.close(); // Works in many PWAs / Custom Tabs
+             window.close();
           } catch(e) {}
-          
-          // Fallback if window doesn't close
-          if (document.visibilityState !== 'hidden') {
-             try {
-                window.history.back(); // Return to previous app
-             } catch(e) {}
-          }
-          
-          // Ultimate fallback - just in case neither worked after another second
-          setTimeout(() => {
-             overlayText.innerHTML = `
-               ${msg}<br><br>
-               <button class="btn" style="background:#10b981; width:auto; padding: 10px 24px;" onclick="window.location.href='/'">Go to Stash</button>
-             `;
-          }, 1000);
-          
         }, 1200);
-        
+
       } else {
         // Form success
         statusEl.textContent = msg;
