@@ -62,9 +62,31 @@ function findRedirectTarget(html: string, currentUrl: string): string | null {
   return null;
 }
 
+// Class/id/data-track fragments that mark recirculation, promo and chrome
+// blocks (related-article teasers, "popular stories", newsletter/subscribe
+// prompts, share bars, comments). These modules routinely contain text
+// truncated with "…" that Readability otherwise swallows into the article body.
+const NOISE_RE = /(?:^|[\s_-])(related|popular|recirc|read-?more|more-?stories|newsletter|subscribe|promo|social|share-?(?:bar|button|tool)|comment|disqus|trending|recommend|outbrain|taboola|linkback|sidebar)(?:[\s_-]|$)/i;
+
+// Strip obvious non-article nodes from the DOM before Readability scores it, so
+// sidebars and "you might also like" teaser cards don't get merged into the
+// content. Conservative on purpose: only clear chrome tags and elements whose
+// id/class/data-track advertise themselves as recirculation/promo.
+function removeNoise(document: any) {
+  document
+    .querySelectorAll("script,style,noscript,iframe,svg,form,nav,aside,footer")
+    .forEach((el: any) => el.remove());
+
+  document.querySelectorAll("[class],[id],[data-track]").forEach((el: any) => {
+    const signature = `${el.getAttribute("class") || ""} ${el.getAttribute("id") || ""} ${el.getAttribute("data-track") || ""}`;
+    if (NOISE_RE.test(signature)) el.remove();
+  });
+}
+
 // Parse HTML and extract article data
 function extractArticle(html: string, url: string) {
   const { document } = parseHTML(html);
+  removeNoise(document);
   const reader = new Readability(document);
   const article = reader.parse();
 
@@ -94,7 +116,9 @@ function extractArticle(html: string, url: string) {
     const { document: articleDoc } = parseHTML(article.content);
     const paragraphs: string[] = [];
     articleDoc.querySelectorAll("p").forEach((p: any) => {
-      const text = p.textContent?.trim();
+      // Recirculation teaser cards pack several sentences into one node with
+      // carriage-return separators; normalize them so text never runs together.
+      const text = p.textContent?.replace(/\r\n?/g, " ").replace(/\s+/g, " ").trim();
       if (text) paragraphs.push(text);
     });
     content = paragraphs.join("\n\n");
