@@ -22,5 +22,6 @@
 - [ ] **On-Demand Podcast**: Add UI button to trigger podcast generation immediately. (Ref: Product Spec 6)
 - [ ] **Custom Host Personalities**: Settings to configure host "vibes". (Ref: Product Spec 6)
 - [ ] **Interactive RSS Chapters**: Add chapter markers to MP3s. (Ref: Product Spec 6)
+- [x] **YouTube Transcript Ingestion**: Resolve saved YouTube URLs (e.g. from Watch Later) to transcripts and feed them into Listen Later like articles. (`podcast/youtube.py`, `podcast/extract.py`)
 - [ ] **Extension E2E Tests**: Set up Playwright for extension testing. (Ref: Product Spec 6)
 - [ ] **Documentation Screenshots**: Add screenshots to `README.md`. (Ref: README)

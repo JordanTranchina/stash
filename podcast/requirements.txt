@@ -4,3 +4,4 @@ requests
 edge-tts
 aiofiles
 supabase
+youtube-transcript-api
