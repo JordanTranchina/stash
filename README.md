@@ -12,6 +12,7 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 - **Full-Text Search** - Find anything you've saved
 - **Text-to-Speech** - Basic audio generation (Edge TTS)
 - **Listen Later** - Turn your saved articles into a conversational AI podcast with an RSS feed
+- **YouTube Transcripts** - Save a YouTube video and its transcript becomes a Listen Later input, just like an article
 - **iOS Shortcut** - Save from Safari on iPhone/iPad
 - **Bookmarklet** - Works in any browser
 
@@ -54,6 +55,14 @@ stash/
 ## Listen Later (AI Podcast)
 
 **Listen Later** turns your saved articles into a two-host conversational podcast, distributed as a standard RSS feed you can subscribe to in any podcast app. A daily GitHub Action extracts recent unarchived articles, an LLM writes the script, Edge TTS voices the hosts, and the stitched MP3 (with per-article chapters) is published to Supabase Storage. You can also customize the host personalities or generate an episode on demand from the app. See [Product Spec.md](documentation/Product%20Spec.md) for details.
+
+### YouTube videos as podcast inputs
+
+Save a YouTube video to Stash (extension, bookmarklet, or the iOS share sheet — the same way you save an article) and Listen Later will fetch the video's transcript and feed it to the hosts alongside your articles. This is the practical way to funnel your "Watch Later" backlog into the podcast: YouTube no longer exposes the Watch Later playlist through any API, so instead of reading that playlist directly, Stash ingests any YouTube URL you save.
+
+- During extraction (`podcast/extract.py`) each save's URL is checked; YouTube links are resolved to a transcript via [`youtube-transcript-api`](https://pypi.org/project/youtube-transcript-api/).
+- The transcript is cached back onto the save (`content`), so it is fetched once and then reused by future episodes and the reading view.
+- If a video has no captions — or YouTube rate-limits the request (common from datacenter IPs like GitHub Actions runners) — the pipeline degrades gracefully: it falls back to whatever content the save already had and keeps generating the episode. See the library's ["Working around IP bans"](https://github.com/jdepoix/youtube-transcript-api#working-around-ip-bans-requestblocked-or-ipblocked-exception) notes if you need a proxy.
 
 ## Screenshots
 

@@ -129,3 +129,91 @@ class TestFetchRecentArticles:
             articles = extract.fetch_recent_articles()
 
         assert articles[0]["site_name"] == "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# fetch_recent_articles – YouTube ingestion
+# ---------------------------------------------------------------------------
+
+MOCK_YOUTUBE_SAVE = {
+    "id": "yt-1",
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "title": "A Great Talk",
+    "content": "",  # page scraper couldn't grab the spoken words
+    "excerpt": "",
+    "site_name": None,
+    "created_at": "2026-02-20T10:00:00Z",
+}
+
+
+class TestYouTubeIngestion:
+    def _patch_env(self, monkeypatch):
+        # extract.py reads these into module globals at import time, so set the
+        # attributes directly (env vars alone wouldn't reach the already-loaded
+        # module) to exercise the transcript cache write.
+        monkeypatch.setattr(extract, "SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setattr(extract, "SUPABASE_KEY", "fake-key")
+        monkeypatch.setattr(extract, "USER_ID", "user-001")
+
+    def test_transcript_used_as_content_for_youtube_save(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [dict(MOCK_YOUTUBE_SAVE)]
+
+        with patch("extract.requests.get", return_value=mock_response), \
+             patch("extract.requests.patch") as mock_patch, \
+             patch("extract.fetch_transcript_for_url", return_value="the spoken transcript"):
+            articles = extract.fetch_recent_articles()
+
+        assert articles[0]["content"] == "the spoken transcript"
+        # site_name defaults to YouTube when the save has none.
+        assert articles[0]["site_name"] == "YouTube"
+        # Transcript is cached back to the save.
+        mock_patch.assert_called_once()
+
+    def test_stored_content_reused_when_long_enough(self, monkeypatch):
+        # A YouTube save that already has a cached transcript is not re-fetched.
+        self._patch_env(monkeypatch)
+        cached = "x" * (extract.YOUTUBE_CONTENT_MIN_CHARS + 10)
+        save = {**MOCK_YOUTUBE_SAVE, "content": cached}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [save]
+
+        with patch("extract.requests.get", return_value=mock_response), \
+             patch("extract.fetch_transcript_for_url") as mock_fetch:
+            articles = extract.fetch_recent_articles()
+
+        mock_fetch.assert_not_called()
+        assert articles[0]["content"].startswith("x")
+
+    def test_falls_back_to_stored_content_when_no_transcript(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        save = {**MOCK_YOUTUBE_SAVE, "excerpt": "short description"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [save]
+
+        with patch("extract.requests.get", return_value=mock_response), \
+             patch("extract.requests.patch") as mock_patch, \
+             patch("extract.fetch_transcript_for_url", return_value=None):
+            articles = extract.fetch_recent_articles()
+
+        # No transcript -> use whatever the save already had, no cache write.
+        assert articles[0]["content"] == "short description"
+        mock_patch.assert_not_called()
+
+    def test_non_youtube_save_never_fetches_transcript(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        save = {**MOCK_ARTICLE, "url": "https://blog.example.com/post"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [save]
+
+        with patch("extract.requests.get", return_value=mock_response), \
+             patch("extract.fetch_transcript_for_url") as mock_fetch:
+            articles = extract.fetch_recent_articles()
+
+        mock_fetch.assert_not_called()
+        assert articles[0]["content"] == "This is the body content."
