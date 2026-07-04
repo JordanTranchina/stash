@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import subprocess
 import requests
@@ -24,6 +25,11 @@ USER_ID = os.getenv("USER_ID")
 supabase_client: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Gemini model for scriptwriting. Default to 2.5 Flash-Lite: as of 2026 it's the
+# most generous free tier (15 RPM / 1,000 requests per day). gemini-2.0-flash had
+# its free tier zeroed out. Override with the GEMINI_MODEL env var if needed.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 # Default host personalities (used when the user has not customized them, issue #13).
 DEFAULT_PODCAST_PREFS = {
@@ -150,25 +156,25 @@ def generate_script(articles, prefs=None):
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
             ),
         )
-        
+
         # Clean up the response text in case Gemini adds markdown code blocks
         content = response.text.strip()
         if content.startswith("```json"):
             content = content[7:]
         if content.endswith("```"):
             content = content[:-3]
-        
-        script = json.loads(content)
-        return script
+
+        return json.loads(content)
     except Exception as e:
-        print(f"Error generating script: {e}")
-        return None
+        # Surface the real reason (quota/rate-limit, bad key, bad JSON, …) instead
+        # of silently returning None so the pipeline can fail loudly.
+        raise RuntimeError(f"Gemini script generation failed ({GEMINI_MODEL}): {e}") from e
 
 # Voices assigned to host slot A and slot B respectively.
 VOICE_A = "en-US-AndrewNeural"  # Confident, male
@@ -383,67 +389,89 @@ def save_script_locally(script, filename="podcast/script.json"):
 
     print(f"Script saved locally to {filename}")
 
+def fail(reason):
+    """Exit non-zero with a clear reason so the GitHub Action turns red."""
+    sys.exit(f"FATAL: {reason}")
+
+
 async def main():
-    # Integration test: Fetch articles and generate script
     print("Fetching articles...")
-    articles = fetch_recent_articles(limit=3) # Limit to 3 for testing
-    
-    if articles:
-        # Load custom host personalities once and reuse for script + audio (#13)
-        prefs = fetch_podcast_preferences()
-        print(f"Generating script for {len(articles)} articles "
-              f"(hosts: {prefs['host_a_name']} & {prefs['host_b_name']})...")
+    articles = fetch_recent_articles(limit=3)
+
+    # Not a failure: there simply weren't any recent unarchived articles to use.
+    # Exit 0 so the scheduled run stays green on quiet days.
+    if not articles:
+        print("No recent articles found in the lookback window — nothing to generate. "
+              "Exiting cleanly (this is not an error).")
+        return
+
+    # Load custom host personalities once and reuse for script + audio (#13)
+    prefs = fetch_podcast_preferences()
+    print(f"Generating script for {len(articles)} articles "
+          f"(hosts: {prefs['host_a_name']} & {prefs['host_b_name']})...")
+
+    try:
         script = generate_script(articles, prefs=prefs)
+    except Exception as e:
+        fail(str(e))
 
-        if script:
-            save_script_locally(script)
-            episode_id = save_to_supabase(script, articles)
+    if not script:
+        fail("script generation returned no content — is GEMINI_API_KEY set and valid?")
 
-            print("\nPreview of first 3 lines:")
-            for line in script[:3]:
-                print(f"{line['speaker']}: {line['text']}")
+    save_script_locally(script)
 
-            # Generate Audio (voice mapped to the configured host A name, #13)
-            audio_files = await generate_audio(script, host_a_name=prefs["host_a_name"])
+    episode_id = save_to_supabase(script, articles)
+    if not episode_id:
+        fail("could not save the episode record to Supabase — check "
+             "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / USER_ID.")
 
-            # Build chapters (#14) from per-line durations and article tags
-            line_durations = compute_line_durations(audio_files)
-            chapters = build_chapters(script, line_durations, articles)
-            total_duration = sum(line_durations)
-            if chapters:
-                print(f"Built {len(chapters)} chapters.")
+    print("\nPreview of first 3 lines:")
+    for line in script[:3]:
+        print(f"{line['speaker']}: {line['text']}")
 
-            # Assemble Episode
-            print("Assembling episode...")
-            metadata = {
-                "title": f"Listen Later: {datetime.now().strftime('%B %d, %Y')}",
-                "artist": "Listen Later",
-                "album": "Stash Podcast",
-                "description": "Discussing: " + ", ".join([art["title"] for art in articles])
-            }
-            final_audio = assemble_episode(
-                "podcast/temp_audio", "podcast/output/episode.mp3", metadata,
-                chapters=chapters, total_duration=total_duration,
-            )
+    # Generate Audio (voice mapped to the configured host A name, #13)
+    audio_files = await generate_audio(script, host_a_name=prefs["host_a_name"])
+    if not audio_files:
+        fail("no audio clips were generated (edge-tts failure?).")
 
-            if final_audio:
-                print(f"Podcast generated successfully: {final_audio}")
-                if episode_id:
-                    print("Uploading audio to Supabase...")
-                    audio_url = upload_audio_to_supabase("podcast/output/episode.mp3", episode_id)
-                    if audio_url:
-                        duration_seconds, size_bytes = get_audio_metadata("podcast/output/episode.mp3")
-                        update_episode_audio_url(
-                            episode_id, audio_url, duration_seconds, size_bytes,
-                            chapters=chapters or None,
-                        )
-            else:
-                print("Failed to assemble episode.")
-            
-        else:
-            print("Failed to generate script.")
-    else:
-        print("No recent articles found to process.")
+    # Build chapters (#14) from per-line durations and article tags
+    line_durations = compute_line_durations(audio_files)
+    chapters = build_chapters(script, line_durations, articles)
+    total_duration = sum(line_durations)
+    if chapters:
+        print(f"Built {len(chapters)} chapters.")
+
+    # Assemble Episode
+    print("Assembling episode...")
+    metadata = {
+        "title": f"Listen Later: {datetime.now().strftime('%B %d, %Y')}",
+        "artist": "Listen Later",
+        "album": "Stash Podcast",
+        "description": "Discussing: " + ", ".join([art["title"] for art in articles])
+    }
+    final_audio = assemble_episode(
+        "podcast/temp_audio", "podcast/output/episode.mp3", metadata,
+        chapters=chapters, total_duration=total_duration,
+    )
+    if not final_audio:
+        fail("ffmpeg failed to assemble the episode MP3 (see error above).")
+
+    print(f"Podcast generated successfully: {final_audio}")
+
+    print("Uploading audio to Supabase...")
+    audio_url = upload_audio_to_supabase("podcast/output/episode.mp3", episode_id)
+    if not audio_url:
+        fail("failed to upload the episode MP3 to Supabase Storage.")
+
+    duration_seconds, size_bytes = get_audio_metadata("podcast/output/episode.mp3")
+    if not update_episode_audio_url(
+        episode_id, audio_url, duration_seconds, size_bytes, chapters=chapters or None
+    ):
+        fail("uploaded the MP3 but failed to update the episode row with its audio URL.")
+
+    print(f"✅ Episode published: {metadata['title']} "
+          f"({duration_seconds}s, {len(chapters)} chapters)")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
