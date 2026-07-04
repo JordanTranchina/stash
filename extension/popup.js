@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const signupBtn = document.getElementById('signup-btn');
   const signoutBtn = document.getElementById('signout-btn');
   const savePageBtn = document.getElementById('save-page-btn');
+  const viewInStashBtn = document.getElementById('view-in-stash-btn');
   const savesList = document.getElementById('saves-list');
   const openAppLink = document.getElementById('open-app-link');
 
@@ -102,6 +103,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         Saved!
       `;
 
+      // Reveal the "View in Stash" shortcut now that there's a save to view
+      viewInStashBtn.classList.remove('hidden');
+
       setTimeout(() => {
         savePageBtn.innerHTML = `
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -176,6 +180,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Open web app
   openAppLink.addEventListener('click', (e) => {
     e.preventDefault();
+    chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
+  });
+
+  // View the just-saved article in the Stash web app
+  viewInStashBtn.addEventListener('click', () => {
     chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
   });
 
