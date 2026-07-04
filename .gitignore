@@ -37,3 +37,7 @@ podcast/script.json
 .env
 **/.env*
 .vercel/
+
+# Playwright
+test-results/
+playwright-report/
