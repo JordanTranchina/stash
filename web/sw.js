@@ -1,5 +1,9 @@
 // Stash Service Worker
-const CACHE_NAME = 'stash-v2';
+// Pull in config (CONFIG) and the IndexedDB wrapper (self.StashDB) so the
+// Background Sync handler can drain the offline "pending saves" queue.
+importScripts('/config.js', '/db.js');
+
+const CACHE_NAME = 'stash-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -66,4 +70,50 @@ self.addEventListener('fetch', (event) => {
       return cachedResponse || fetchPromise;
     })
   );
+});
+
+// Background Sync: robustly retry offline saves that were queued in IndexedDB.
+// Registered from save.html (and app.js) via registration.sync.register('sync-pending-saves').
+async function drainPendingSaves() {
+  let pending;
+  try {
+    pending = await self.StashDB.getPendingShares();
+  } catch (e) {
+    return; // IndexedDB unavailable; nothing to do
+  }
+  if (!pending || !pending.length) return;
+
+  let failed = 0;
+  for (const { key, data } of pending) {
+    try {
+      const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
+        method: 'POST',
+        headers: {
+          'apikey': CONFIG.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        await self.StashDB.deletePendingShare(key);
+      } else {
+        failed++;
+      }
+    } catch (e) {
+      failed++; // Likely still offline; leave queued
+    }
+  }
+
+  // Reject so the browser reschedules this sync and retries later.
+  if (failed > 0) {
+    throw new Error(`${failed} pending save(s) failed to sync; will retry`);
+  }
+}
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-pending-saves') {
+    event.waitUntil(drainPendingSaves());
+  }
 });

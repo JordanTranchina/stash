@@ -104,12 +104,30 @@
             </svg>
             Weekly Review
           </a>
+          <a href="#" class="nav-item" data-view="podcasts">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+            Podcasts
+          </a>
           <button class="nav-item digest-settings-btn" id="digest-settings-btn">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
               <polyline points="22,6 12,13 2,6"></polyline>
             </svg>
             Digest Settings
+          </button>
+          <button class="nav-item podcast-settings-btn" id="podcast-settings-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+            Podcast Settings
           </button>
         </nav>
 
@@ -430,6 +448,57 @@
         </div>
       </div>
     </div>
+
+    <!-- Podcast Settings Modal (Listen Later host personalities) -->
+    <div id="podcast-modal" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-content digest-modal-content">
+        <div class="modal-header">
+          <h2>Podcast Host Personalities</h2>
+          <button class="btn icon modal-close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="digest-description">Customize the two AI hosts of your "Listen Later" podcast. Leave a field blank to use the defaults (Alex &amp; Taylor).</p>
+
+          <div class="digest-form">
+            <div class="form-group">
+              <label for="podcast-host-a-name">Host A name</label>
+              <input type="text" id="podcast-host-a-name" placeholder="Alex">
+            </div>
+            <div class="form-group">
+              <label for="podcast-host-a-persona">Host A personality</label>
+              <textarea id="podcast-host-a-persona" rows="2" placeholder="Confident, tech-savvy, fast-talking…"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="podcast-host-b-name">Host B name</label>
+              <input type="text" id="podcast-host-b-name" placeholder="Taylor">
+            </div>
+            <div class="form-group">
+              <label for="podcast-host-b-persona">Host B personality</label>
+              <textarea id="podcast-host-b-persona" rows="2" placeholder="Curious, witty, focuses on why it matters…"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="podcast-tone">Overall tone</label>
+              <textarea id="podcast-tone" rows="2" placeholder="&quot;Hard Fork-esque&quot; — smart, accessible, conversational."></textarea>
+            </div>
+
+            <div id="podcast-status" class="digest-status hidden"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn secondary" id="podcast-cancel-btn">Cancel</button>
+          <button class="btn primary" id="podcast-save-btn">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast / Notification -->
     <div id="toast" class="toast hidden">
       <span id="toast-message"></span>

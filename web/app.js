@@ -264,6 +264,25 @@ class StashApp {
       this.updateDigestOptionsState();
     });
 
+    // Podcast Settings Modal (host personalities)
+    const podcastModal = document.getElementById('podcast-modal');
+
+    document.getElementById('podcast-settings-btn').addEventListener('click', () => {
+      this.showPodcastModal();
+    });
+    podcastModal.querySelector('.modal-overlay').addEventListener('click', () => {
+      this.hidePodcastModal();
+    });
+    podcastModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+      this.hidePodcastModal();
+    });
+    document.getElementById('podcast-cancel-btn').addEventListener('click', () => {
+      this.hidePodcastModal();
+    });
+    document.getElementById('podcast-save-btn').addEventListener('click', () => {
+      this.savePodcastPreferences();
+    });
+
     // PWA: Online/Offline Status
     window.addEventListener('online', () => this.updateOnlineStatus());
     window.addEventListener('offline', () => this.updateOnlineStatus());
@@ -669,8 +688,25 @@ class StashApp {
     `;
   }
 
+  // Ask the Service Worker to retry the pending-save queue when connectivity
+  // returns. No-op on browsers without the Background Sync API; syncPendingShares
+  // remains the immediate fallback on app open / online.
+  async requestBackgroundSync() {
+    if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.sync.register('sync-pending-saves');
+    } catch (e) {
+      // Background Sync unavailable; ignore.
+    }
+  }
+
   async syncPendingShares() {
-    if (!navigator.onLine) return;
+    if (!navigator.onLine) {
+      // Offline: hand off to Background Sync so queued saves retry later.
+      this.requestBackgroundSync();
+      return;
+    }
     let pending;
     try {
       pending = await window.StashDB.getPendingShares();
@@ -790,6 +826,7 @@ class StashApp {
       kindle: 'Kindle Highlights',
       archived: 'Archived',
       stats: 'Stats',
+      podcasts: 'Podcasts',
     };
     document.getElementById('view-title').textContent = titles[view] || 'Saves';
 
@@ -797,9 +834,79 @@ class StashApp {
       this.showStats();
     } else if (view === 'kindle') {
       this.loadKindleHighlights();
+    } else if (view === 'podcasts') {
+      this.loadPodcasts();
     } else {
       this.loadSaves();
     }
+  }
+
+  // Podcasts view (Listen Later, #12)
+  async loadPodcasts() {
+    const container = document.getElementById('saves-container');
+    const loading = document.getElementById('loading');
+    const empty = document.getElementById('empty-state');
+
+    empty.classList.add('hidden');
+    loading.classList.remove('hidden');
+    container.innerHTML = '';
+
+    const { data, error } = await this.supabase
+      .from('podcast_episodes')
+      .select('id, title, description, audio_url, duration_seconds, created_at')
+      .order('created_at', { ascending: false });
+
+    loading.classList.add('hidden');
+
+    const episodes = (!error && data) ? data : [];
+    const generateBtn = `
+      <a class="btn primary podcast-generate-btn" href="${CONFIG.PODCAST_WORKFLOW_URL}" target="_blank" rel="noopener"
+         title="Opens the GitHub Actions workflow — click 'Run workflow' to generate a new episode now.">
+        🎙️ Generate Podcast Now
+      </a>`;
+
+    if (episodes.length === 0) {
+      container.innerHTML = `
+        <div class="podcasts-view">
+          <div class="podcasts-header">
+            <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast. Subscribe with the RSS feed in any podcast app, or generate a new episode on demand.</p>
+            ${generateBtn}
+          </div>
+          <div class="podcasts-empty">
+            <div class="empty-icon">🎧</div>
+            <h3>No episodes yet</h3>
+            <p>Generate your first episode, or wait for the daily "Morning Brief" to run.</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const cards = episodes.map(ep => {
+      const date = new Date(ep.created_at).toLocaleDateString('en-US', {
+        month: 'long', day: 'numeric', year: 'numeric'
+      });
+      const duration = ep.duration_seconds ? this.formatTime(ep.duration_seconds) : '';
+      return `
+        <div class="podcast-episode" data-id="${ep.id}">
+          <div class="podcast-episode-header">
+            <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
+            <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
+          </div>
+          ${ep.description ? `<div class="podcast-episode-desc">${this.escapeHtml(ep.description)}</div>` : ''}
+          ${ep.audio_url
+            ? `<audio class="podcast-audio" controls preload="none" src="${this.escapeHtml(ep.audio_url)}"></audio>`
+            : `<div class="podcast-episode-pending">⏳ Audio is still being generated…</div>`}
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="podcasts-view">
+        <div class="podcasts-header">
+          <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast. Subscribe with the RSS feed in any podcast app, or generate a new episode on demand.</p>
+          ${generateBtn}
+        </div>
+        <div class="podcasts-list">${cards}</div>
+      </div>`;
   }
 
   async search(query) {
@@ -1680,6 +1787,84 @@ class StashApp {
 
     } catch (error) {
       console.error('Error saving digest preferences:', error);
+      status.textContent = 'Error saving preferences. Please try again.';
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Settings';
+    }
+  }
+
+  // Podcast Settings Methods (custom host personalities, #13)
+  showPodcastModal() {
+    const modal = document.getElementById('podcast-modal');
+    modal.classList.remove('hidden');
+    this.loadPodcastPreferences();
+  }
+
+  hidePodcastModal() {
+    const modal = document.getElementById('podcast-modal');
+    modal.classList.add('hidden');
+    document.getElementById('podcast-status').classList.add('hidden');
+  }
+
+  async loadPodcastPreferences() {
+    try {
+      const { data, error } = await this.supabase
+        .from('user_preferences')
+        .select('podcast_host_a_name, podcast_host_a_persona, podcast_host_b_name, podcast_host_b_persona, podcast_tone')
+        .eq('user_id', this.user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
+        throw error;
+      }
+
+      const prefs = data || {};
+      document.getElementById('podcast-host-a-name').value = prefs.podcast_host_a_name || '';
+      document.getElementById('podcast-host-a-persona').value = prefs.podcast_host_a_persona || '';
+      document.getElementById('podcast-host-b-name').value = prefs.podcast_host_b_name || '';
+      document.getElementById('podcast-host-b-persona').value = prefs.podcast_host_b_persona || '';
+      document.getElementById('podcast-tone').value = prefs.podcast_tone || '';
+    } catch (error) {
+      console.error('Error loading podcast preferences:', error);
+    }
+  }
+
+  async savePodcastPreferences() {
+    const status = document.getElementById('podcast-status');
+    const saveBtn = document.getElementById('podcast-save-btn');
+
+    // Empty string -> null so the pipeline falls back to defaults.
+    const clean = (id) => document.getElementById(id).value.trim() || null;
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      const { error } = await this.supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: this.user.id,
+          podcast_host_a_name: clean('podcast-host-a-name'),
+          podcast_host_a_persona: clean('podcast-host-a-persona'),
+          podcast_host_b_name: clean('podcast-host-b-name'),
+          podcast_host_b_persona: clean('podcast-host-b-persona'),
+          podcast_tone: clean('podcast-tone'),
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (error) throw error;
+
+      status.textContent = 'Saved! Your next podcast will use these hosts.';
+      status.className = 'digest-status success';
+      status.classList.remove('hidden');
+
+      setTimeout(() => this.hidePodcastModal(), 1500);
+    } catch (error) {
+      console.error('Error saving podcast preferences:', error);
       status.textContent = 'Error saving preferences. Please try again.';
       status.className = 'digest-status error';
       status.classList.remove('hidden');

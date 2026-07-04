@@ -1240,16 +1240,25 @@ select {
   color: var(--text);
 }
 
-.digest-form input[type="email"] {
+.digest-form input[type="email"],
+.digest-form input[type="text"],
+.digest-form textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 14px;
   background: var(--bg);
   color: var(--text);
+  font-family: inherit;
 }
 
-.digest-form input[type="email"]:focus {
+.digest-form textarea {
+  resize: vertical;
+}
+
+.digest-form input[type="email"]:focus,
+.digest-form input[type="text"]:focus,
+.digest-form textarea:focus {
   outline: none;
   border-color: var(--primary);
 }
@@ -2084,4 +2093,89 @@ select {
 
 .pwa-install-btn.hidden {
   display: none;
+}
+
+/* Podcasts View (Listen Later, #12) */
+.podcasts-view {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.podcasts-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.podcasts-intro {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.podcast-generate-btn {
+  align-self: flex-start;
+}
+
+.podcasts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.podcast-episode {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.podcast-episode-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.podcast-episode-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.podcast-episode-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.podcast-episode-desc {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.podcast-audio {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.podcast-episode-pending {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.podcasts-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-secondary);
+}
+
+.podcasts-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
 }
