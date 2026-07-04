@@ -718,17 +718,10 @@ class StashApp {
     let synced = 0;
     for (const { key, data } of pending) {
       try {
-        const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
-          method: 'POST',
-          headers: {
-            'apikey': CONFIG.SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal',
-          },
-          body: JSON.stringify(data),
-        });
-        if (res.ok) {
+        // Drain through the scraper so the full article is ingested, not just
+        // the shared link that was queued while offline.
+        const ok = await window.StashSave.saveViaScrape(data);
+        if (ok) {
           await window.StashDB.deletePendingShare(key);
           synced++;
         }

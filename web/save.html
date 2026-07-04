@@ -217,6 +217,7 @@
 
   <script src="config.js"></script>
   <script src="db.js"></script>
+  <script src="save-lib.js"></script>
   <script>
 
     const saveForm = document.getElementById('save-form');
@@ -263,18 +264,12 @@
       }
 
       try {
-        const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
-          method: 'POST',
-          headers: {
-            'apikey': CONFIG.SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal',
-          },
-          body: JSON.stringify(data),
-        });
+        // Route through the save-page Edge Function so the article is fully
+        // scraped server-side (Readability), the same way the extension and
+        // bookmarklet ingest pages — instead of storing just the shared link.
+        const ok = await window.StashSave.saveViaScrape(data);
 
-        if (res.ok) {
+        if (ok) {
           handleSuccess(isAuto);
           return true;
         } else {
@@ -355,17 +350,16 @@
       e.preventDefault();
       
       const url = urlInput.value.trim();
-      const title = titleInput.value.trim();
       const highlight = highlightInput.value.trim();
 
-      const data = {
+      // The scraper derives the title/site name from the page itself; we only
+      // pass the URL, source and any optional note the user typed.
+      const data = window.StashSave.buildScrapeRequest({
         user_id: CONFIG.USER_ID,
         url: url,
-        title: title || new URL(url).hostname,
-        site_name: new URL(url).hostname.replace('www.', ''),
         source: 'mobile-web',
-        highlight: highlight || null
-      };
+        highlight: highlight || null,
+      });
 
       await handleSave(data, false);
     });
@@ -393,28 +387,35 @@
       const pTitle = params.get('title') || '';
       const pText = params.get('text') || '';
 
-      if (!pUrl && pText.startsWith('http')) {
-        pUrl = pText;
+      // Share sheets are inconsistent: some fill `url`, others cram the URL into
+      // `text` — often as "Title https://share.google/…" (Android / Google). If
+      // there's no explicit url, pull the first URL out of the shared text
+      // wherever it appears, not just when the text starts with it.
+      if (!pUrl && pText) {
+        const match = pText.match(/https?:\/\/[^\s]+/);
+        if (match) pUrl = match[0];
       }
 
-      // Pre-fill fields always (in case of error fallback)
+      // Pre-fill fields always (in case of error fallback). We deliberately do
+      // NOT pre-fill the notes box with the shared text — that snippet is the
+      // article title, not a user highlight, and the scraper fetches the body.
       if (pUrl) urlInput.value = pUrl;
       if (pTitle) titleInput.value = pTitle;
-      if (pText && pText !== pUrl) highlightInput.value = pText;
 
       // If we have a URL, TRIGGER STEALTH AUTO-SAVE
       if (pUrl) {
         showOverlay();
-        
-        const data = {
+
+        // Share sheets pass the article title/snippet as `text`; that is NOT a
+        // user highlight, so we don't stash it as one. We just hand the URL to
+        // the scraper and let it ingest the full article (Pocket-style).
+        const data = window.StashSave.buildScrapeRequest({
           user_id: CONFIG.USER_ID,
           url: pUrl,
-          title: pTitle || new URL(pUrl).hostname,
-          site_name: new URL(pUrl).hostname.replace('www.', ''),
           source: 'share-target',
-          highlight: (pText && pText !== pUrl) ? pText : null
-        };
-        
+          highlight: null,
+        });
+
         handleSave(data, true);
       } else {
         // Normal manual mode
