@@ -70,3 +70,16 @@ test('popup exposes the Open Stash App link and sign-out control', async () => {
 
   await page.close();
 });
+
+test('popup has a View in Stash button that is hidden until a page is saved', async () => {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+
+  const viewBtn = page.locator('#view-in-stash-btn');
+  // The button exists in the DOM but stays hidden until a save succeeds.
+  await expect(viewBtn).toHaveCount(1);
+  await expect(viewBtn).toBeHidden();
+  await expect(viewBtn).toHaveText(/View in Stash/);
+
+  await page.close();
+});
