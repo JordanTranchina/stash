@@ -1,15 +1,16 @@
 // Stash Service Worker
 // Pull in config (CONFIG) and the IndexedDB wrapper (self.StashDB) so the
 // Background Sync handler can drain the offline "pending saves" queue.
-importScripts('/config.js', '/db.js');
+importScripts('/config.js', '/db.js', '/save-lib.js');
 
-const CACHE_NAME = 'stash-v3';
+const CACHE_NAME = 'stash-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
   '/db.js',
+  '/save-lib.js',
   '/config.js',
   '/manifest.json',
   '/icons/icon192.png',
@@ -86,17 +87,10 @@ async function drainPendingSaves() {
   let failed = 0;
   for (const { key, data } of pending) {
     try {
-      const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/saves`, {
-        method: 'POST',
-        headers: {
-          'apikey': CONFIG.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
+      // Drain through the scraper so queued offline saves get the full article
+      // ingested, not just the shared link.
+      const ok = await self.StashSave.saveViaScrape(data);
+      if (ok) {
         await self.StashDB.deletePendingShare(key);
       } else {
         failed++;
