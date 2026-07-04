@@ -83,6 +83,73 @@ class TestGenerateScript:
 
 
 # ---------------------------------------------------------------------------
+# Chapters (#14)
+# ---------------------------------------------------------------------------
+
+class TestBuildChapters:
+    ARTICLES = [
+        {"id": "1", "title": "Local-First Software"},
+        {"id": "2", "title": "The RSS Renaissance"},
+    ]
+
+    def test_maps_articles_to_start_times(self):
+        script_lines = [
+            {"speaker": "Alex", "text": "Welcome!", "article_index": None},   # 1.0s
+            {"speaker": "Alex", "text": "Local first...", "article_index": 0},  # 2.0s
+            {"speaker": "Taylor", "text": "Yes!", "article_index": 0},          # 3.0s
+            {"speaker": "Alex", "text": "Now RSS...", "article_index": 1},      # 4.0s
+        ]
+        durations = [1.0, 2.0, 3.0, 4.0]
+        chapters = script.build_chapters(script_lines, durations, self.ARTICLES)
+
+        assert chapters == [
+            {"startTime": 0.0, "title": "Intro"},        # leading untagged line
+            {"startTime": 1.0, "title": "Local-First Software"},
+            {"startTime": 6.0, "title": "The RSS Renaissance"},
+        ]
+
+    def test_no_intro_when_first_line_is_article(self):
+        script_lines = [
+            {"speaker": "Alex", "text": "Local first...", "article_index": 0},
+            {"speaker": "Alex", "text": "Now RSS...", "article_index": 1},
+        ]
+        durations = [2.0, 2.0]
+        chapters = script.build_chapters(script_lines, durations, self.ARTICLES)
+        assert chapters[0] == {"startTime": 0.0, "title": "Local-First Software"}
+        assert len(chapters) == 2
+
+    def test_returns_empty_when_no_article_tags(self):
+        script_lines = [
+            {"speaker": "Alex", "text": "Hi", "article_index": None},
+            {"speaker": "Taylor", "text": "Bye", "article_index": None},
+        ]
+        assert script.build_chapters(script_lines, [1.0, 1.0], self.ARTICLES) == []
+
+    def test_ignores_out_of_range_and_duplicate_indices(self):
+        script_lines = [
+            {"speaker": "Alex", "text": "a", "article_index": 0},
+            {"speaker": "Alex", "text": "b", "article_index": 5},   # out of range
+            {"speaker": "Alex", "text": "c", "article_index": 0},   # duplicate
+        ]
+        chapters = script.build_chapters(script_lines, [1.0, 1.0, 1.0], self.ARTICLES)
+        assert chapters == [{"startTime": 0.0, "title": "Local-First Software"}]
+
+
+class TestComputeLineDurations:
+    def test_probes_each_file(self):
+        outputs = [b"1.5\n", b"2.5\n"]
+        with patch("script.subprocess.run") as mock_run:
+            mock_run.side_effect = [MagicMock(stdout=o) for o in outputs]
+            durations = script.compute_line_durations(["a.mp3", "b.mp3"])
+        assert durations == [1.5, 2.5]
+
+    def test_defaults_to_zero_on_probe_error(self):
+        with patch("script.subprocess.run", side_effect=Exception("boom")):
+            durations = script.compute_line_durations(["a.mp3"])
+        assert durations == [0.0]
+
+
+# ---------------------------------------------------------------------------
 # Custom host personalities (#13)
 # ---------------------------------------------------------------------------
 
@@ -133,7 +200,8 @@ class TestPodcastPreferences:
                      host_a_name="Sam", host_b_name="Kai")
         prompt = script.build_system_prompt(prefs)
         assert "SAM:" in prompt and "KAI:" in prompt
-        assert '"speaker" (exactly "Sam" or "Kai")' in prompt
+        assert 'exactly "Sam" or "Kai"' in prompt
+        assert "article_index" in prompt
 
     def test_generate_script_uses_supplied_prefs(self, monkeypatch):
         """When prefs are passed explicitly, the DB is not queried and host names

@@ -20,7 +20,7 @@ function escapeXml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
-function buildRssXml(episodes) {
+function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/functions/v1/podcast-chapters") {
   const items = episodes
     .map((ep) => {
       const title = escapeXml(ep.title ?? "Untitled");
@@ -30,6 +30,11 @@ function buildRssXml(episodes) {
       const enclosureLength = ep.size_bytes ?? 0;
       const audioUrl = escapeXml(ep.audio_url ?? "");
 
+      const hasChapters = Array.isArray(ep.chapters) && ep.chapters.length > 0;
+      const chaptersTag = hasChapters
+        ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}`)}" type="application/json+chapters"/>`
+        : "";
+
       return `    <item>
       <title>${title}</title>
       <description>${description}</description>
@@ -37,7 +42,7 @@ function buildRssXml(episodes) {
       <guid isPermaLink="false">${ep.id}</guid>
       <enclosure url="${audioUrl}" length="${enclosureLength}" type="audio/mpeg"/>
       <itunes:duration>${duration}</itunes:duration>
-      <itunes:explicit>false</itunes:explicit>
+      <itunes:explicit>false</itunes:explicit>${chaptersTag}
     </item>`;
     })
     .join("\n");
@@ -45,7 +50,8 @@ function buildRssXml(episodes) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
-  xmlns:content="http://purl.org/rss/modules/content/">
+  xmlns:content="http://purl.org/rss/modules/content/"
+  xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
     <title>Stash: Listen Later</title>
     <link>https://stash.app</link>
@@ -199,5 +205,54 @@ describe("buildRssXml", () => {
     const emptyXml = buildRssXml([]);
     expect(emptyXml).toMatch(/<channel>/);
     expect(emptyXml).not.toMatch(/<item>/);
+  });
+
+  test("includes the podcast namespace", () => {
+    expect(xml).toMatch(/xmlns:podcast="https:\/\/podcastindex\.org\/namespace\/1\.0"/);
+  });
+});
+
+describe("podcast:chapters", () => {
+  test("emits a chapters tag only for episodes that have chapters", () => {
+    const xml = buildRssXml([
+      {
+        id: "with-ch",
+        title: "Has chapters",
+        audio_url: "https://example.com/a.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+        chapters: [{ startTime: 0, title: "Intro" }],
+      },
+      {
+        id: "no-ch",
+        title: "No chapters",
+        audio_url: "https://example.com/b.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-16T08:00:00.000Z",
+        chapters: [],
+      },
+    ]);
+
+    const tags = xml.match(/<podcast:chapters /g) || [];
+    expect(tags).toHaveLength(1);
+    expect(xml).toMatch(
+      /<podcast:chapters url="https:\/\/example\.supabase\.co\/functions\/v1\/podcast-chapters\?id=with-ch" type="application\/json\+chapters"\/>/
+    );
+  });
+
+  test("omits chapters tag when chapters field is absent", () => {
+    const xml = buildRssXml([
+      {
+        id: "x",
+        title: "t",
+        audio_url: "u",
+        duration_seconds: 1,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+      },
+    ]);
+    expect(xml).not.toMatch(/<podcast:chapters/);
   });
 });
