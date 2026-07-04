@@ -71,15 +71,62 @@ class TestGenerateScript:
 
         assert result == SAMPLE_SCRIPT
 
-    def test_returns_none_on_gemini_exception(self, monkeypatch):
+    def test_raises_on_gemini_exception(self, monkeypatch):
+        """Real API errors (e.g. 429 quota) must surface, not be swallowed as None."""
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED")
 
         with patch("script.genai.Client", return_value=mock_client):
-            result = script.generate_script(SAMPLE_ARTICLES)
+            with pytest.raises(RuntimeError, match="Gemini script generation failed"):
+                script.generate_script(SAMPLE_ARTICLES)
 
-        assert result is None
+    def test_uses_flash_lite_model_by_default(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = json.dumps(SAMPLE_SCRIPT)
+
+        with patch("script.genai.Client", return_value=mock_client):
+            script.generate_script(SAMPLE_ARTICLES, prefs=script.DEFAULT_PODCAST_PREFS)
+
+        assert mock_client.models.generate_content.call_args.kwargs["model"] == "gemini-2.5-flash-lite"
+
+
+# ---------------------------------------------------------------------------
+# main() failure handling (fail loudly, but not on empty input)
+# ---------------------------------------------------------------------------
+
+import asyncio
+
+
+class TestMainFailsLoudly:
+    def test_exits_cleanly_when_no_articles(self, monkeypatch):
+        """No recent articles is a normal no-op, not a failure — exit 0."""
+        monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: [])
+        # Should complete without raising SystemExit.
+        asyncio.run(script.main())
+
+    def test_exits_nonzero_when_script_generation_returns_none(self, monkeypatch):
+        monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: SAMPLE_ARTICLES)
+        monkeypatch.setattr(script, "fetch_podcast_preferences", lambda: script.DEFAULT_PODCAST_PREFS)
+        monkeypatch.setattr(script, "generate_script", lambda *a, **kw: None)
+
+        with pytest.raises(SystemExit) as exc:
+            asyncio.run(script.main())
+        assert exc.value.code != 0
+
+    def test_exits_nonzero_when_script_generation_raises(self, monkeypatch):
+        monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: SAMPLE_ARTICLES)
+        monkeypatch.setattr(script, "fetch_podcast_preferences", lambda: script.DEFAULT_PODCAST_PREFS)
+
+        def boom(*a, **kw):
+            raise RuntimeError("Gemini script generation failed: 429")
+        monkeypatch.setattr(script, "generate_script", boom)
+
+        with pytest.raises(SystemExit) as exc:
+            asyncio.run(script.main())
+        assert exc.value.code != 0
+        assert "429" in str(exc.value.code)
 
 
 # ---------------------------------------------------------------------------
