@@ -394,12 +394,16 @@ class StashApp {
   renderSaves() {
     const container = document.getElementById('saves-container');
 
+    // Swipe-to-archive only makes sense for lists that aren't already archived.
+    const swipeEnabled = this.currentView !== 'archived';
+
     container.innerHTML = this.saves.map(save => {
       const isHighlight = !!save.highlight;
       const date = new Date(save.created_at).toLocaleDateString();
 
+      let cardHtml;
       if (isHighlight) {
-        return `
+        cardHtml = `
           <div class="save-card highlight" data-id="${save.id}">
             <div class="save-card-content">
               <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
@@ -411,34 +415,180 @@ class StashApp {
             </div>
           </div>
         `;
-      }
-
-      return `
-        <div class="save-card" data-id="${save.id}">
-          ${save.image_url ? `<img class="save-card-image" src="${save.image_url}" alt="" onerror="this.style.display='none'">` : ''}
-          <div class="save-card-content">
-            <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
-            <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-            <div class="save-card-excerpt">${this.escapeHtml(save.excerpt || '')}</div>
-            <div class="save-card-meta">
-              <span class="save-card-date">${date}</span>
+      } else {
+        cardHtml = `
+          <div class="save-card" data-id="${save.id}">
+            ${save.image_url ? `<img class="save-card-image" src="${save.image_url}" alt="" onerror="this.style.display='none'">` : ''}
+            <div class="save-card-content">
+              <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
+              <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
+              <div class="save-card-excerpt">${this.escapeHtml(save.excerpt || '')}</div>
+              <div class="save-card-meta">
+                <span class="save-card-date">${date}</span>
+              </div>
             </div>
           </div>
+        `;
+      }
+
+      if (!swipeEnabled) return cardHtml;
+
+      // Wrap in a swipe container with an "Archive" action revealed on left-swipe
+      return `
+        <div class="save-card-swipe" data-id="${save.id}">
+          <div class="save-card-swipe-action" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="21 8 21 21 3 21 3 8"></polyline>
+              <rect x="1" y="3" width="22" height="5"></rect>
+              <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+            <span>Archive</span>
+          </div>
+          ${cardHtml}
         </div>
       `;
     }).join('');
 
-    // Bind click events
+    // Bind click events (guarding against clicks that are really the end of a swipe)
     container.querySelectorAll('.save-card').forEach(card => {
       card.addEventListener('click', () => {
+        const swipeEl = card.closest('.save-card-swipe');
+        if (swipeEl && swipeEl._suppressClick) return;
         const id = card.dataset.id;
         const save = this.saves.find(s => s.id === id);
         if (save) this.openReadingPane(save);
       });
     });
+
+    // Wire up swipe-to-archive on each card
+    if (swipeEnabled) {
+      container.querySelectorAll('.save-card-swipe').forEach(swipeEl => {
+        const card = swipeEl.querySelector('.save-card');
+        const save = this.saves.find(s => s.id === swipeEl.dataset.id);
+        if (card && save) this.attachSwipeToArchive(swipeEl, card, save);
+      });
+    }
   }
 
-  // Weekly Review special rendering
+  // Attach a left-swipe-to-archive gesture to a single save card.
+  attachSwipeToArchive(swipeEl, cardEl, save) {
+    const action = swipeEl.querySelector('.save-card-swipe-action');
+    const THRESHOLD = 90; // px of left-drag needed to commit the archive
+    let startX = 0, startY = 0, dx = 0;
+    let decided = false, horizontal = false;
+
+    const onMove = (e) => {
+      const mx = e.clientX - startX;
+      const my = e.clientY - startY;
+
+      // Decide once whether this gesture is a horizontal swipe or a vertical scroll
+      if (!decided) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        decided = true;
+        horizontal = Math.abs(mx) > Math.abs(my);
+        if (horizontal) {
+          try { cardEl.setPointerCapture(e.pointerId); } catch (_) {}
+        }
+      }
+      if (!horizontal) return;
+
+      e.preventDefault();
+      dx = Math.min(0, mx); // only allow dragging left
+      cardEl.style.transform = `translateX(${dx}px)`;
+      const progress = Math.min(1, Math.abs(dx) / THRESHOLD);
+      if (action) action.style.opacity = String(0.5 + 0.5 * progress);
+      swipeEl.classList.toggle('will-archive', Math.abs(dx) >= THRESHOLD);
+    };
+
+    const onUp = () => {
+      cardEl.removeEventListener('pointermove', onMove);
+      cardEl.removeEventListener('pointerup', onUp);
+      cardEl.removeEventListener('pointercancel', onUp);
+      if (!horizontal) return;
+
+      // Any real drag should swallow the trailing click so the card doesn't open
+      swipeEl._suppressClick = true;
+      setTimeout(() => { swipeEl._suppressClick = false; }, 400);
+
+      cardEl.style.transition = 'transform 0.2s ease';
+      if (Math.abs(dx) >= THRESHOLD) {
+        cardEl.style.transform = 'translateX(-100%)';
+        setTimeout(() => this.archiveSaveById(save.id, swipeEl), 160);
+      } else {
+        cardEl.style.transform = 'translateX(0)';
+        swipeEl.classList.remove('will-archive');
+        if (action) action.style.opacity = '';
+      }
+    };
+
+    cardEl.addEventListener('pointerdown', (e) => {
+      // Ignore secondary mouse buttons
+      if (e.button && e.button !== 0) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      dx = 0;
+      decided = false;
+      horizontal = false;
+      cardEl.style.transition = 'none';
+      cardEl.addEventListener('pointermove', onMove);
+      cardEl.addEventListener('pointerup', onUp);
+      cardEl.addEventListener('pointercancel', onUp);
+    });
+  }
+
+  // Archive a save by id (used by swipe-to-archive), collapsing its card out.
+  async archiveSaveById(id, swipeEl) {
+    // Collapse the row with a short animation, then remove it
+    if (swipeEl) {
+      swipeEl.style.maxHeight = `${swipeEl.offsetHeight}px`;
+      swipeEl.style.overflow = 'hidden';
+      requestAnimationFrame(() => {
+        swipeEl.style.transition = 'max-height 0.25s ease, opacity 0.25s ease, margin 0.25s ease';
+        swipeEl.style.maxHeight = '0px';
+        swipeEl.style.opacity = '0';
+        swipeEl.style.margin = '0';
+      });
+    }
+
+    // Optimistically drop it from local state
+    const idx = this.saves.findIndex(s => s.id === id);
+    if (idx !== -1) this.saves.splice(idx, 1);
+
+    const { error } = await this.supabase
+      .from('saves')
+      .update({ is_archived: true })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error archiving save:', error);
+      this.showToast('Could not archive — try again');
+      this.loadSaves();
+      return;
+    }
+
+    window.StashDB.saveArticles(this.saves);
+    this.showToast('Archived');
+
+    // Remove the collapsed node, or fall back to the empty state
+    setTimeout(() => {
+      swipeEl?.remove();
+      if (this.saves.length === 0) {
+        document.getElementById('empty-state').classList.remove('hidden');
+      }
+    }, 280);
+  }
+
+  // Lightweight toast helper
+  showToast(message) {
+    const toast = document.getElementById('toast');
+    const msg = document.getElementById('toast-message');
+    if (!toast || !msg) return;
+    msg.textContent = message;
+    toast.classList.remove('hidden');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
+  }
+
   // Ask the Service Worker to retry the pending-save queue when connectivity
   // returns. No-op on browsers without the Background Sync API; syncPendingShares
   // remains the immediate fallback on app open / online.
