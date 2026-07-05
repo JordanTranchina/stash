@@ -233,16 +233,16 @@ def compute_line_durations(audio_files):
     return durations
 
 
-def build_chapters(script, durations, articles):
-    """Build chapter markers (#14) mapping playback time to the article discussed.
+def compute_article_start_times(script, durations, articles):
+    """Map each tagged article's 0-based index to the playback time (seconds) at
+    which it is first discussed.
 
-    Each script line carries an optional 0-based ``article_index``. The first line
-    of each article opens a chapter at that line's cumulative start time, titled
-    with the article title. A leading "Intro" chapter is added when the episode
-    opens with non-article lines. Returns [] when no article lines are tagged.
+    Each script line carries an optional 0-based ``article_index``. Walking the
+    script and accumulating per-line durations, the first line tagged with an
+    article records that article's start offset. Out-of-range and duplicate
+    indices are ignored. Returns ``{index: startTime}``.
     """
-    chapters = []
-    seen = set()
+    starts = {}
     cumulative = 0.0
 
     for i, line in enumerate(script):
@@ -250,15 +250,33 @@ def build_chapters(script, durations, articles):
         if isinstance(idx, str) and idx.strip().isdigit():
             idx = int(idx)
 
-        if isinstance(idx, int) and 0 <= idx < len(articles) and idx not in seen:
-            title = articles[idx].get("title") or f"Article {idx + 1}"
-            chapters.append({"startTime": round(cumulative, 3), "title": title})
-            seen.add(idx)
+        if isinstance(idx, int) and 0 <= idx < len(articles) and idx not in starts:
+            starts[idx] = round(cumulative, 3)
 
         cumulative += durations[i] if i < len(durations) else 0.0
 
-    if not chapters:
+    return starts
+
+
+def build_chapters(script, durations, articles):
+    """Build chapter markers (#14) mapping playback time to the article discussed.
+
+    The first line of each article opens a chapter at that line's cumulative
+    start time, titled with the article title. A leading "Intro" chapter is
+    added when the episode opens with non-article lines. Returns [] when no
+    article lines are tagged.
+    """
+    starts = compute_article_start_times(script, durations, articles)
+    if not starts:
         return []
+
+    chapters = [
+        {
+            "startTime": starts[idx],
+            "title": articles[idx].get("title") or f"Article {idx + 1}",
+        }
+        for idx in sorted(starts, key=lambda k: starts[k])
+    ]
 
     # Ensure the first chapter starts at 0 (add an Intro if the episode opens
     # with untagged lines before the first article).
@@ -266,6 +284,63 @@ def build_chapters(script, durations, articles):
         chapters.insert(0, {"startTime": 0.0, "title": "Intro"})
 
     return chapters
+
+
+def format_timestamp(seconds):
+    """Format a playback offset in seconds as ``M:SS`` (or ``H:MM:SS`` past an hour)."""
+    seconds = int(round(float(seconds)))
+    hours, rem = divmod(seconds, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def build_description(articles, start_times=None, html=True):
+    """Build an episode description listing each article with a link and timestamp.
+
+    Args:
+        articles (list): the article dicts (``title`` and ``url``) in the order
+            passed to :func:`generate_script`, so their positions line up with
+            the ``article_index`` used for ``start_times``.
+        start_times (dict): optional ``{index: seconds}`` (see
+            :func:`compute_article_start_times`). When present, the timestamp at
+            which each article is discussed is appended. Omit before audio has
+            been generated to produce a link-only description.
+        html (bool): when True, produce an HTML list with anchor links (used for
+            the RSS/web description). When False, produce a plain-text version
+            (used for the MP3 ``comment`` tag).
+
+    Returns:
+        str: the formatted description.
+    """
+    from html import escape
+
+    start_times = start_times or {}
+
+    if html:
+        items = []
+        for i, art in enumerate(articles):
+            title = escape(art.get("title") or f"Article {i + 1}")
+            url = art.get("url")
+            if url:
+                href = escape(str(url), quote=True)
+                label = f'<a href="{href}" target="_blank" rel="noopener">{title}</a>'
+            else:
+                label = title
+            if i in start_times:
+                label += f" ({format_timestamp(start_times[i])})"
+            items.append(f"<li>{label}</li>")
+        return "Discussing:<ul>" + "".join(items) + "</ul>"
+
+    lines = ["Discussing:"]
+    for i, art in enumerate(articles):
+        title = art.get("title") or f"Article {i + 1}"
+        stamp = f" [{format_timestamp(start_times[i])}]" if i in start_times else ""
+        url = art.get("url")
+        suffix = f" — {url}" if url else ""
+        lines.append(f"• {title}{stamp}{suffix}")
+    return "\n".join(lines)
 
 
 def save_to_supabase(script, articles):
@@ -286,9 +361,10 @@ def save_to_supabase(script, articles):
     article_ids = [art["id"] for art in articles]
     date_str = datetime.now().strftime("%B %d, %Y")
     title = f"Listen Later: {date_str}"
-    
-    # Simple description based on article titles
-    description = "Discussing: " + ", ".join([art["title"] for art in articles])
+
+    # Description with a hyperlink to each article. Timestamps are added later,
+    # once audio has been generated (see update_episode_audio_url in main()).
+    description = build_description(articles)
 
     payload = {
         "user_id": USER_ID,
@@ -358,8 +434,9 @@ def get_audio_metadata(file_path):
 
 
 def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_bytes=None,
-                             chapters=None):
-    """Updates the database record with the audio URL, duration, size, and chapters."""
+                             chapters=None, description=None):
+    """Updates the database record with the audio URL, duration, size, chapters,
+    and (optionally) a refreshed description carrying per-article timestamps."""
     if not supabase_client:
         return False
 
@@ -370,6 +447,8 @@ def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_
         update_data["size_bytes"] = size_bytes
     if chapters is not None:
         update_data["chapters"] = chapters
+    if description is not None:
+        update_data["description"] = description
 
     try:
         supabase_client.table("podcast_episodes").update(
@@ -436,10 +515,16 @@ async def main():
 
     # Build chapters (#14) from per-line durations and article tags
     line_durations = compute_line_durations(audio_files)
+    article_start_times = compute_article_start_times(script, line_durations, articles)
     chapters = build_chapters(script, line_durations, articles)
     total_duration = sum(line_durations)
     if chapters:
         print(f"Built {len(chapters)} chapters.")
+
+    # Descriptions with a hyperlink + timestamp per article (HTML for the RSS/web
+    # feed, plain text for the MP3 comment tag).
+    html_description = build_description(articles, article_start_times, html=True)
+    text_description = build_description(articles, article_start_times, html=False)
 
     # Assemble Episode
     print("Assembling episode...")
@@ -447,7 +532,7 @@ async def main():
         "title": f"Listen Later: {datetime.now().strftime('%B %d, %Y')}",
         "artist": "Listen Later",
         "album": "Stash Podcast",
-        "description": "Discussing: " + ", ".join([art["title"] for art in articles])
+        "description": text_description,
     }
     final_audio = assemble_episode(
         "podcast/temp_audio", "podcast/output/episode.mp3", metadata,
@@ -465,7 +550,8 @@ async def main():
 
     duration_seconds, size_bytes = get_audio_metadata("podcast/output/episode.mp3")
     if not update_episode_audio_url(
-        episode_id, audio_url, duration_seconds, size_bytes, chapters=chapters or None
+        episode_id, audio_url, duration_seconds, size_bytes, chapters=chapters or None,
+        description=html_description,
     ):
         fail("uploaded the MP3 but failed to update the episode row with its audio URL.")
 

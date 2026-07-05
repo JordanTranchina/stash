@@ -182,6 +182,89 @@ class TestBuildChapters:
         assert chapters == [{"startTime": 0.0, "title": "Local-First Software"}]
 
 
+# ---------------------------------------------------------------------------
+# Episode description with article links + timestamps
+# ---------------------------------------------------------------------------
+
+class TestFormatTimestamp:
+    def test_under_a_minute(self):
+        assert script.format_timestamp(5) == "0:05"
+
+    def test_minutes_and_seconds(self):
+        assert script.format_timestamp(83) == "1:23"
+
+    def test_rounds_to_nearest_second(self):
+        assert script.format_timestamp(83.6) == "1:24"
+
+    def test_includes_hours_past_an_hour(self):
+        assert script.format_timestamp(3725) == "1:02:05"
+
+
+class TestBuildDescription:
+    ARTICLES = [
+        {"title": "Local-First Software", "url": "https://ex.com/a"},
+        {"title": "The RSS Renaissance", "url": "https://ex.com/b"},
+    ]
+
+    def test_html_links_each_article_with_timestamp(self):
+        desc = script.build_description(
+            self.ARTICLES, {0: 0.0, 1: 83.0}, html=True
+        )
+        assert '<a href="https://ex.com/a" target="_blank" rel="noopener">Local-First Software</a> (0:00)' in desc
+        assert '<a href="https://ex.com/b" target="_blank" rel="noopener">The RSS Renaissance</a> (1:23)' in desc
+        assert desc.startswith("Discussing:<ul>")
+
+    def test_html_without_timestamps_before_audio(self):
+        desc = script.build_description(self.ARTICLES, html=True)
+        assert '<a href="https://ex.com/a"' in desc
+        assert "(" not in desc  # no timestamps yet
+
+    def test_html_escapes_titles_and_urls(self):
+        articles = [{"title": "A & B <script>", "url": 'https://ex.com/?x="y"&z'}]
+        desc = script.build_description(articles, {0: 0.0}, html=True)
+        assert "<script>" not in desc
+        assert "A &amp; B &lt;script&gt;" in desc
+        assert "&amp;z" in desc
+
+    def test_html_falls_back_to_plain_title_without_url(self):
+        articles = [{"title": "No Link Here"}]
+        desc = script.build_description(articles, {0: 0.0}, html=True)
+        assert "<a " not in desc
+        assert "No Link Here (0:00)" in desc
+
+    def test_plain_text_variant(self):
+        desc = script.build_description(
+            self.ARTICLES, {0: 0.0, 1: 83.0}, html=False
+        )
+        assert "<a" not in desc and "<ul>" not in desc
+        assert "• Local-First Software [0:00] — https://ex.com/a" in desc
+        assert "• The RSS Renaissance [1:23] — https://ex.com/b" in desc
+
+
+class TestComputeArticleStartTimes:
+    ARTICLES = [{"title": "A"}, {"title": "B"}]
+
+    def test_maps_first_line_of_each_article(self):
+        script_lines = [
+            {"article_index": None},  # 1.0s intro
+            {"article_index": 0},     # opens at 1.0s
+            {"article_index": 0},
+            {"article_index": 1},     # opens at 1+2+3 = 6.0s
+        ]
+        durations = [1.0, 2.0, 3.0, 4.0]
+        starts = script.compute_article_start_times(script_lines, durations, self.ARTICLES)
+        assert starts == {0: 1.0, 1: 6.0}
+
+    def test_ignores_out_of_range_and_duplicates(self):
+        script_lines = [
+            {"article_index": 0},
+            {"article_index": 5},
+            {"article_index": 0},
+        ]
+        starts = script.compute_article_start_times(script_lines, [1.0, 1.0, 1.0], self.ARTICLES)
+        assert starts == {0: 0.0}
+
+
 class TestComputeLineDurations:
     def test_probes_each_file(self):
         outputs = [b"1.5\n", b"2.5\n"]

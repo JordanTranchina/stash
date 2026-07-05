@@ -885,7 +885,7 @@ class StashApp {
             <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
             <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
           </div>
-          ${ep.description ? `<div class="podcast-episode-desc">${this.escapeHtml(ep.description)}</div>` : ''}
+          ${ep.description ? `<div class="podcast-episode-desc">${ep.description}</div>` : ''}
           ${ep.audio_url
             ? `<audio class="podcast-audio" controls preload="none" src="${this.escapeHtml(ep.audio_url)}"></audio>`
             : `<div class="podcast-episode-pending">⏳ Audio is still being generated…</div>`}
