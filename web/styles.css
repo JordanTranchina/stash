@@ -52,9 +52,8 @@
   background: var(--bg-secondary);
 }
 
-[data-theme="dark"] .view-controls select {
+[data-theme="dark"] .header-sort-btn {
   background: var(--bg-secondary);
-  color: var(--text);
 }
 
 [data-theme="dark"] .save-card-highlight {
@@ -286,19 +285,6 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
-.logo-small {
-  width: 32px;
-  height: 32px;
-  background: var(--primary);
-  color: white;
-  font-size: 16px;
-  font-weight: 700;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .sidebar-header span {
   font-size: 18px;
   font-weight: 600;
@@ -407,13 +393,22 @@ select {
 .main-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
+  gap: 12px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--border);
+}
+
+.app-brand-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+  letter-spacing: -0.01em;
 }
 
 .search-container {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -421,6 +416,40 @@ select {
   background: var(--bg-secondary);
   border-radius: var(--radius);
   max-width: 500px;
+}
+
+/* Sort control: a compact icon button with the native <select> overlaid
+   transparently on top, so a tap opens the OS menu and the existing
+   change handler keeps working. */
+.header-sort {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+}
+
+.header-sort-btn {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-secondary);
+}
+
+.header-sort select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .search-container svg {
@@ -453,27 +482,6 @@ select {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
-}
-
-.content-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.content-header h2 {
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.view-controls select {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: white;
-  font-size: 14px;
-  color: var(--text-secondary);
 }
 
 /* Saves Grid */
@@ -1060,17 +1068,6 @@ select {
 
   .content {
     padding: 16px;
-  }
-
-  .content-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-
-  .content-header h2 {
-    font-size: 20px;
   }
 
   .saves-grid {
@@ -2272,20 +2269,6 @@ select {
 /* ==========================================================================
    Bottom Tab Bar Layout
    ========================================================================== */
-
-/* App brand in the header (replaces the old sidebar header) */
-.app-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.app-brand span {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
 
 /* Leave room so the fixed bottom bar never covers the last row of content */
 .content {

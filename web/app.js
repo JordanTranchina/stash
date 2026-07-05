@@ -667,6 +667,13 @@ class StashApp {
       item.classList.toggle('active', item.dataset.view === view);
     });
 
+    // Sorting only applies to lists of saves, so hide the sort control on
+    // Podcasts and Settings (search stays visible on every view).
+    const headerSort = document.getElementById('header-sort');
+    if (headerSort) {
+      headerSort.style.display = (view === 'all' || view === 'archived') ? '' : 'none';
+    }
+
     // Toggle between the saves view and the settings view
     const savesView = document.getElementById('saves-view');
     const settingsView = document.getElementById('settings-view');
@@ -681,20 +688,6 @@ class StashApp {
 
     savesView.classList.remove('hidden');
     settingsView.classList.add('hidden');
-
-    // Update title
-    const titles = {
-      all: 'All Saves',
-      archived: 'Archived',
-      podcasts: 'Podcasts',
-    };
-    document.getElementById('view-title').textContent = titles[view] || 'Saves';
-
-    // The sort control only makes sense for lists of saves
-    const viewControls = document.querySelector('#saves-view .view-controls');
-    if (viewControls) {
-      viewControls.style.display = view === 'podcasts' ? 'none' : '';
-    }
 
     if (view === 'podcasts') {
       this.loadPodcasts();
