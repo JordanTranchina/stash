@@ -2083,12 +2083,17 @@ select {
 /* PWA Styles */
 .toast {
   position: fixed;
-  bottom: 20px;
+  /* Sit above the bottom tab bar */
+  bottom: calc(84px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100vw - 32px);
   background: var(--text);
   color: var(--bg);
-  padding: 12px 24px;
+  padding: 12px 20px;
   border-radius: 99px;
   font-size: 14px;
   font-weight: 500;
@@ -2097,6 +2102,24 @@ select {
   transition:
     opacity 0.3s,
     transform 0.3s;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  color: var(--primary-light);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  color: #fff;
 }
 
 .toast.hidden {

@@ -567,7 +567,10 @@ class StashApp {
     }
 
     window.StashDB.saveArticles(this.saves);
-    this.showToast('Archived');
+    this.showToast('Archived', {
+      label: 'Undo',
+      onClick: () => this.unarchiveSaveById(id),
+    });
 
     // Remove the collapsed node, or fall back to the empty state
     setTimeout(() => {
@@ -578,15 +581,53 @@ class StashApp {
     }, 280);
   }
 
-  // Lightweight toast helper
-  showToast(message) {
+  // Undo an archive (used by the "Undo" action in the archive toast).
+  async unarchiveSaveById(id) {
+    const { error } = await this.supabase
+      .from('saves')
+      .update({ is_archived: false })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error restoring save:', error);
+      this.showToast('Could not undo — try again');
+      return;
+    }
+
+    // Reload the current list so the restored item reappears
+    await this.loadSaves();
+    this.showToast('Restored');
+  }
+
+  // Lightweight toast helper. Pass an optional action ({ label, onClick }) to
+  // render a tappable button (e.g. "Undo") alongside the message.
+  showToast(message, action = null) {
     const toast = document.getElementById('toast');
     const msg = document.getElementById('toast-message');
     if (!toast || !msg) return;
     msg.textContent = message;
+
+    // Clear any action button left over from a previous toast
+    const prev = toast.querySelector('.toast-action');
+    if (prev) prev.remove();
+
+    if (action && action.label && typeof action.onClick === 'function') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'toast-action';
+      btn.textContent = action.label;
+      btn.addEventListener('click', () => {
+        clearTimeout(this._toastTimer);
+        toast.classList.add('hidden');
+        action.onClick();
+      });
+      toast.appendChild(btn);
+    }
+
     toast.classList.remove('hidden');
     clearTimeout(this._toastTimer);
-    this._toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
+    // Give a little longer to react when there's an action to take
+    this._toastTimer = setTimeout(() => toast.classList.add('hidden'), action ? 6000 : 2500);
   }
 
   // Ask the Service Worker to retry the pending-save queue when connectivity
