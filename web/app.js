@@ -416,16 +416,23 @@ class StashApp {
           </div>
         `;
       } else {
+        const minutes = this.readingTime(save);
+        const readtime = minutes === null ? '' : `
+                <span class="save-card-readtime">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M12 7v5l3 2"></path>
+                  </svg>${minutes} min read
+                </span>`;
         cardHtml = `
           <div class="save-card" data-id="${save.id}">
-            ${save.image_url ? `<img class="save-card-image" src="${save.image_url}" alt="" onerror="this.style.display='none'">` : ''}
             <div class="save-card-content">
-              <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
-              <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-              <div class="save-card-excerpt">${this.escapeHtml(save.excerpt || '')}</div>
-              <div class="save-card-meta">
-                <span class="save-card-date">${date}</span>
+              <div class="save-card-body">
+                <div class="save-card-site">${this.escapeHtml(save.site_name || this.hostFromUrl(save.url))}</div>
+                <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
+                ${readtime}
               </div>
+              <div class="save-card-thumb">${this.cardThumb(save)}</div>
             </div>
           </div>
         `;
@@ -701,6 +708,13 @@ class StashApp {
       item.classList.toggle('active', item.dataset.view === view);
     });
 
+    // Sorting only applies to lists of saves, so hide the sort control on
+    // Podcasts and Settings (search stays visible on every view).
+    const headerSort = document.getElementById('header-sort');
+    if (headerSort) {
+      headerSort.style.display = (view === 'all' || view === 'archived') ? '' : 'none';
+    }
+
     // Toggle between the saves view and the settings view
     const savesView = document.getElementById('saves-view');
     const settingsView = document.getElementById('settings-view');
@@ -715,20 +729,6 @@ class StashApp {
 
     savesView.classList.remove('hidden');
     settingsView.classList.add('hidden');
-
-    // Update title
-    const titles = {
-      all: 'All Saves',
-      archived: 'Archived',
-      podcasts: 'Podcasts',
-    };
-    document.getElementById('view-title').textContent = titles[view] || 'Saves';
-
-    // The sort control only makes sense for lists of saves
-    const viewControls = document.querySelector('#saves-view .view-controls');
-    if (viewControls) {
-      viewControls.style.display = view === 'podcasts' ? 'none' : '';
-    }
 
     if (view === 'podcasts') {
       this.loadPodcasts();
@@ -1125,6 +1125,54 @@ class StashApp {
     return div.innerHTML;
   }
 
+  // Human-friendly host (e.g. "theverge.com") used as the publication source
+  // when a save has no site_name.
+  hostFromUrl(url) {
+    if (!url) return '';
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  }
+
+  // Estimate reading time from the saved article body at ~220 words/min.
+  // Returns null when there's no content to estimate from, so the card can
+  // simply omit the reading-time line rather than show a bogus value.
+  readingTime(save) {
+    const text = save.content || '';
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    if (words === 0) return null;
+    return Math.max(1, Math.round(words / 220));
+  }
+
+  // Deterministic gradient for the fallback thumbnail tile, derived from the
+  // source/title so a given save always gets the same color.
+  fallbackGradient(seed) {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash * 31 + seed.charCodeAt(i)) & 0xffffffff;
+    }
+    const hue = Math.abs(hash) % 360;
+    return `linear-gradient(135deg, hsl(${hue} 62% 68%) 0%, hsl(${(hue + 40) % 360} 58% 52%) 100%)`;
+  }
+
+  // Thumbnail markup for an article card: the real og:image when present,
+  // otherwise a colored monogram tile using the source's first letter.
+  cardThumb(save) {
+    if (save.image_url) {
+      const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
+      const seed = this.escapeHtml(save.site_name || save.title || save.url || '');
+      const initial = this.escapeHtml((save.site_name || save.title || '?').trim().charAt(0) || '?');
+      return `<img src="${save.image_url}" alt="" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
+    }
+    return this.fallbackTile(save.site_name || save.title || save.url || '', (save.site_name || save.title || '?').trim().charAt(0) || '?');
+  }
+
+  fallbackTile(seed, initial) {
+    return `<div class="save-card-thumb-fallback" style="background:${this.fallbackGradient(seed)}">${this.escapeHtml(initial)}</div>`;
+  }
+
   renderMarkdown(text) {
     if (!text) return '';
 
@@ -1346,3 +1394,5 @@ class StashApp {
 
 // Initialize app
 const app = new StashApp();
+// Exposed for inline handlers (e.g. thumbnail onerror fallback).
+window.stashApp = app;
