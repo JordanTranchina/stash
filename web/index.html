@@ -48,150 +48,14 @@
 
     <!-- Main App -->
     <div id="main-screen" class="screen hidden">
-      <!-- Sidebar Overlay (for mobile) -->
-      <div id="sidebar-overlay" class="sidebar-overlay"></div>
-
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <div class="logo-small">S</div>
-          <span>Stash</span>
-        </div>
-
-        <nav class="nav">
-          <a href="#" class="nav-item active" data-view="all">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-            </svg>
-            All Saves
-          </a>
-          <a href="#" class="nav-item" data-view="highlights">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-              <path d="M2 17l10 5 10-5"></path>
-              <path d="M2 12l10 5 10-5"></path>
-            </svg>
-            Highlights
-          </a>
-          <a href="#" class="nav-item" data-view="articles">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-            Articles
-          </a>
-          <a href="#" class="nav-item" data-view="kindle">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-            </svg>
-            Kindle
-          </a>
-          <a href="#" class="nav-item" data-view="archived">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="21 8 21 21 3 21 3 8"></polyline>
-              <rect x="1" y="3" width="22" height="5"></rect>
-              <line x1="10" y1="12" x2="14" y2="12"></line>
-            </svg>
-            Archived
-          </a>
-          <a href="#" class="nav-item" data-view="weekly">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
-            Weekly Review
-          </a>
-          <a href="#" class="nav-item" data-view="podcasts">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-            Podcasts
-          </a>
-          <button class="nav-item digest-settings-btn" id="digest-settings-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-              <polyline points="22,6 12,13 2,6"></polyline>
-            </svg>
-            Digest Settings
-          </button>
-          <button class="nav-item podcast-settings-btn" id="podcast-settings-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-            Podcast Settings
-          </button>
-        </nav>
-
-        <div class="nav-section">
-          <h3>Folders</h3>
-          <div id="folders-list"></div>
-          <button class="add-folder-btn" id="add-folder-btn">+ New Folder</button>
-        </div>
-
-        <div class="nav-section">
-          <h3>Tags</h3>
-          <div id="tags-list" class="tags-cloud"></div>
-        </div>
-
-        <div class="nav-section">
-          <h3>Import</h3>
-          <button class="add-folder-btn" id="kindle-import-btn">Import Kindle</button>
-        </div>
-
-        <div class="sidebar-footer">
-          <button class="theme-toggle" id="theme-toggle">
-            <svg class="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="5"></circle>
-              <line x1="12" y1="1" x2="12" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="23"></line>
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-              <line x1="1" y1="12" x2="3" y2="12"></line>
-              <line x1="21" y1="12" x2="23" y2="12"></line>
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-            </svg>
-            <svg class="moon-icon hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-            </svg>
-            <span class="theme-label">Dark Mode</span>
-          </button>
-          <a href="#" class="nav-item" data-view="stats">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
-            Stats
-          </a>
-          <button class="nav-item" id="signout-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-              <polyline points="16 17 21 12 16 7"></polyline>
-              <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
-            Sign Out
-          </button>
-          <div class="credits">
-            Made by <a href="https://kevinroose.com" target="_blank">Kevin Roose</a><br>
-            Built with <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a>
-          </div>
-        </div>
-      </aside>
-
       <!-- Main Content -->
       <main class="main">
         <!-- Header -->
         <header class="main-header">
+          <div class="app-brand">
+            <div class="logo-small">S</div>
+            <span>Stash</span>
+          </div>
           <div class="search-container">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"></circle>
@@ -199,43 +63,160 @@
             </svg>
             <input type="text" id="search-input" placeholder="Search your stash...">
           </div>
-          <button class="btn icon" id="mobile-menu-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="3" y1="12" x2="21" y2="12"></line>
-              <line x1="3" y1="6" x2="21" y2="6"></line>
-              <line x1="3" y1="18" x2="21" y2="18"></line>
-            </svg>
-          </button>
         </header>
 
         <!-- Content Area -->
         <div class="content">
-          <div class="content-header">
-            <h2 id="view-title">All Saves</h2>
-            <div class="view-controls">
-              <select id="sort-select">
-                <option value="created_at.desc">Newest first</option>
-                <option value="created_at.asc">Oldest first</option>
-                <option value="title.asc">Title A-Z</option>
-              </select>
+          <!-- Saves View -->
+          <div id="saves-view">
+            <div class="content-header">
+              <h2 id="view-title">All Saves</h2>
+              <div class="view-controls">
+                <select id="sort-select">
+                  <option value="created_at.desc">Newest first</option>
+                  <option value="created_at.asc">Oldest first</option>
+                  <option value="title.asc">Title A-Z</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="saves-container" class="saves-grid">
+              <!-- Saves will be loaded here -->
+            </div>
+
+            <div id="loading" class="loading hidden">
+              <div class="spinner"></div>
+            </div>
+
+            <div id="empty-state" class="empty-state hidden">
+              <div class="empty-icon">📚</div>
+              <h3>No saves yet</h3>
+              <p>Install the Chrome extension to start saving articles and highlights.</p>
             </div>
           </div>
 
-          <div id="saves-container" class="saves-grid">
-            <!-- Saves will be loaded here -->
-          </div>
+          <!-- Settings View -->
+          <div id="settings-view" class="hidden">
+            <div id="settings-list">
+              <div class="content-header">
+                <h2>Settings</h2>
+              </div>
 
-          <div id="loading" class="loading hidden">
-            <div class="spinner"></div>
-          </div>
+              <div class="settings-section">
+                <h3>Appearance</h3>
+                <button class="settings-row theme-toggle" id="theme-toggle">
+                  <svg class="sun-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                  </svg>
+                  <svg class="moon-icon hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                  </svg>
+                  <span class="theme-label">Dark Mode</span>
+                </button>
+              </div>
 
-          <div id="empty-state" class="empty-state hidden">
-            <div class="empty-icon">📚</div>
-            <h3>No saves yet</h3>
-            <p>Install the Chrome extension to start saving articles and highlights.</p>
+              <div class="settings-section">
+                <h3>Podcast &amp; Digest</h3>
+                <button class="settings-row" id="digest-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
+                  </svg>
+                  <span>Weekly Digest Email</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+                <button class="settings-row" id="podcast-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                  </svg>
+                  <span>Podcast Host Personalities</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="settings-section">
+                <h3>General</h3>
+                <button class="settings-row" id="view-stats-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                  </svg>
+                  <span>Stats</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+                <button class="settings-row" id="signout-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  <span>Sign Out</span>
+                </button>
+              </div>
+
+              <div class="credits">
+                Made by <a href="https://kevinroose.com" target="_blank">Kevin Roose</a><br>
+                Built with <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a>
+              </div>
+            </div>
+
+            <!-- Stats sub-panel (rendered inside Settings) -->
+            <div id="settings-stats" class="hidden"></div>
           </div>
         </div>
       </main>
+
+      <!-- Bottom Tab Bar -->
+      <nav class="bottom-nav">
+        <button class="bottom-nav-item active" data-view="all">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          </svg>
+          <span>All Saves</span>
+        </button>
+        <button class="bottom-nav-item" data-view="podcasts">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span>Podcasts</span>
+        </button>
+        <button class="bottom-nav-item" data-view="archived">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+            <rect x="1" y="3" width="22" height="5"></rect>
+            <line x1="10" y1="12" x2="14" y2="12"></line>
+          </svg>
+          <span>Archived</span>
+        </button>
+        <button class="bottom-nav-item" data-view="settings">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Settings</span>
+        </button>
+      </nav>
 
       <!-- Reading Pane (for viewing saved content) -->
       <aside id="reading-pane" class="reading-pane hidden">
@@ -313,70 +294,12 @@
           <h1 id="reading-title"></h1>
           <div id="reading-body" class="reading-body"></div>
         </div>
-        <div class="reading-tags">
-          <div id="reading-tags-list"></div>
-          <button class="add-tag-btn" id="add-tag-btn">+ Add tag</button>
-        </div>
       </aside>
     </div>
 
     <!-- Stats Screen -->
     <div id="stats-screen" class="screen hidden">
       <!-- Will be populated by JS -->
-    </div>
-
-    <!-- Kindle Import Modal -->
-    <div id="kindle-import-modal" class="modal hidden">
-      <div class="modal-overlay"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Import Kindle Highlights</h2>
-          <button class="btn icon modal-close-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div id="kindle-dropzone" class="dropzone">
-            <div class="dropzone-content">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              <p>Drag and drop your <strong>My Clippings.txt</strong> file here</p>
-              <span class="dropzone-hint">or click to browse</span>
-            </div>
-            <input type="file" id="kindle-file-input" accept=".txt" hidden>
-          </div>
-          <p class="import-help">
-            Find this file on your Kindle device at <code>/documents/My Clippings.txt</code>
-          </p>
-          <div id="kindle-import-preview" class="import-preview hidden">
-            <div class="import-stats">
-              <div class="import-stat">
-                <span class="import-stat-value" id="import-total">0</span>
-                <span class="import-stat-label">highlights found</span>
-              </div>
-              <div class="import-stat">
-                <span class="import-stat-value" id="import-books">0</span>
-                <span class="import-stat-label">books</span>
-              </div>
-              <div class="import-stat">
-                <span class="import-stat-value" id="import-duplicates">0</span>
-                <span class="import-stat-label">duplicates</span>
-              </div>
-            </div>
-            <div class="import-books-list" id="import-books-list"></div>
-          </div>
-        </div>
-        <div class="modal-footer hidden" id="kindle-import-footer">
-          <button class="btn secondary" id="kindle-cancel-btn">Cancel</button>
-          <button class="btn primary" id="kindle-confirm-btn">Import Highlights</button>
-        </div>
-      </div>
     </div>
 
     <!-- Digest Settings Modal -->
@@ -393,7 +316,7 @@
           </button>
         </div>
         <div class="modal-body">
-          <p class="digest-description">Get a weekly email with summaries of everything you saved, plus random Kindle highlights to revisit.</p>
+          <p class="digest-description">Get a weekly email with summaries of everything you saved, plus a few highlights to revisit.</p>
 
           <div class="digest-form">
             <div class="form-group">

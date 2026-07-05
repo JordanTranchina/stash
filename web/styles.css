@@ -2179,3 +2179,159 @@ select {
   font-size: 48px;
   margin-bottom: 12px;
 }
+
+/* ==========================================================================
+   Bottom Tab Bar Layout
+   ========================================================================== */
+
+/* App brand in the header (replaces the old sidebar header) */
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.app-brand span {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Leave room so the fixed bottom bar never covers the last row of content */
+.content {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
+/* Bottom navigation bar */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -1px 12px rgba(0, 0, 0, 0.04);
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav-item svg {
+  width: 22px;
+  height: 22px;
+}
+
+.bottom-nav-item:hover {
+  color: var(--text-secondary);
+}
+
+.bottom-nav-item.active {
+  color: var(--primary);
+}
+
+/* Give the tab bar a comfortable centered width on large screens */
+@media (min-width: 900px) {
+  .bottom-nav {
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .bottom-nav-item {
+    flex: 0 0 160px;
+  }
+}
+
+/* ==========================================================================
+   Settings View
+   ========================================================================== */
+
+#settings-view {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.settings-section {
+  margin-bottom: 28px;
+}
+
+.settings-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.settings-row:hover {
+  border-color: var(--primary);
+  background: var(--bg-tertiary);
+}
+
+.settings-row > span {
+  flex: 1;
+}
+
+.settings-row svg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.settings-row .settings-chevron {
+  color: var(--text-muted);
+}
+
+/* Stats sub-panel back button aligns left, not spaced apart */
+#settings-stats .stats-container {
+  padding: 0;
+  max-width: none;
+}
+
+#settings-stats .stats-header {
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+/* Stats section respects dark mode (was hardcoded white) */
+[data-theme="dark"] .stats-section {
+  background: var(--bg-secondary);
+}
