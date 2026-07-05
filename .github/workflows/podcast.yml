@@ -24,6 +24,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r podcast/requirements.txt
 
+      - name: Sync YouTube playlist
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          USER_ID: ${{ secrets.USER_ID }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_SYNC_PLAYLIST_ID: ${{ secrets.YOUTUBE_SYNC_PLAYLIST_ID }}
+        run: python podcast/youtube_sync.py
+
       - name: Generate Podcast Episode
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

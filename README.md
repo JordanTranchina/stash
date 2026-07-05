@@ -64,6 +64,21 @@ Save a YouTube video to Stash (extension, bookmarklet, or the iOS share sheet �
 - The transcript is cached back onto the save (`content`), so it is fetched once and then reused by future episodes and the reading view.
 - If a video has no captions — or YouTube rate-limits the request (common from datacenter IPs like GitHub Actions runners) — the pipeline degrades gracefully: it falls back to whatever content the save already had and keeps generating the episode. See the library's ["Working around IP bans"](https://github.com/jdepoix/youtube-transcript-api#working-around-ip-bans-requestblocked-or-ipblocked-exception) notes if you need a proxy.
 
+#### Auto-syncing a playlist from your phone
+
+Don't want to save each video by hand? Point Stash at a YouTube playlist and it will sync new videos automatically — no desktop required. The daily podcast job reads the playlist through the **official YouTube Data API** (an API key only — no login, no scraping) and inserts new videos as saves, which then pick up transcripts as above.
+
+> **Why not literal "Watch Later"?** YouTube's Watch Later playlist is system-managed and isn't readable through any official API. Reading it would require scraping it while logged in as you, which violates YouTube's Terms of Service and risks a permanent ban of your Google account. Using a dedicated playlist you own is fully sanctioned and carries no account risk — the only difference is one deliberate tap to pick the playlist instead of the Watch Later default.
+
+One-time setup:
+
+1. **Create a playlist** (e.g. "Listen Later") and set its visibility to **Unlisted** (unlisted playlists are readable with just an API key; private ones would require OAuth). Copy its ID — the `list=...` value in the playlist URL.
+2. **Get a YouTube Data API key**: in [Google Cloud Console](https://console.cloud.google.com/), create a project, enable **YouTube Data API v3**, and create an **API key**. The free quota (10,000 units/day; a playlist read costs ~1 unit) is far more than enough.
+3. **Add two GitHub repository secrets**: `YOUTUBE_API_KEY` and `YOUTUBE_SYNC_PLAYLIST_ID`.
+4. On your phone, **Save → Listen Later** on any video instead of Watch Later.
+
+The sync runs as a step in the daily `Generate Podcast` workflow (`podcast/youtube_sync.py`); it is idempotent (already-saved videos are skipped) and skips cleanly if the two secrets aren't set. You can also run it manually with `python podcast/youtube_sync.py`.
+
 ## Screenshots
 
 ### Your saves
