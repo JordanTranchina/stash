@@ -6,9 +6,6 @@ class StashApp {
     this.currentView = 'all';
     this.currentSave = null;
     this.saves = [];
-    this.tags = [];
-    this.folders = [];
-    this.pendingKindleImport = null; // Stores parsed highlights before import
 
     // Audio player state
     this.audio = null;
@@ -82,13 +79,18 @@ class StashApp {
       this.signOut();
     });
 
-    // Navigation
-    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+    // Bottom tab bar navigation
+    document.querySelectorAll('.bottom-nav-item[data-view]').forEach(item => {
       item.addEventListener('click', (e) => {
         e.preventDefault();
         const view = item.dataset.view;
         this.setView(view);
       });
+    });
+
+    // Stats (opened from within Settings)
+    document.getElementById('view-stats-btn').addEventListener('click', () => {
+      this.showStats();
     });
 
     // Search
@@ -122,39 +124,6 @@ class StashApp {
       this.deleteSave();
     });
 
-    document.getElementById('add-tag-btn').addEventListener('click', () => {
-      this.addTagToSave();
-    });
-
-    // Mobile menu
-    const sidebar = document.querySelector('.sidebar');
-    const overlay = document.getElementById('sidebar-overlay');
-
-    document.getElementById('mobile-menu-btn').addEventListener('click', () => {
-      sidebar.classList.add('open');
-      overlay.classList.add('open');
-    });
-
-    overlay.addEventListener('click', () => {
-      sidebar.classList.remove('open');
-      overlay.classList.remove('open');
-    });
-
-    // Close sidebar when nav item clicked on mobile
-    document.querySelectorAll('.nav-item').forEach(item => {
-      item.addEventListener('click', () => {
-        if (window.innerWidth <= 768) {
-          sidebar.classList.remove('open');
-          overlay.classList.remove('open');
-        }
-      });
-    });
-
-    // Add folder
-    document.getElementById('add-folder-btn').addEventListener('click', () => {
-      this.addFolder();
-    });
-
     // Theme toggle
     document.getElementById('theme-toggle').addEventListener('click', () => {
       this.toggleTheme();
@@ -184,58 +153,6 @@ class StashApp {
         const rect = e.target.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
         this.audio.currentTime = percent * this.audio.duration;
-      }
-    });
-
-    // Kindle Import
-    document.getElementById('kindle-import-btn').addEventListener('click', () => {
-      this.showKindleImportModal();
-    });
-
-    const kindleModal = document.getElementById('kindle-import-modal');
-    const kindleDropzone = document.getElementById('kindle-dropzone');
-    const kindleFileInput = document.getElementById('kindle-file-input');
-
-    // Modal close handlers
-    kindleModal.querySelector('.modal-overlay').addEventListener('click', () => {
-      this.hideKindleImportModal();
-    });
-    kindleModal.querySelector('.modal-close-btn').addEventListener('click', () => {
-      this.hideKindleImportModal();
-    });
-    document.getElementById('kindle-cancel-btn').addEventListener('click', () => {
-      this.hideKindleImportModal();
-    });
-    document.getElementById('kindle-confirm-btn').addEventListener('click', () => {
-      this.confirmKindleImport();
-    });
-
-    // Dropzone interactions
-    kindleDropzone.addEventListener('click', () => {
-      kindleFileInput.click();
-    });
-
-    kindleFileInput.addEventListener('change', (e) => {
-      if (e.target.files.length > 0) {
-        this.handleKindleFile(e.target.files[0]);
-      }
-    });
-
-    // Drag and drop
-    kindleDropzone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      kindleDropzone.classList.add('dragover');
-    });
-
-    kindleDropzone.addEventListener('dragleave', () => {
-      kindleDropzone.classList.remove('dragover');
-    });
-
-    kindleDropzone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      kindleDropzone.classList.remove('dragover');
-      if (e.dataTransfer.files.length > 0) {
-        this.handleKindleFile(e.dataTransfer.files[0]);
       }
     });
 
@@ -411,11 +328,7 @@ class StashApp {
   }
 
   async loadData() {
-    await Promise.all([
-      this.loadSaves(),
-      this.loadTags(),
-      this.loadFolders(),
-    ]);
+    await this.loadSaves();
   }
 
   async loadSaves() {
@@ -445,17 +358,8 @@ class StashApp {
       .order(column, { ascending: direction === 'asc' });
 
     // Apply view filters
-    if (this.currentView === 'highlights') {
-      query = query.not('highlight', 'is', null);
-    } else if (this.currentView === 'articles') {
-      query = query.is('highlight', null);
-    } else if (this.currentView === 'archived') {
+    if (this.currentView === 'archived') {
       query = query.eq('is_archived', true);
-    } else if (this.currentView === 'weekly') {
-      // Weekly review - get this week's saves
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      query = query.gte('created_at', weekAgo.toISOString());
     } else {
       query = query.eq('is_archived', false);
     }
@@ -483,24 +387,23 @@ class StashApp {
       container.innerHTML = ''; // Clear any cached data if server says empty (edge case)
     } else {
       empty.classList.add('hidden');
-      // Use special rendering for weekly view
-      if (this.currentView === 'weekly') {
-        this.renderWeeklyReview();
-      } else {
-        this.renderSaves();
-      }
+      this.renderSaves();
     }
   }
 
   renderSaves() {
     const container = document.getElementById('saves-container');
 
+    // Swipe-to-archive only makes sense for lists that aren't already archived.
+    const swipeEnabled = this.currentView !== 'archived';
+
     container.innerHTML = this.saves.map(save => {
       const isHighlight = !!save.highlight;
       const date = new Date(save.created_at).toLocaleDateString();
 
+      let cardHtml;
       if (isHighlight) {
-        return `
+        cardHtml = `
           <div class="save-card highlight" data-id="${save.id}">
             <div class="save-card-content">
               <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
@@ -512,180 +415,178 @@ class StashApp {
             </div>
           </div>
         `;
-      }
-
-      return `
-        <div class="save-card" data-id="${save.id}">
-          ${save.image_url ? `<img class="save-card-image" src="${save.image_url}" alt="" onerror="this.style.display='none'">` : ''}
-          <div class="save-card-content">
-            <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
-            <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-            <div class="save-card-excerpt">${this.escapeHtml(save.excerpt || '')}</div>
-            <div class="save-card-meta">
-              <span class="save-card-date">${date}</span>
+      } else {
+        cardHtml = `
+          <div class="save-card" data-id="${save.id}">
+            ${save.image_url ? `<img class="save-card-image" src="${save.image_url}" alt="" onerror="this.style.display='none'">` : ''}
+            <div class="save-card-content">
+              <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
+              <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
+              <div class="save-card-excerpt">${this.escapeHtml(save.excerpt || '')}</div>
+              <div class="save-card-meta">
+                <span class="save-card-date">${date}</span>
+              </div>
             </div>
           </div>
+        `;
+      }
+
+      if (!swipeEnabled) return cardHtml;
+
+      // Wrap in a swipe container with an "Archive" action revealed on left-swipe
+      return `
+        <div class="save-card-swipe" data-id="${save.id}">
+          <div class="save-card-swipe-action" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="21 8 21 21 3 21 3 8"></polyline>
+              <rect x="1" y="3" width="22" height="5"></rect>
+              <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+            <span>Archive</span>
+          </div>
+          ${cardHtml}
         </div>
       `;
     }).join('');
 
-    // Bind click events
+    // Bind click events (guarding against clicks that are really the end of a swipe)
     container.querySelectorAll('.save-card').forEach(card => {
       card.addEventListener('click', () => {
+        const swipeEl = card.closest('.save-card-swipe');
+        if (swipeEl && swipeEl._suppressClick) return;
         const id = card.dataset.id;
         const save = this.saves.find(s => s.id === id);
         if (save) this.openReadingPane(save);
       });
     });
+
+    // Wire up swipe-to-archive on each card
+    if (swipeEnabled) {
+      container.querySelectorAll('.save-card-swipe').forEach(swipeEl => {
+        const card = swipeEl.querySelector('.save-card');
+        const save = this.saves.find(s => s.id === swipeEl.dataset.id);
+        if (card && save) this.attachSwipeToArchive(swipeEl, card, save);
+      });
+    }
   }
 
-  // Weekly Review special rendering
-  renderWeeklyReview() {
-    const container = document.getElementById('saves-container');
+  // Attach a left-swipe-to-archive gesture to a single save card.
+  attachSwipeToArchive(swipeEl, cardEl, save) {
+    const action = swipeEl.querySelector('.save-card-swipe-action');
+    const THRESHOLD = 90; // px of left-drag needed to commit the archive
+    let startX = 0, startY = 0, dx = 0;
+    let decided = false, horizontal = false;
 
-    // Calculate stats
-    const articles = this.saves.filter(s => !s.highlight);
-    const highlights = this.saves.filter(s => s.highlight);
-    const totalWords = articles.reduce((sum, s) => {
-      const words = (s.content || '').split(/\s+/).length;
-      return sum + words;
-    }, 0);
+    const onMove = (e) => {
+      const mx = e.clientX - startX;
+      const my = e.clientY - startY;
 
-    // Get unique sites
-    const sites = [...new Set(this.saves.map(s => s.site_name).filter(Boolean))];
-
-    // Pick a random "rediscovery" from older saves
-    let rediscovery = null;
-    const allSavesQuery = this.supabase
-      .from('saves')
-      .select('*')
-      .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-      .limit(50);
-
-    allSavesQuery.then(({ data }) => {
-      if (data && data.length > 0) {
-        rediscovery = data[Math.floor(Math.random() * data.length)];
-        this.updateRediscovery(rediscovery);
+      // Decide once whether this gesture is a horizontal swipe or a vertical scroll
+      if (!decided) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        decided = true;
+        horizontal = Math.abs(mx) > Math.abs(my);
+        if (horizontal) {
+          try { cardEl.setPointerCapture(e.pointerId); } catch (_) {}
+        }
       }
+      if (!horizontal) return;
+
+      e.preventDefault();
+      dx = Math.min(0, mx); // only allow dragging left
+      cardEl.style.transform = `translateX(${dx}px)`;
+      const progress = Math.min(1, Math.abs(dx) / THRESHOLD);
+      if (action) action.style.opacity = String(0.5 + 0.5 * progress);
+      swipeEl.classList.toggle('will-archive', Math.abs(dx) >= THRESHOLD);
+    };
+
+    const onUp = () => {
+      cardEl.removeEventListener('pointermove', onMove);
+      cardEl.removeEventListener('pointerup', onUp);
+      cardEl.removeEventListener('pointercancel', onUp);
+      if (!horizontal) return;
+
+      // Any real drag should swallow the trailing click so the card doesn't open
+      swipeEl._suppressClick = true;
+      setTimeout(() => { swipeEl._suppressClick = false; }, 400);
+
+      cardEl.style.transition = 'transform 0.2s ease';
+      if (Math.abs(dx) >= THRESHOLD) {
+        cardEl.style.transform = 'translateX(-100%)';
+        setTimeout(() => this.archiveSaveById(save.id, swipeEl), 160);
+      } else {
+        cardEl.style.transform = 'translateX(0)';
+        swipeEl.classList.remove('will-archive');
+        if (action) action.style.opacity = '';
+      }
+    };
+
+    cardEl.addEventListener('pointerdown', (e) => {
+      // Ignore secondary mouse buttons
+      if (e.button && e.button !== 0) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      dx = 0;
+      decided = false;
+      horizontal = false;
+      cardEl.style.transition = 'none';
+      cardEl.addEventListener('pointermove', onMove);
+      cardEl.addEventListener('pointerup', onUp);
+      cardEl.addEventListener('pointercancel', onUp);
     });
+  }
 
-    container.innerHTML = `
-      <div class="weekly-review">
-        <div class="weekly-header">
-          <h3>Your Week in Review</h3>
-          <p class="weekly-dates">${this.getWeekDateRange()}</p>
-        </div>
-
-        <div class="weekly-stats">
-          <div class="weekly-stat">
-            <span class="weekly-stat-value">${this.saves.length}</span>
-            <span class="weekly-stat-label">items saved</span>
-          </div>
-          <div class="weekly-stat">
-            <span class="weekly-stat-value">${articles.length}</span>
-            <span class="weekly-stat-label">articles</span>
-          </div>
-          <div class="weekly-stat">
-            <span class="weekly-stat-value">${highlights.length}</span>
-            <span class="weekly-stat-label">highlights</span>
-          </div>
-          <div class="weekly-stat">
-            <span class="weekly-stat-value">${Math.round(totalWords / 1000)}k</span>
-            <span class="weekly-stat-label">words</span>
-          </div>
-        </div>
-
-        ${sites.length > 0 ? `
-          <div class="weekly-section">
-            <h4>Sources</h4>
-            <div class="weekly-sources">
-              ${sites.slice(0, 10).map(site => `<span class="weekly-source">${this.escapeHtml(site)}</span>`).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="weekly-section" id="rediscovery-section">
-          <h4>Rediscover</h4>
-          <p class="weekly-rediscovery-hint">Loading a random gem from your archive...</p>
-        </div>
-
-        <div class="weekly-section">
-          <h4>This Week's Saves</h4>
-        </div>
-
-        <div class="saves-grid">
-          ${this.saves.map(save => this.renderSaveCard(save)).join('')}
-        </div>
-      </div>
-    `;
-
-    // Bind click events
-    container.querySelectorAll('.save-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const id = card.dataset.id;
-        const save = this.saves.find(s => s.id === id);
-        if (save) this.openReadingPane(save);
+  // Archive a save by id (used by swipe-to-archive), collapsing its card out.
+  async archiveSaveById(id, swipeEl) {
+    // Collapse the row with a short animation, then remove it
+    if (swipeEl) {
+      swipeEl.style.maxHeight = `${swipeEl.offsetHeight}px`;
+      swipeEl.style.overflow = 'hidden';
+      requestAnimationFrame(() => {
+        swipeEl.style.transition = 'max-height 0.25s ease, opacity 0.25s ease, margin 0.25s ease';
+        swipeEl.style.maxHeight = '0px';
+        swipeEl.style.opacity = '0';
+        swipeEl.style.margin = '0';
       });
-    });
-  }
-
-  updateRediscovery(save) {
-    const section = document.getElementById('rediscovery-section');
-    if (!section || !save) return;
-
-    const date = new Date(save.created_at).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    });
-
-    section.innerHTML = `
-      <h4>Rediscover</h4>
-      <div class="rediscovery-card" data-id="${save.id}">
-        <div class="rediscovery-meta">Saved ${date}</div>
-        <div class="rediscovery-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-        ${save.highlight ? `<div class="rediscovery-highlight">"${this.escapeHtml(save.highlight)}"</div>` : ''}
-        <div class="rediscovery-source">${this.escapeHtml(save.site_name || '')}</div>
-      </div>
-    `;
-
-    section.querySelector('.rediscovery-card')?.addEventListener('click', () => {
-      this.openReadingPane(save);
-    });
-  }
-
-  renderSaveCard(save) {
-    const isHighlight = !!save.highlight;
-    const date = new Date(save.created_at).toLocaleDateString();
-
-    if (isHighlight) {
-      return `
-        <div class="save-card highlight" data-id="${save.id}">
-          <div class="save-card-content">
-            <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
-            <div class="save-card-highlight">"${this.escapeHtml(save.highlight)}"</div>
-            <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-            <div class="save-card-meta">
-              <span class="save-card-date">${date}</span>
-            </div>
-          </div>
-        </div>
-      `;
     }
 
-    return `
-      <div class="save-card" data-id="${save.id}">
-        ${save.image_url ? `<img class="save-card-image" src="${save.image_url}" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="save-card-content">
-          <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
-          <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-          <div class="save-card-excerpt">${this.escapeHtml(save.excerpt || '')}</div>
-          <div class="save-card-meta">
-            <span class="save-card-date">${date}</span>
-          </div>
-        </div>
-      </div>
-    `;
+    // Optimistically drop it from local state
+    const idx = this.saves.findIndex(s => s.id === id);
+    if (idx !== -1) this.saves.splice(idx, 1);
+
+    const { error } = await this.supabase
+      .from('saves')
+      .update({ is_archived: true })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error archiving save:', error);
+      this.showToast('Could not archive — try again');
+      this.loadSaves();
+      return;
+    }
+
+    window.StashDB.saveArticles(this.saves);
+    this.showToast('Archived');
+
+    // Remove the collapsed node, or fall back to the empty state
+    setTimeout(() => {
+      swipeEl?.remove();
+      if (this.saves.length === 0) {
+        document.getElementById('empty-state').classList.remove('hidden');
+      }
+    }, 280);
+  }
+
+  // Lightweight toast helper
+  showToast(message) {
+    const toast = document.getElementById('toast');
+    const msg = document.getElementById('toast-message');
+    if (!toast || !msg) return;
+    msg.textContent = message;
+    toast.classList.remove('hidden');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
   }
 
   // Ask the Service Worker to retry the pending-save queue when connectivity
@@ -751,83 +652,44 @@ class StashApp {
     }
   }
 
-  getWeekDateRange() {
-    const now = new Date();
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const options = { month: 'short', day: 'numeric' };
-    return `${weekAgo.toLocaleDateString('en-US', options)} - ${now.toLocaleDateString('en-US', options)}`;
-  }
-
-  async loadTags() {
-    const { data } = await this.supabase
-      .from('tags')
-      .select('*')
-      .order('name');
-
-    this.tags = data || [];
-    this.renderTags();
-  }
-
-  renderTags() {
-    const container = document.getElementById('tags-list');
-    container.innerHTML = this.tags.map(tag => `
-      <span class="tag" data-id="${tag.id}">${this.escapeHtml(tag.name)}</span>
-    `).join('');
-
-    container.querySelectorAll('.tag').forEach(el => {
-      el.addEventListener('click', () => {
-        // TODO: Filter by tag
-      });
-    });
-  }
-
-  async loadFolders() {
-    const { data } = await this.supabase
-      .from('folders')
-      .select('*')
-      .order('name');
-
-    this.folders = data || [];
-    this.renderFolders();
-  }
-
-  renderFolders() {
-    const container = document.getElementById('folders-list');
-    container.innerHTML = this.folders.map(folder => `
-      <a href="#" class="nav-item" data-folder="${folder.id}">
-        <span style="color: ${folder.color}">📁</span>
-        ${this.escapeHtml(folder.name)}
-      </a>
-    `).join('');
-  }
-
   setView(view) {
     this.currentView = view;
 
-    // Update nav
-    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+    // Update bottom tab bar active state
+    document.querySelectorAll('.bottom-nav-item[data-view]').forEach(item => {
       item.classList.toggle('active', item.dataset.view === view);
     });
+
+    // Toggle between the saves view and the settings view
+    const savesView = document.getElementById('saves-view');
+    const settingsView = document.getElementById('settings-view');
+    if (view === 'settings') {
+      savesView.classList.add('hidden');
+      settingsView.classList.remove('hidden');
+      // Always land on the settings list (not a lingering stats panel)
+      document.getElementById('settings-list').classList.remove('hidden');
+      document.getElementById('settings-stats').classList.add('hidden');
+      return;
+    }
+
+    savesView.classList.remove('hidden');
+    settingsView.classList.add('hidden');
 
     // Update title
     const titles = {
       all: 'All Saves',
-      highlights: 'Highlights',
-      articles: 'Articles',
-      kindle: 'Kindle Highlights',
       archived: 'Archived',
-      stats: 'Stats',
       podcasts: 'Podcasts',
     };
     document.getElementById('view-title').textContent = titles[view] || 'Saves';
 
-    if (view === 'stats') {
-      this.showStats();
-    } else if (view === 'kindle') {
-      this.loadKindleHighlights();
-    } else if (view === 'podcasts') {
+    // The sort control only makes sense for lists of saves
+    const viewControls = document.querySelector('#saves-view .view-controls');
+    if (viewControls) {
+      viewControls.style.display = view === 'podcasts' ? 'none' : '';
+    }
+
+    if (view === 'podcasts') {
       this.loadPodcasts();
     } else {
       this.loadSaves();
@@ -1147,48 +1009,6 @@ class StashApp {
     this.loadSaves();
   }
 
-  async addTagToSave() {
-    if (!this.currentSave) return;
-
-    const tagName = prompt('Enter tag name:');
-    if (!tagName?.trim()) return;
-
-    // Get or create tag
-    let { data: existingTag } = await this.supabase
-      .from('tags')
-      .select('*')
-      .eq('name', tagName.trim())
-      .single();
-
-    if (!existingTag) {
-      const { data: newTag } = await this.supabase
-        .from('tags')
-        .insert({ user_id: this.user.id, name: tagName.trim() })
-        .select()
-        .single();
-      existingTag = newTag;
-    }
-
-    if (existingTag) {
-      await this.supabase
-        .from('save_tags')
-        .insert({ save_id: this.currentSave.id, tag_id: existingTag.id });
-
-      this.loadTags();
-    }
-  }
-
-  async addFolder() {
-    const name = prompt('Folder name:');
-    if (!name?.trim()) return;
-
-    await this.supabase
-      .from('folders')
-      .insert({ user_id: this.user.id, name: name.trim() });
-
-    this.loadFolders();
-  }
-
   async showStats() {
     const { data: saves } = await this.supabase
       .from('saves')
@@ -1206,12 +1026,15 @@ class StashApp {
       byMonth[month] = (byMonth[month] || 0) + 1;
     });
 
-    const content = document.querySelector('.content');
-    content.innerHTML = `
+    // Render into the Settings stats sub-panel and reveal it
+    document.getElementById('settings-list').classList.add('hidden');
+    const statsPanel = document.getElementById('settings-stats');
+    statsPanel.classList.remove('hidden');
+    statsPanel.innerHTML = `
       <div class="stats-container">
         <div class="stats-header">
+          <button class="btn secondary" id="stats-back-btn">← Back</button>
           <h2>Your Stats</h2>
-          <button class="btn secondary" onclick="app.setView('all')">← Back</button>
         </div>
 
         <div class="stats-cards">
@@ -1246,400 +1069,12 @@ class StashApp {
         </div>
       </div>
     `;
-  }
 
-  // Kindle Highlights View
-  async loadKindleHighlights() {
-    const container = document.getElementById('saves-container');
-    const loading = document.getElementById('loading');
-    const empty = document.getElementById('empty-state');
-
-    loading.classList.remove('hidden');
-    container.innerHTML = '';
-
-    const { data, error } = await this.supabase
-      .from('saves')
-      .select('*')
-      .eq('source', 'kindle')
-      .order('title', { ascending: true });
-
-    loading.classList.add('hidden');
-
-    if (error) {
-      console.error('Error loading Kindle highlights:', error);
-      return;
-    }
-
-    if (!data || data.length === 0) {
-      empty.classList.remove('hidden');
-      document.querySelector('.empty-icon').textContent = '📚';
-      document.querySelector('.empty-state h3').textContent = 'No Kindle highlights yet';
-      document.querySelector('.empty-state p').textContent = 'Import your Kindle highlights using the "Import Kindle" button in the sidebar, or sync from the Chrome extension.';
-      return;
-    }
-
-    empty.classList.add('hidden');
-
-    // Group by book title
-    const books = {};
-    data.forEach(save => {
-      const key = save.title || 'Unknown Book';
-      if (!books[key]) {
-        books[key] = {
-          title: save.title,
-          author: save.author,
-          highlights: [],
-        };
-      }
-      books[key].highlights.push(save);
+    // Back returns to the settings list
+    document.getElementById('stats-back-btn').addEventListener('click', () => {
+      statsPanel.classList.add('hidden');
+      document.getElementById('settings-list').classList.remove('hidden');
     });
-
-    // Sort books by highlight count (most first)
-    const sortedBooks = Object.values(books).sort((a, b) => b.highlights.length - a.highlights.length);
-
-    this.renderKindleBooks(sortedBooks);
-  }
-
-  renderKindleBooks(books) {
-    const container = document.getElementById('saves-container');
-
-    container.innerHTML = `
-      <div class="kindle-stats">
-        <div class="kindle-stat">
-          <span class="kindle-stat-value">${books.reduce((sum, b) => sum + b.highlights.length, 0)}</span>
-          <span class="kindle-stat-label">highlights</span>
-        </div>
-        <div class="kindle-stat">
-          <span class="kindle-stat-value">${books.length}</span>
-          <span class="kindle-stat-label">books</span>
-        </div>
-        <button class="btn secondary kindle-clear-btn" id="clear-kindle-btn">Clear All Kindle Data</button>
-      </div>
-      <div class="kindle-books-grid">
-        ${books.map(book => `
-          <div class="kindle-book-card" data-title="${this.escapeHtml(book.title || '')}">
-            <div class="kindle-book-header">
-              <div class="kindle-book-icon">📖</div>
-              <div class="kindle-book-info">
-                <h3 class="kindle-book-title">${this.escapeHtml(book.title || 'Unknown Book')}</h3>
-                ${book.author ? `<p class="kindle-book-author">${this.escapeHtml(book.author)}</p>` : ''}
-              </div>
-              <span class="kindle-book-count">${book.highlights.length}</span>
-            </div>
-            <div class="kindle-highlights-preview">
-              ${book.highlights.slice(0, 3).map(h => `
-                <div class="kindle-highlight-snippet" data-id="${h.id}">
-                  "${this.escapeHtml(h.highlight?.substring(0, 150) || '')}${h.highlight?.length > 150 ? '...' : ''}"
-                </div>
-              `).join('')}
-              ${book.highlights.length > 3 ? `
-                <div class="kindle-more-highlights">+${book.highlights.length - 3} more highlights</div>
-              ` : ''}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-
-    // Bind click events to open highlights
-    container.querySelectorAll('.kindle-highlight-snippet').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = el.dataset.id;
-        const allHighlights = books.flatMap(b => b.highlights);
-        const save = allHighlights.find(s => s.id === id);
-        if (save) this.openReadingPane(save);
-      });
-    });
-
-    // Bind book card clicks to expand
-    container.querySelectorAll('.kindle-book-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const title = card.dataset.title;
-        const book = books.find(b => (b.title || '') === title);
-        if (book) this.showBookHighlights(book);
-      });
-    });
-
-    // Clear Kindle data button
-    const clearBtn = document.getElementById('clear-kindle-btn');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => this.clearKindleData());
-    }
-  }
-
-  async clearKindleData() {
-    const count = this.saves?.length || 0;
-    if (!confirm(`Delete all ${count} Kindle highlights? This cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      const { error } = await this.supabase
-        .from('saves')
-        .delete()
-        .eq('source', 'kindle');
-
-      if (error) throw error;
-
-      alert('All Kindle data cleared. You can now re-sync from the Chrome extension.');
-      this.loadKindleHighlights();
-    } catch (err) {
-      console.error('Error clearing Kindle data:', err);
-      alert('Failed to clear data: ' + err.message);
-    }
-  }
-
-  showBookHighlights(book) {
-    const container = document.getElementById('saves-container');
-
-    container.innerHTML = `
-      <div class="kindle-book-detail">
-        <button class="btn secondary kindle-back-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 12H5M12 19l-7-7 7-7"/>
-          </svg>
-          Back to all books
-        </button>
-        <div class="kindle-book-detail-header">
-          <div class="kindle-book-icon-large">📖</div>
-          <div>
-            <h2>${this.escapeHtml(book.title || 'Unknown Book')}</h2>
-            ${book.author ? `<p class="kindle-book-author">${this.escapeHtml(book.author)}</p>` : ''}
-            <p class="kindle-book-meta">${book.highlights.length} highlights</p>
-          </div>
-        </div>
-        <div class="kindle-highlights-list">
-          ${book.highlights.map(h => `
-            <div class="kindle-highlight-card" data-id="${h.id}">
-              <div class="kindle-highlight-text">"${this.escapeHtml(h.highlight || '')}"</div>
-              <div class="kindle-highlight-meta">
-                ${new Date(h.created_at).toLocaleDateString()}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-
-    // Back button
-    container.querySelector('.kindle-back-btn').addEventListener('click', () => {
-      this.loadKindleHighlights();
-    });
-
-    // Highlight clicks
-    container.querySelectorAll('.kindle-highlight-card').forEach(el => {
-      el.addEventListener('click', () => {
-        const id = el.dataset.id;
-        const save = book.highlights.find(s => s.id === id);
-        if (save) this.openReadingPane(save);
-      });
-    });
-  }
-
-  // Kindle Import Methods
-  showKindleImportModal() {
-    const modal = document.getElementById('kindle-import-modal');
-    modal.classList.remove('hidden');
-    this.resetKindleImportModal();
-  }
-
-  hideKindleImportModal() {
-    const modal = document.getElementById('kindle-import-modal');
-    modal.classList.add('hidden');
-    this.resetKindleImportModal();
-  }
-
-  resetKindleImportModal() {
-    this.pendingKindleImport = null;
-    document.getElementById('kindle-file-input').value = '';
-    document.getElementById('kindle-import-preview').classList.add('hidden');
-    document.getElementById('kindle-import-footer').classList.add('hidden');
-    const dropzone = document.getElementById('kindle-dropzone');
-    dropzone.classList.remove('success', 'processing');
-  }
-
-  async handleKindleFile(file) {
-    if (!file.name.endsWith('.txt')) {
-      alert('Please upload a .txt file (My Clippings.txt from your Kindle)');
-      return;
-    }
-
-    const dropzone = document.getElementById('kindle-dropzone');
-    dropzone.classList.add('processing');
-
-    try {
-      const content = await file.text();
-      const highlights = this.parseMyClippings(content);
-
-      if (highlights.length === 0) {
-        alert('No highlights found in this file. Make sure it\'s a valid My Clippings.txt file.');
-        dropzone.classList.remove('processing');
-        return;
-      }
-
-      // Check for duplicates against existing saves
-      const { data: existingSaves } = await this.supabase
-        .from('saves')
-        .select('highlight, title')
-        .not('highlight', 'is', null);
-
-      const existingSet = new Set(
-        (existingSaves || []).map(s => `${s.highlight}|||${s.title}`)
-      );
-
-      let duplicateCount = 0;
-      const newHighlights = highlights.filter(h => {
-        const key = `${h.highlight}|||${h.title}`;
-        if (existingSet.has(key)) {
-          duplicateCount++;
-          return false;
-        }
-        return true;
-      });
-
-      this.pendingKindleImport = newHighlights;
-
-      // Group by book for display
-      const bookCounts = {};
-      newHighlights.forEach(h => {
-        const key = h.title;
-        if (!bookCounts[key]) {
-          bookCounts[key] = { title: h.title, author: h.author, count: 0 };
-        }
-        bookCounts[key].count++;
-      });
-
-      // Update UI
-      dropzone.classList.remove('processing');
-      dropzone.classList.add('success');
-
-      document.getElementById('import-total').textContent = newHighlights.length;
-      document.getElementById('import-books').textContent = Object.keys(bookCounts).length;
-      document.getElementById('import-duplicates').textContent = duplicateCount;
-
-      const booksList = document.getElementById('import-books-list');
-      booksList.innerHTML = Object.values(bookCounts)
-        .sort((a, b) => b.count - a.count)
-        .map(book => `
-          <div class="import-book-item">
-            <div>
-              <div class="import-book-title">${this.escapeHtml(book.title)}</div>
-              ${book.author ? `<div class="import-book-author">${this.escapeHtml(book.author)}</div>` : ''}
-            </div>
-            <span class="import-book-count">${book.count}</span>
-          </div>
-        `).join('');
-
-      document.getElementById('kindle-import-preview').classList.remove('hidden');
-      document.getElementById('kindle-import-footer').classList.remove('hidden');
-
-    } catch (error) {
-      console.error('Error parsing Kindle file:', error);
-      alert('Error reading the file. Please try again.');
-      dropzone.classList.remove('processing');
-    }
-  }
-
-  parseMyClippings(content) {
-    // Split by the Kindle clipping delimiter
-    const clippings = content.split('==========').filter(c => c.trim());
-    const highlights = [];
-
-    for (const clipping of clippings) {
-      const lines = clipping.trim().split('\n').filter(l => l.trim());
-      if (lines.length < 3) continue;
-
-      // First line: Book Title (Author)
-      const titleLine = lines[0].trim();
-      let title = titleLine;
-      let author = null;
-
-      // Extract author from parentheses at the end
-      const authorMatch = titleLine.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-      if (authorMatch) {
-        title = authorMatch[1].trim();
-        author = authorMatch[2].trim();
-      }
-
-      // Second line: metadata (type, location, date)
-      const metaLine = lines[1].trim();
-
-      // Check if this is a highlight (not a bookmark or note)
-      if (!metaLine.toLowerCase().includes('highlight')) {
-        continue; // Skip bookmarks and notes
-      }
-
-      // Extract date from metadata line
-      let addedAt = null;
-      const dateMatch = metaLine.match(/Added on (.+)$/i);
-      if (dateMatch) {
-        try {
-          addedAt = new Date(dateMatch[1]).toISOString();
-        } catch (e) {
-          // Ignore date parsing errors
-        }
-      }
-
-      // Remaining lines are the highlight text
-      const highlightText = lines.slice(2).join('\n').trim();
-
-      if (!highlightText) continue;
-
-      highlights.push({
-        title,
-        author,
-        highlight: highlightText,
-        addedAt,
-      });
-    }
-
-    return highlights;
-  }
-
-  async confirmKindleImport() {
-    if (!this.pendingKindleImport || this.pendingKindleImport.length === 0) {
-      this.hideKindleImportModal();
-      return;
-    }
-
-    const confirmBtn = document.getElementById('kindle-confirm-btn');
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Importing...';
-
-    try {
-      // Prepare saves for batch insert
-      const saves = this.pendingKindleImport.map(h => ({
-        user_id: this.user.id,
-        title: h.title,
-        author: h.author,
-        highlight: h.highlight,
-        site_name: 'Kindle',
-        source: 'kindle',
-        created_at: h.addedAt || new Date().toISOString(),
-      }));
-
-      // Insert in batches of 50 to avoid request size limits
-      const batchSize = 50;
-      for (let i = 0; i < saves.length; i += batchSize) {
-        const batch = saves.slice(i, i + batchSize);
-        const { error } = await this.supabase.from('saves').insert(batch);
-        if (error) throw error;
-      }
-
-      // Success - close modal and refresh
-      this.hideKindleImportModal();
-      this.loadSaves();
-
-      alert(`Successfully imported ${saves.length} highlights!`);
-
-    } catch (error) {
-      console.error('Error importing highlights:', error);
-      alert('Error importing highlights. Please try again.');
-    } finally {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Import Highlights';
-    }
   }
 
   escapeHtml(text) {
