@@ -78,6 +78,7 @@ def fetch_recent_articles(days=7, limit=5):
         formatted_articles.append({
             "id": article["id"],
             "title": article["title"],
+            "url": save_url,
             "site_name": site_name,
             "content": clean_text(content[:5000]), # Limit to 5k chars per article for context window
             "created_at": article["created_at"]

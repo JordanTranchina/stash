@@ -24,6 +24,13 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
+// Wrap HTML content in a CDATA section so podcast clients render it as markup
+// (the episode description is HTML with links). Any literal "]]>" is split so
+// it can't terminate the section early.
+function cdata(str: string): string {
+  return `<![CDATA[${str.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
+}
+
 serve(async () => {
   try {
     const supabase = createClient(
@@ -45,7 +52,8 @@ serve(async () => {
     const items = (episodes ?? [])
       .map((ep) => {
         const title = escapeXml(ep.title ?? "Untitled");
-        const description = escapeXml(ep.description ?? "");
+        // Description is HTML (links + timestamps); emit as CDATA so clients render it.
+        const description = cdata(ep.description ?? "");
         const pubDate = formatRFC822(ep.created_at);
         const duration = formatDuration(ep.duration_seconds ?? 0);
         const enclosureLength = ep.size_bytes ?? 0;

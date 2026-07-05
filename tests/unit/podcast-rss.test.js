@@ -20,11 +20,15 @@ function escapeXml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+function cdata(str) {
+  return `<![CDATA[${str.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
+}
+
 function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/functions/v1/podcast-chapters") {
   const items = episodes
     .map((ep) => {
       const title = escapeXml(ep.title ?? "Untitled");
-      const description = escapeXml(ep.description ?? "");
+      const description = cdata(ep.description ?? "");
       const pubDate = formatRFC822(ep.created_at);
       const duration = formatDuration(ep.duration_seconds ?? 0);
       const enclosureLength = ep.size_bytes ?? 0;
@@ -209,6 +213,40 @@ describe("buildRssXml", () => {
 
   test("includes the podcast namespace", () => {
     expect(xml).toMatch(/xmlns:podcast="https:\/\/podcastindex\.org\/namespace\/1\.0"/);
+  });
+
+  test("wraps the description in CDATA so HTML links render", () => {
+    const html =
+      'Discussing:<ul><li><a href="https://ex.com/a" target="_blank" rel="noopener">A</a> (1:23)</li></ul>';
+    const out = buildRssXml([
+      {
+        id: "html-desc",
+        title: "Has links",
+        description: html,
+        audio_url: "https://example.com/a.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+      },
+    ]);
+    // The HTML (including the anchor tag) is preserved verbatim inside CDATA,
+    // not entity-escaped.
+    expect(out).toContain(`<description><![CDATA[${html}]]></description>`);
+  });
+
+  test("splits a literal ]]> in the description so CDATA can't terminate early", () => {
+    const out = buildRssXml([
+      {
+        id: "cdata-escape",
+        title: "Edge",
+        description: "before ]]> after",
+        audio_url: "https://example.com/a.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+      },
+    ]);
+    expect(out).toContain("before ]]]]><![CDATA[> after");
   });
 });
 
