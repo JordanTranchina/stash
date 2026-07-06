@@ -29,6 +29,9 @@ def clean_text(text):
     import re
     if not text:
         return ""
+    # Strip inline image markdown (![alt](url)) so image URLs don't leak into
+    # the transcript the hosts discuss; the podcast is audio-only.
+    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)
     # Remove excessive newlines
     text = re.sub(r'\n{3,}', '\n\n', text)
     # Remove common artifacts if any (can be expanded)

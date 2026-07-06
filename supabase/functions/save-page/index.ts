@@ -83,6 +83,91 @@ function removeNoise(document: any) {
   });
 }
 
+// Resolve an image/link URL to an absolute one, skipping empty / inline data
+// URIs. Relative paths are resolved against the article URL so they still load.
+function resolveUrl(src: string | null, baseUrl: string): string | null {
+  if (!src) return null;
+  const trimmed = src.trim();
+  if (!trimmed || trimmed.startsWith("data:")) return null;
+  try {
+    return new URL(trimmed, baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+
+// Serialize Readability's article HTML to Markdown, keeping images inline where
+// they appear in the article (Pocket-style) rather than dropping them. The
+// reading view renders this Markdown with `marked`, so `![alt](src)` becomes an
+// inline <img>. Text is whitespace-normalized the same way the old paragraph
+// extractor was, so recirculation teaser cards don't run words together.
+function htmlToMarkdown(root: any, baseUrl: string): string {
+  function walk(node: any): string {
+    let out = "";
+    node.childNodes.forEach((child: any) => {
+      // 3 = TEXT_NODE, 1 = ELEMENT_NODE
+      if (child.nodeType === 3) {
+        out += (child.textContent || "").replace(/\s+/g, " ");
+      } else if (child.nodeType === 1) {
+        const tag = (child.tagName || "").toLowerCase();
+        if (tag === "img") {
+          const src = child.getAttribute("src") ||
+                      child.getAttribute("data-src") ||
+                      child.getAttribute("data-original") ||
+                      child.getAttribute("data-lazy-src");
+          const abs = resolveUrl(src, baseUrl);
+          if (abs) {
+            const alt = (child.getAttribute("alt") || "").replace(/\s+/g, " ").trim();
+            out += `\n\n![${alt}](${abs})\n\n`;
+          }
+        } else if (["p", "div", "section", "article", "header", "figure"].includes(tag)) {
+          out += "\n\n" + walk(child) + "\n\n";
+        } else if (["h1", "h2", "h3", "h4", "h5", "h6"].includes(tag)) {
+          out += "\n\n" + "#".repeat(Number(tag[1])) + " " + walk(child).trim() + "\n\n";
+        } else if (tag === "br") {
+          out += "\n";
+        } else if (tag === "li") {
+          out += "\n- " + walk(child).trim();
+        } else if (["ul", "ol"].includes(tag)) {
+          out += "\n" + walk(child) + "\n";
+        } else if (tag === "blockquote") {
+          const inner = walk(child).trim().split("\n").map((l) => "> " + l).join("\n");
+          out += "\n\n" + inner + "\n\n";
+        } else if (tag === "figcaption") {
+          const caption = walk(child).trim();
+          if (caption) out += "\n\n*" + caption + "*\n\n";
+        } else if (tag === "a") {
+          const href = child.getAttribute("href");
+          const text = walk(child).trim();
+          const abs = resolveUrl(href, baseUrl);
+          if (abs && text && !href.startsWith("#")) out += `[${text}](${abs})`;
+          else out += text;
+        } else if (["strong", "b"].includes(tag)) {
+          out += "**" + walk(child) + "**";
+        } else if (["em", "i"].includes(tag)) {
+          out += "*" + walk(child) + "*";
+        } else if (tag === "code") {
+          out += "`" + walk(child) + "`";
+        } else if (tag === "pre") {
+          out += "\n\n```\n" + walk(child) + "\n```\n\n";
+        } else if (["script", "style", "noscript", "iframe"].includes(tag)) {
+          // skip
+        } else {
+          out += walk(child);
+        }
+      }
+    });
+    return out;
+  }
+
+  return walk(root)
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // Parse HTML and extract article data
 function extractArticle(html: string, url: string) {
   const { document } = parseHTML(html);
@@ -110,18 +195,16 @@ function extractArticle(html: string, url: string) {
                 extractMeta(document, "property", "article:author") ||
                 null;
 
-  // Extract paragraphs with line breaks
+  // Serialize the article body to Markdown, keeping images inline where they
+  // appear (Pocket-style) instead of dropping them. Relative image/link URLs
+  // are resolved against the article URL so they still load in the reading view.
   let content = "";
   if (article?.content) {
     const { document: articleDoc } = parseHTML(article.content);
-    const paragraphs: string[] = [];
-    articleDoc.querySelectorAll("p").forEach((p: any) => {
-      // Recirculation teaser cards pack several sentences into one node with
-      // carriage-return separators; normalize them so text never runs together.
-      const text = p.textContent?.replace(/\r\n?/g, " ").replace(/\s+/g, " ").trim();
-      if (text) paragraphs.push(text);
-    });
-    content = paragraphs.join("\n\n");
+    // Readability returns a `<div id="readability-page-1">…</div>` fragment, so
+    // the content sits under documentElement (linkedom leaves an empty <body>
+    // for a bare fragment). documentElement always holds the parsed nodes.
+    content = htmlToMarkdown(articleDoc.documentElement || articleDoc.body || articleDoc, url);
   }
 
   if (!content && article?.textContent) {

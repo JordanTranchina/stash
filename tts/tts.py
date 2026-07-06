@@ -102,6 +102,10 @@ def extract_text_for_tts(save):
     # Remove markdown headers (keep the text)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
 
+    # Remove image markdown BEFORE links so an image (![alt](url)) isn't
+    # mistaken for a link and left as a stray "!alt" in the spoken text.
+    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)
+
     # Remove markdown links, keep text
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
 
@@ -117,9 +121,6 @@ def extract_text_for_tts(save):
 
     # Remove horizontal rules
     text = re.sub(r'^---+$', '', text, flags=re.MULTILINE)
-
-    # Remove image markdown
-    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)
 
     # Remove HTML tags
     text = re.sub(r'<[^>]+>', '', text)
