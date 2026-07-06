@@ -70,6 +70,24 @@ describe('StashSave.buildScrapeRequest', () => {
     });
     expect(req.highlight).toBe('my note');
   });
+
+  test('omits created_at when not provided (live shares keep now())', () => {
+    const req = StashSave.buildScrapeRequest({
+      user_id: 'user-1',
+      url: 'https://example.com',
+    });
+    expect(req).not.toHaveProperty('created_at');
+  });
+
+  test('includes created_at when provided (CSV import preserves save date)', () => {
+    const req = StashSave.buildScrapeRequest({
+      user_id: 'user-1',
+      url: 'https://example.com',
+      source: 'import',
+      created_at: '2023-11-14T22:13:20.000Z',
+    });
+    expect(req.created_at).toBe('2023-11-14T22:13:20.000Z');
+  });
 });
 
 describe('StashSave.saveViaScrape', () => {

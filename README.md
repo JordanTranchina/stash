@@ -9,6 +9,7 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 - **Chrome Extension** - Save pages and highlights with one click
 - **Web App** - Access your saves from any device
 - **Kindle Sync** - Import highlights from your Kindle library
+- **CSV Import** - Bring your reading list over from Pocket, Instapaper, Omnivore, and other read-it-later services
 - **Full-Text Search** - Find anything you've saved
 - **Text-to-Speech** - Basic audio generation (Edge TTS)
 - **Listen Later** - Turn your saved articles into a conversational AI podcast with an RSS feed

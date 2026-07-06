@@ -1437,6 +1437,62 @@ select {
   color: var(--danger);
 }
 
+/* Import Articles Modal */
+.import-file-input {
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  width: 100%;
+}
+
+.import-file-input::file-selector-button {
+  margin-right: 12px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.import-summary {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.import-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-progress-track {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.import-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+
+.import-progress-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* Digest settings button in nav */
 .digest-settings-btn {
   margin-left: 26px;

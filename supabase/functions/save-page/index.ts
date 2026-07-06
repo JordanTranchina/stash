@@ -262,7 +262,7 @@ serve(async (req) => {
   }
 
   try {
-    const { url, user_id, highlight, source, prefetched } = await req.json();
+    const { url, user_id, highlight, source, prefetched, created_at } = await req.json();
 
     if (!url || !user_id) {
       return new Response(
@@ -318,6 +318,17 @@ serve(async (req) => {
       author: article.author,
       source: source || "api",
     };
+
+    // Preserve an explicit save date when the caller supplies one (CSV import
+    // passes the original time_added so imported articles keep their order).
+    // Ignore anything that isn't a valid date so we fall back to the column
+    // default (now()).
+    if (created_at) {
+      const d = new Date(created_at);
+      if (!isNaN(d.getTime())) {
+        saveData.created_at = d.toISOString();
+      }
+    }
 
     // Save to database
     const supabase = createClient(
