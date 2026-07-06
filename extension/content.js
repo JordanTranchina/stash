@@ -226,6 +226,28 @@ function htmlToText(html) {
         else if (tag === 'pre') {
           result += '\n\n```\n' + processNode(child) + '\n```\n\n';
         }
+        // Images - convert to markdown so they render inline in the reading
+        // view (Readability keeps <img> tags in the article HTML; without this
+        // they were silently dropped and the save came in text-only).
+        else if (tag === 'img') {
+          const src = child.getAttribute('src') ||
+                      child.getAttribute('data-src') ||
+                      child.getAttribute('data-original') ||
+                      child.getAttribute('data-lazy-src');
+          const absoluteSrc = resolveImageUrl(src);
+          if (absoluteSrc) {
+            const alt = (child.getAttribute('alt') || '').replace(/\s+/g, ' ').trim();
+            result += `\n\n![${alt}](${absoluteSrc})\n\n`;
+          }
+        }
+        // Figure / figcaption - keep the image and italicize its caption
+        else if (tag === 'figure') {
+          result += '\n\n' + processNode(child) + '\n\n';
+        }
+        else if (tag === 'figcaption') {
+          const caption = processNode(child).trim();
+          if (caption) result += '\n\n*' + caption + '*\n\n';
+        }
         // Skip script, style, etc.
         else if (['script', 'style', 'noscript', 'iframe'].includes(tag)) {
           // Skip
@@ -251,6 +273,19 @@ function htmlToText(html) {
     .trim();
 
   return text;
+}
+
+// Resolve an image src to an absolute URL, skipping empty / inline data URIs.
+// Relative paths are resolved against the page so they still load in the app.
+function resolveImageUrl(src) {
+  if (!src) return null;
+  const trimmed = src.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return null;
+  try {
+    return new URL(trimmed, document.baseURI || window.location.href).href;
+  } catch (e) {
+    return null;
+  }
 }
 
 function extractAuthor() {

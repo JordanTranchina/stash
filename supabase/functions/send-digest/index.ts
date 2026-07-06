@@ -9,7 +9,9 @@ const corsHeaders = {
 
 // Generate a simple summary from content (first 2 sentences)
 function generateSummary(content: string | null, excerpt: string | null): string {
-  const text = excerpt || content || "";
+  // Strip inline image markdown (![alt](url)) so an image never bleeds into the
+  // email summary when we fall back to the article body.
+  const text = (excerpt || content || "").replace(/!\[[^\]]*\]\([^)]+\)/g, " ");
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
   return sentences.slice(0, 2).join(". ").trim() + (sentences.length > 0 ? "." : "");
 }
