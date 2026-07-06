@@ -64,6 +64,27 @@ self.StashDB = {
         });
     },
     
+    // Update the archived flag on a single cached article in place. Keeps the
+    // offline cache consistent with the server after an archive/unarchive so the
+    // next load's filtered render doesn't flash a stale (wrongly-filed) item.
+    async setArchived(id, isArchived) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_ARTICLES], 'readwrite');
+        const store = transaction.objectStore(STORE_ARTICLES);
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+            const article = getReq.result;
+            if (article) {
+                article.is_archived = isArchived;
+                store.put(article);
+            }
+        };
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
     async savePendingShare(shareData) {
         const db = await dbPromise;
         const transaction = db.transaction([STORE_PENDING], 'readwrite');
