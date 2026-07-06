@@ -331,20 +331,49 @@ class StashApp {
     await this.loadSaves();
   }
 
+  // Filter + sort cached saves to match what the server query would return
+  // for the current view and sort selection. Used to render the offline cache
+  // instantly without flashing the wrong items/order before the fresh fetch.
+  filterAndSortSaves(saves) {
+    if (!saves || saves.length === 0) return [];
+
+    const wantArchived = this.currentView === 'archived';
+    const filtered = saves.filter(s => !!s.is_archived === wantArchived);
+
+    const sortValue = document.getElementById('sort-select').value;
+    const [column, direction] = sortValue.split('.');
+    const ascending = direction === 'asc';
+
+    return filtered.sort((a, b) => {
+      const av = a[column];
+      const bv = b[column];
+      let cmp;
+      if (column === 'created_at') {
+        cmp = new Date(av || 0) - new Date(bv || 0);
+      } else {
+        cmp = String(av || '').localeCompare(String(bv || ''));
+      }
+      return ascending ? cmp : -cmp;
+    });
+  }
+
   async loadSaves() {
     const container = document.getElementById('saves-container');
     const loading = document.getElementById('loading');
     const empty = document.getElementById('empty-state');
     
-    // OFFLINE: Load from IndexedDB first for instant render
+    // OFFLINE: Load from IndexedDB first for instant render.
+    // getArticles() returns the raw cache (all articles, keyed/ordered by id),
+    // so we must apply the same view filter + sort the server query uses.
+    // Otherwise the first paint flashes archived items in id order before the
+    // fresh server response replaces it with the correct, ordered list.
     const cachedSaves = await window.StashDB.getArticles();
-    if (cachedSaves && cachedSaves.length > 0) {
-        this.saves = cachedSaves;
-        // Apply local sort/filter if needed, but for now just render raw dump or basic sort
-        // We'll skip complex filtering on cached data for MVP or do basic JS sort
-        this.renderSaves(); 
+    const visibleCached = this.filterAndSortSaves(cachedSaves);
+    if (visibleCached.length > 0) {
+        this.saves = visibleCached;
+        this.renderSaves();
     } else {
-        // Only show spinner if we have NO data
+        // Only show spinner if we have NO data to show for this view
         loading.classList.remove('hidden');
     }
 
@@ -574,6 +603,9 @@ class StashApp {
     }
 
     window.StashDB.saveArticles(this.saves);
+    // Keep the cached copy's archived flag in sync so it doesn't flash back
+    // into the "all" list on the next offline-first render.
+    window.StashDB.setArchived(id, true);
     this.showToast('Archived', {
       label: 'Undo',
       onClick: () => this.unarchiveSaveById(id),
@@ -600,6 +632,10 @@ class StashApp {
       this.showToast('Could not undo — try again');
       return;
     }
+
+    // Keep the cache in sync so the restored item is filed correctly on the
+    // next offline-first render (rather than lingering as archived).
+    window.StashDB.setArchived(id, false);
 
     // Reload the current list so the restored item reappears
     await this.loadSaves();
@@ -1019,6 +1055,8 @@ class StashApp {
       .eq('id', this.currentSave.id);
 
     this.currentSave.is_archived = newValue;
+    // Keep the offline cache in sync so the next render files this item correctly.
+    window.StashDB.setArchived(this.currentSave.id, newValue);
     this.loadSaves();
     if (newValue) this.closeReadingPane();
   }
