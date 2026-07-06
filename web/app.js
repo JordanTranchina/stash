@@ -200,6 +200,28 @@ class StashApp {
       this.savePodcastPreferences();
     });
 
+    // Import Articles Modal (CSV from other read-it-later services)
+    const importModal = document.getElementById('import-modal');
+
+    document.getElementById('import-settings-btn').addEventListener('click', () => {
+      this.showImportModal();
+    });
+    importModal.querySelector('.modal-overlay').addEventListener('click', () => {
+      this.hideImportModal();
+    });
+    importModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+      this.hideImportModal();
+    });
+    document.getElementById('import-cancel-btn').addEventListener('click', () => {
+      this.handleImportCancel();
+    });
+    document.getElementById('import-file').addEventListener('change', (e) => {
+      this.handleImportFile(e.target.files[0]);
+    });
+    document.getElementById('import-start-btn').addEventListener('click', () => {
+      this.runImport();
+    });
+
     // PWA: Online/Offline Status
     window.addEventListener('online', () => this.updateOnlineStatus());
     window.addEventListener('offline', () => this.updateOnlineStatus());
@@ -1388,6 +1410,171 @@ class StashApp {
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save Settings';
+    }
+  }
+
+  // Import Methods (CSV from Pocket/Instapaper/etc.)
+  showImportModal() {
+    const modal = document.getElementById('import-modal');
+    modal.classList.remove('hidden');
+    this.resetImportModal();
+  }
+
+  hideImportModal() {
+    // Don't let the modal be dismissed mid-import — that would orphan the
+    // in-flight scrape requests with no feedback.
+    if (this.importRunning) return;
+    document.getElementById('import-modal').classList.add('hidden');
+  }
+
+  // Reset the modal back to its initial "choose a file" state.
+  resetImportModal() {
+    this.importRows = null;
+    this.importRunning = false;
+    this.importStop = false;
+
+    const fileInput = document.getElementById('import-file');
+    fileInput.value = '';
+    fileInput.disabled = false;
+
+    document.getElementById('import-summary').classList.add('hidden');
+    document.getElementById('import-progress').classList.add('hidden');
+    document.getElementById('import-progress-fill').style.width = '0%';
+    document.getElementById('import-status').classList.add('hidden');
+
+    const startBtn = document.getElementById('import-start-btn');
+    startBtn.disabled = true;
+    startBtn.textContent = 'Import';
+    document.getElementById('import-cancel-btn').textContent = 'Cancel';
+  }
+
+  async handleImportFile(file) {
+    const summary = document.getElementById('import-summary');
+    const status = document.getElementById('import-status');
+    const startBtn = document.getElementById('import-start-btn');
+
+    status.classList.add('hidden');
+    this.importRows = null;
+    startBtn.disabled = true;
+
+    if (!file) {
+      summary.classList.add('hidden');
+      return;
+    }
+
+    let text;
+    try {
+      text = await file.text();
+    } catch (e) {
+      summary.classList.add('hidden');
+      status.textContent = 'Could not read that file. Please try again.';
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+      return;
+    }
+
+    const rows = window.StashImport.parseCsv(text);
+
+    if (rows.length === 0) {
+      summary.classList.add('hidden');
+      status.textContent = 'No articles with a URL column were found in that CSV.';
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+      return;
+    }
+
+    this.importRows = rows;
+    summary.textContent = `Found ${rows.length} article${rows.length === 1 ? '' : 's'} to import.`;
+    summary.classList.remove('hidden');
+    startBtn.disabled = false;
+  }
+
+  // Cancel doubles as "stop" during a run and "close" otherwise.
+  handleImportCancel() {
+    if (this.importRunning) {
+      this.importStop = true;
+      document.getElementById('import-cancel-btn').textContent = 'Stopping…';
+      return;
+    }
+    this.hideImportModal();
+  }
+
+  async runImport() {
+    const rows = this.importRows || [];
+    if (!rows.length || this.importRunning) return;
+
+    const startBtn = document.getElementById('import-start-btn');
+    const cancelBtn = document.getElementById('import-cancel-btn');
+    const fileInput = document.getElementById('import-file');
+    const progress = document.getElementById('import-progress');
+    const fill = document.getElementById('import-progress-fill');
+    const label = document.getElementById('import-progress-label');
+    const status = document.getElementById('import-status');
+
+    this.importRunning = true;
+    this.importStop = false;
+
+    startBtn.disabled = true;
+    startBtn.textContent = 'Importing…';
+    fileInput.disabled = true;
+    cancelBtn.textContent = 'Stop';
+    status.classList.add('hidden');
+    progress.classList.remove('hidden');
+
+    const total = rows.length;
+    let done = 0;
+    let failed = 0;
+
+    const updateProgress = () => {
+      const pct = Math.round((done / total) * 100);
+      fill.style.width = `${pct}%`;
+      label.textContent = `Imported ${done} of ${total}${failed ? ` · ${failed} failed` : ''}`;
+    };
+    updateProgress();
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < rows.length && !this.importStop) {
+        const row = rows[cursor++];
+        try {
+          const req = window.StashSave.buildScrapeRequest({
+            url: row.url,
+            user_id: this.user.id,
+            source: 'import',
+          });
+          const ok = await window.StashSave.saveViaScrape(req);
+          if (!ok) failed++;
+        } catch (e) {
+          failed++;
+        }
+        done++;
+        updateProgress();
+      }
+    };
+
+    // A little concurrency keeps large imports moving without hammering the
+    // scraper Edge Function.
+    const CONCURRENCY = 3;
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+
+    this.importRunning = false;
+    const imported = done - failed;
+    const stopped = this.importStop && cursor < rows.length;
+
+    let message = `Imported ${imported} article${imported === 1 ? '' : 's'}.`;
+    if (failed) message += ` ${failed} could not be fetched.`;
+    if (stopped) message += ' Import stopped.';
+
+    status.textContent = message;
+    status.className = `digest-status ${failed && imported === 0 ? 'error' : 'success'}`;
+    status.classList.remove('hidden');
+
+    startBtn.textContent = 'Import';
+    cancelBtn.textContent = 'Close';
+
+    // Refresh the list so freshly imported saves show up.
+    if (imported > 0 && (this.currentView === 'all' || this.currentView === 'archived')) {
+      this.loadSaves();
     }
   }
 }
