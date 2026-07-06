@@ -54,6 +54,31 @@
     return rows;
   }
 
+  // Normalize a save-date cell into an ISO timestamp so imported articles keep
+  // their original order. Accepts Unix epoch seconds (Pocket's time_added),
+  // epoch milliseconds, or any Date-parseable string (ISO, etc.). Returns null
+  // for empty/unparseable/out-of-range values so the caller can fall back to the
+  // server default (now()).
+  function parseTimestamp(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+
+    let date;
+    if (/^\d+$/.test(s)) {
+      const n = Number(s);
+      // 13+ digits is milliseconds; fewer is seconds (Pocket uses seconds).
+      date = new Date(s.length >= 13 ? n : n * 1000);
+    } else {
+      date = new Date(s);
+    }
+
+    if (isNaN(date.getTime())) return null;
+    const year = date.getUTCFullYear();
+    if (year < 2000 || year > 2100) return null; // guard against bogus values
+    return date.toISOString();
+  }
+
   // Index of the first header whose normalized name is in `candidates`.
   function findColumn(headers, candidates) {
     for (let i = 0; i < headers.length; i++) {
@@ -105,15 +130,17 @@
       const url = (r[urlIdx] || '').trim();
       if (!URL_RE.test(url) || seen.has(url)) continue;
       seen.add(url);
+      const timeRaw = timeIdx !== -1 ? (r[timeIdx] || '').trim() : '';
       out.push({
         url,
         title: titleIdx !== -1 ? (r[titleIdx] || '').trim() : '',
         tags: tagsIdx !== -1 ? (r[tagsIdx] || '').trim() : '',
-        time_added: timeIdx !== -1 ? (r[timeIdx] || '').trim() : '',
+        time_added: timeRaw,
+        created_at: parseTimestamp(timeRaw),
       });
     }
     return out;
   }
 
-  root.StashImport = { parseCsv, parseRows };
+  root.StashImport = { parseCsv, parseRows, parseTimestamp };
 })(self);

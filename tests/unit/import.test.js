@@ -38,9 +38,16 @@ describe('StashImport.parseCsv — Pocket export', () => {
       title: 'Local-First Software',
       tags: 'software',
       time_added: '1700000000',
+      created_at: new Date(1700000000 * 1000).toISOString(),
     });
     expect(rows[1].url).toBe('https://www.wired.com/ai');
     expect(rows[1].title).toBe('AI and the Future');
+  });
+
+  test('normalizes Pocket epoch-second time_added into an ISO created_at', () => {
+    const rows = StashImport.parseCsv(csv);
+    expect(rows[0].created_at).toBe('2023-11-14T22:13:20.000Z');
+    expect(rows[1].created_at).toBe(new Date(1700000100 * 1000).toISOString());
   });
 });
 
@@ -128,5 +135,34 @@ describe('StashImport.parseCsv — edge cases', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe('Multi\nline title');
     expect(rows[0].url).toBe('https://example.com/nl');
+  });
+
+  test('leaves created_at null when there is no time column', () => {
+    const csv = 'title,url\nHello,https://example.com/z';
+    expect(StashImport.parseCsv(csv)[0].created_at).toBeNull();
+  });
+});
+
+describe('StashImport.parseTimestamp', () => {
+  test('parses Unix epoch seconds (Pocket)', () => {
+    expect(StashImport.parseTimestamp('1700000000')).toBe('2023-11-14T22:13:20.000Z');
+  });
+
+  test('parses Unix epoch milliseconds', () => {
+    expect(StashImport.parseTimestamp('1700000000000')).toBe('2023-11-14T22:13:20.000Z');
+  });
+
+  test('parses an ISO date string', () => {
+    expect(StashImport.parseTimestamp('2024-01-15T10:30:00Z')).toBe('2024-01-15T10:30:00.000Z');
+  });
+
+  test('returns null for empty or unparseable values', () => {
+    expect(StashImport.parseTimestamp('')).toBeNull();
+    expect(StashImport.parseTimestamp(null)).toBeNull();
+    expect(StashImport.parseTimestamp('not a date')).toBeNull();
+  });
+
+  test('rejects out-of-range values (e.g. a raw 0 timestamp)', () => {
+    expect(StashImport.parseTimestamp('0')).toBeNull();
   });
 });

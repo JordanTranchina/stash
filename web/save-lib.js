@@ -17,14 +17,18 @@
   // Build the request the save-page function expects from a raw share. Only the
   // URL is required — the scraper derives title, excerpt, content, image and
   // site name from the fetched page. `highlight` is an optional user note kept
-  // alongside the scraped article (it is NOT the article body).
-  function buildScrapeRequest({ url, user_id, source, highlight }) {
-    return {
+  // alongside the scraped article (it is NOT the article body). `created_at` is
+  // an optional ISO timestamp (used by CSV import to preserve the original save
+  // date); it is only included when provided so live shares keep now().
+  function buildScrapeRequest({ url, user_id, source, highlight, created_at }) {
+    const request = {
       url: url,
       user_id: user_id,
       source: source || 'mobile-web',
       highlight: highlight || null,
     };
+    if (created_at) request.created_at = created_at;
+    return request;
   }
 
   // POST a scrape request to the save-page Edge Function. Resolves to true on a

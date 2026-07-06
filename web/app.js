@@ -1541,6 +1541,7 @@ class StashApp {
             url: row.url,
             user_id: this.user.id,
             source: 'import',
+            created_at: row.created_at, // preserve original save date when present
           });
           const ok = await window.StashSave.saveViaScrape(req);
           if (!ok) failed++;
