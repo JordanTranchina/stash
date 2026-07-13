@@ -1020,9 +1020,15 @@ class StashApp {
         </blockquote>
         <p><a href="${save.url}" target="_blank" style="color: var(--primary);">View original →</a></p>
       `;
+    } else if (save.content || save.excerpt) {
+      document.getElementById('reading-body').innerHTML = this.renderMarkdown(save.content || save.excerpt);
     } else {
-      const content = save.content || save.excerpt || 'No content available.';
-      document.getElementById('reading-body').innerHTML = this.renderMarkdown(content);
+      document.getElementById('reading-body').innerHTML = `
+        <div class="reading-empty">
+          <p>We couldn't fetch this article's content.</p>
+          <a href="${save.url || '#'}" target="_blank" class="btn primary">View Original</a>
+        </div>
+      `;
     }
 
     document.getElementById('open-original-btn').href = save.url || '#';
