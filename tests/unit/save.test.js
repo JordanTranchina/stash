@@ -33,13 +33,13 @@ function loadStashSave(config) {
 describe('StashSave.buildScrapeRequest', () => {
   const StashSave = loadStashSave({});
 
-  test('keeps only url/user_id/source/highlight — no client-derived title', () => {
+  test('passes title through as a fallback but ignores other client-derived fields', () => {
     const req = StashSave.buildScrapeRequest({
       user_id: 'user-1',
       url: 'https://example.com/article',
       source: 'share-target',
       highlight: null,
-      title: 'should be ignored',
+      title: 'Shared page title',
       site_name: 'should be ignored',
     });
     expect(req).toEqual({
@@ -47,9 +47,20 @@ describe('StashSave.buildScrapeRequest', () => {
       user_id: 'user-1',
       source: 'share-target',
       highlight: null,
+      // Included as a fallback title only; the server prefers the scraped
+      // title and uses this just for pages it can't scrape.
+      title: 'Shared page title',
+    });
+    expect(req).not.toHaveProperty('site_name');
+  });
+
+  test('omits title when not provided (a successful scrape derives its own)', () => {
+    const req = StashSave.buildScrapeRequest({
+      user_id: 'user-1',
+      url: 'https://example.com/article',
+      source: 'share-target',
     });
     expect(req).not.toHaveProperty('title');
-    expect(req).not.toHaveProperty('site_name');
   });
 
   test('defaults source to mobile-web and highlight to null', () => {
@@ -182,5 +193,52 @@ describe('share-target URL extraction', () => {
 
   test('returns empty string when no URL is anywhere in the share', () => {
     expect(resolveSharedUrl('', 'just a plain title, no link')).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. Slug-title fallback (mirrors titleFromUrl in save-page/index.ts)
+//
+// When a page can't be scraped (Medium and other bot-blocked/paywalled sites
+// return 403 to the server fetch) the save-page function saves the link anyway
+// and derives a readable title from the URL slug instead of "Untitled".
+// ---------------------------------------------------------------------------
+
+describe('slug title fallback', () => {
+  function titleFromUrl(u) {
+    try {
+      const slug = new URL(u).pathname.split('/').filter(Boolean).pop() || '';
+      const cleaned = slug
+        .replace(/\.(html?|php|aspx?)$/i, '')
+        .replace(/-[0-9a-f]{6,}$/i, '')
+        .replace(/[-_]+/g, ' ')
+        .trim();
+      if (!cleaned) return '';
+      return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    } catch {
+      return '';
+    }
+  }
+
+  test('turns a Medium slug (with trailing hash id) into a readable title', () => {
+    expect(
+      titleFromUrl('https://medium.com/@ZacThePM/keep-your-tape-straight-dc0aba7a1df9')
+    ).toBe('Keep your tape straight');
+  });
+
+  test('cleans a plain hyphenated slug', () => {
+    expect(titleFromUrl('https://example.com/blog/how-to-fold-a-map')).toBe(
+      'How to fold a map'
+    );
+  });
+
+  test('strips a file extension', () => {
+    expect(titleFromUrl('https://example.com/posts/my-article.html')).toBe(
+      'My article'
+    );
+  });
+
+  test('returns empty string for a slugless URL so callers fall back to Untitled', () => {
+    expect(titleFromUrl('https://example.com/')).toBe('');
   });
 });

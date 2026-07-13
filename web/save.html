@@ -281,43 +281,55 @@
         statusEl.style.display = 'block';
       }
 
+      let savedOnline = false;
       try {
         // Route through the save-page Edge Function so the article is fully
         // scraped server-side (Readability), the same way the extension and
         // bookmarklet ingest pages — instead of storing just the shared link.
-        const ok = await window.StashSave.saveViaScrape(data);
-
-        if (ok) {
-          handleSuccess(isAuto);
-          return true;
-        } else {
-          throw new Error('Save failed');
-        }
+        savedOnline = await window.StashSave.saveViaScrape(data);
       } catch (err) {
-        console.warn('Online save failed, attempting offline save...', err);
-        // Fallback to IndexedDB
+        // fetch() only rejects on a genuine network failure (offline / server
+        // unreachable). THAT is what the pending queue is for — queue it and
+        // let Background Sync retry when connectivity returns.
+        console.warn('Network error saving; queueing for later sync...', err);
         try {
           await window.StashDB.savePendingShare(data);
           requestBackgroundSync(); // retry automatically when connectivity returns
-          handleSuccess(isAuto, true); // true = offline success
+          handleSuccess(isAuto, true); // true = queued offline
           return true;
         } catch (dbErr) {
-          console.error('Offline save failed', dbErr);
-          
-          if (isAuto) {
-             // If auto-save fails, verify we show user the error in the form
-             showForm();
-             statusEl.textContent = 'Failed to save. Check the URL.';
-             statusEl.className = 'status error';
-          } else {
-             statusEl.textContent = 'Failed to save. Check the URL.';
-             statusEl.className = 'status error';
-             saveBtn.disabled = false;
-             saveBtn.textContent = 'Save to Stash';
-          }
+          console.error('Offline queue save failed', dbErr);
+          showSaveError(isAuto);
           return false;
         }
       }
+
+      if (savedOnline) {
+        handleSuccess(isAuto);
+        return true;
+      }
+
+      // We reached the server but it rejected the save. Retrying the identical
+      // request would just fail the same way, so we do NOT silently queue it —
+      // that used to strand the article in the pending queue forever while the
+      // UI claimed it saved. Surface a real error instead.
+      console.warn('Server rejected the save.');
+      showSaveError(isAuto);
+      return false;
+    }
+
+    function showSaveError(isAuto) {
+      // Auto-save runs behind the stealth overlay; drop back to the form so the
+      // error (and the pre-filled URL) is visible and the user can retry.
+      if (isAuto) {
+        showForm();
+      } else {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save to Stash';
+      }
+      statusEl.textContent = "Couldn't save this one. Please try again.";
+      statusEl.className = 'status error';
+      statusEl.style.display = 'block';
     }
     
     function handleSuccess(isAuto, isOffline = false) {
@@ -361,13 +373,15 @@
       const url = urlInput.value.trim();
       const highlight = highlightInput.value.trim();
 
-      // The scraper derives the title/site name from the page itself; we only
-      // pass the URL, source and any optional note the user typed.
+      // The scraper derives the title/site name from the page itself; we pass
+      // any title the user typed only as a fallback for pages that can't be
+      // scraped (bot-blocked / paywalled), plus the URL, source and note.
       const data = window.StashSave.buildScrapeRequest({
         user_id: CONFIG.USER_ID,
         url: url,
         source: 'mobile-web',
         highlight: highlight || null,
+        title: titleInput.value.trim() || null,
       });
 
       await handleSave(data, false);
@@ -417,12 +431,15 @@
 
         // Share sheets pass the article title/snippet as `text`; that is NOT a
         // user highlight, so we don't stash it as one. We just hand the URL to
-        // the scraper and let it ingest the full article (Pocket-style).
+        // the scraper and let it ingest the full article (Pocket-style). The
+        // shared title is passed only as a fallback for pages the server can't
+        // scrape (bot-blocked / paywalled), so they still get a real title.
         const data = window.StashSave.buildScrapeRequest({
           user_id: CONFIG.USER_ID,
           url: pUrl,
           source: 'share-target',
           highlight: null,
+          title: pTitle || null,
         });
 
         handleSave(data, true);
