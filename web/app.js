@@ -125,14 +125,6 @@ class StashApp {
       this.toggleArchive();
     });
 
-    document.getElementById('favorite-btn').addEventListener('click', () => {
-      this.toggleFavorite();
-    });
-
-    document.getElementById('delete-btn').addEventListener('click', () => {
-      this.deleteSave();
-    });
-
     // Theme toggle
     document.getElementById('theme-toggle').addEventListener('click', () => {
       this.toggleTheme();
@@ -934,7 +926,6 @@ class StashApp {
 
     // Update button states
     document.getElementById('archive-btn').classList.toggle('active', save.is_archived);
-    document.getElementById('favorite-btn').classList.toggle('active', save.is_favorite);
 
     pane.classList.remove('hidden');
     // Add open class for mobile slide-in animation
@@ -1101,33 +1092,6 @@ class StashApp {
     window.StashDB.setArchived(this.currentSave.id, newValue);
     this.loadSaves();
     if (newValue) this.closeReadingPane();
-  }
-
-  async toggleFavorite() {
-    if (!this.currentSave) return;
-
-    const newValue = !this.currentSave.is_favorite;
-    await this.supabase
-      .from('saves')
-      .update({ is_favorite: newValue })
-      .eq('id', this.currentSave.id);
-
-    this.currentSave.is_favorite = newValue;
-    document.getElementById('favorite-btn').classList.toggle('active', newValue);
-  }
-
-  async deleteSave() {
-    if (!this.currentSave) return;
-
-    if (!confirm('Delete this save? This cannot be undone.')) return;
-
-    await this.supabase
-      .from('saves')
-      .delete()
-      .eq('id', this.currentSave.id);
-
-    this.closeReadingPane();
-    this.loadSaves();
   }
 
   async showStats() {
