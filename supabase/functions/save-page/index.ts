@@ -33,6 +33,25 @@ function extractMeta(doc: any, attr: string, value: string): string | null {
   return el?.getAttribute("content") || null;
 }
 
+// Best-effort human title derived from a URL slug. Used only as a last resort
+// when we couldn't scrape a real title (e.g. a bot-blocked or paywalled page
+// saved as a bare link) so the save still reads as something meaningful in the
+// list instead of "Untitled".
+function titleFromUrl(u: string): string {
+  try {
+    const slug = new URL(u).pathname.split("/").filter(Boolean).pop() || "";
+    const cleaned = slug
+      .replace(/\.(html?|php|aspx?)$/i, "")   // drop a file extension
+      .replace(/-[0-9a-f]{6,}$/i, "")          // drop a trailing hash/id (e.g. Medium's)
+      .replace(/[-_]+/g, " ")
+      .trim();
+    if (!cleaned) return "";
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  } catch {
+    return "";
+  }
+}
+
 // Pull the most likely "real" destination URL out of an interstitial/redirect
 // page: a meta-refresh, canonical link, og:url, or a prominent anchor.
 function findRedirectTarget(html: string, currentUrl: string): string | null {
@@ -262,7 +281,7 @@ serve(async (req) => {
   }
 
   try {
-    const { url, user_id, highlight, source, prefetched, created_at } = await req.json();
+    const { url, user_id, highlight, source, prefetched, created_at, title } = await req.json();
 
     if (!url || !user_id) {
       return new Response(
@@ -287,15 +306,40 @@ serve(async (req) => {
       };
     } else {
       // Server-side fetch, following share-link/redirect wrappers to the real
-      // article so we scrape the full content the way Pocket does.
+      // article so we scrape the full content the way Pocket does. Some sites
+      // (Medium and other bot-blocked or paywalled pages) refuse the fetch —
+      // that's handled by the graceful fallback below, not by failing the save.
       const { html, finalUrl } = await fetchArticleHtml(url);
       resolvedUrl = finalUrl;
       article = html ? extractArticle(html, finalUrl) : null;
     }
 
+    // If the page couldn't be fetched/scraped (bot-blocked, paywalled, origin
+    // down), don't drop the save. Degrade gracefully to a link-only save so the
+    // article still lands in the library and can be opened or re-scraped later.
+    // Losing it entirely — the old behaviour, which surfaced as a misleading
+    // "saved to pending queue" on mobile and never appeared — is worse than
+    // saving it without the full body.
     if (!article) {
-      throw new Error("Could not extract article content");
+      article = {
+        title: null,
+        excerpt: "",
+        content: "",
+        image_url: null,
+        site_name: new URL(resolvedUrl).hostname.replace(/^www\./, ""),
+        author: null,
+      };
     }
+
+    // Prefer the scraped title; fall back to a caller-supplied title (share
+    // sheet / manual form) and finally the URL slug so a link-only save still
+    // reads meaningfully instead of "Untitled".
+    const scrapedTitle = article.title && article.title !== "Untitled" ? article.title : "";
+    const resolvedTitle =
+      scrapedTitle ||
+      (title ? String(title).trim() : "") ||
+      titleFromUrl(resolvedUrl) ||
+      "Untitled";
 
     // Always store the scraped article body. A highlight/note is stored
     // alongside it (not instead of it) so a saved article is fully readable —
@@ -309,7 +353,7 @@ serve(async (req) => {
     const saveData: Record<string, unknown> = {
       user_id,
       url: resolvedUrl,
-      title: article.title,
+      title: resolvedTitle,
       excerpt: article.excerpt,
       content,
       highlight: highlight || null,

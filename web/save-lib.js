@@ -17,16 +17,21 @@
   // Build the request the save-page function expects from a raw share. Only the
   // URL is required — the scraper derives title, excerpt, content, image and
   // site name from the fetched page. `highlight` is an optional user note kept
-  // alongside the scraped article (it is NOT the article body). `created_at` is
-  // an optional ISO timestamp (used by CSV import to preserve the original save
-  // date); it is only included when provided so live shares keep now().
-  function buildScrapeRequest({ url, user_id, source, highlight, created_at }) {
+  // alongside the scraped article (it is NOT the article body). `title` is an
+  // optional fallback title (from a share sheet or the manual form) used only
+  // when the server can't scrape one itself — e.g. a bot-blocked or paywalled
+  // page saved as a bare link; a successful scrape always prefers the real
+  // page title. `created_at` is an optional ISO timestamp (used by CSV import
+  // to preserve the original save date); it is only included when provided so
+  // live shares keep now().
+  function buildScrapeRequest({ url, user_id, source, highlight, created_at, title }) {
     const request = {
       url: url,
       user_id: user_id,
       source: source || 'mobile-web',
       highlight: highlight || null,
     };
+    if (title) request.title = title;
     if (created_at) request.created_at = created_at;
     return request;
   }
