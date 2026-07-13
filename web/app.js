@@ -112,6 +112,15 @@ class StashApp {
       this.closeReadingPane();
     });
 
+    // Android back gesture / browser back button: close the reading pane
+    // instead of letting it fall through and exit the app.
+    window.addEventListener('popstate', () => {
+      const pane = document.getElementById('reading-pane');
+      if (pane && pane.classList.contains('open')) {
+        this.closeReadingPane({ fromPopState: true });
+      }
+    });
+
     document.getElementById('archive-btn').addEventListener('click', () => {
       this.toggleArchive();
     });
@@ -932,9 +941,13 @@ class StashApp {
     requestAnimationFrame(() => {
       pane.classList.add('open');
     });
+
+    // Push a history entry so the Android back gesture closes the reading
+    // pane instead of falling through to the OS and exiting the app.
+    history.pushState({ stashView: 'reading' }, '');
   }
 
-  closeReadingPane() {
+  closeReadingPane({ fromPopState = false } = {}) {
     const pane = document.getElementById('reading-pane');
     pane.classList.remove('open');
     // Stop audio when closing
@@ -949,6 +962,13 @@ class StashApp {
       }
     }, 300);
     this.currentSave = null;
+
+    // If closing wasn't already triggered by the back gesture (e.g. the
+    // user tapped the close button), unwind the history entry we pushed
+    // in openReadingPane so back-stack stays balanced.
+    if (!fromPopState && history.state && history.state.stashView === 'reading') {
+      history.back();
+    }
   }
 
   // Reading Progress Bar
