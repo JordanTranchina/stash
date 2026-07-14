@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Stash Icons</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    .instructions { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Stash Icon Generator</h1>
+  <div class="instructions">
+    <p><strong>Instructions:</strong> Right-click each canvas and "Save image as..." with the filename shown below it.</p>
+  </div>
+
+  <div>
+    <canvas id="icon16" width="16" height="16"></canvas>
+    <p>icon16.png</p>
+  </div>
+  <div>
+    <canvas id="icon32" width="32" height="32"></canvas>
+    <p>icon32.png</p>
+  </div>
+  <div>
+    <canvas id="icon48" width="48" height="48"></canvas>
+    <p>icon48.png</p>
+  </div>
+  <div>
+    <canvas id="icon128" width="128" height="128"></canvas>
+    <p>icon128.png</p>
+  </div>
+
+  <script>
+    function drawIcon(canvasId, size) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = '#6366f1';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, size * 0.2);
+      ctx.fill();
+
+      // Letter S
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.6}px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('S', size / 2, size / 2 + size * 0.05);
+    }
+
+    drawIcon('icon16', 16);
+    drawIcon('icon32', 32);
+    drawIcon('icon48', 48);
+    drawIcon('icon128', 128);
+  </script>
+</body>
+</html>

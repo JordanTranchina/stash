@@ -6,7 +6,7 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 
 ## Features
 
-- **Chrome Extension** - Save pages and highlights with one click
+- **Chrome & Firefox Extensions** - Save pages and highlights with one click
 - **Web App** - Access your saves from any device
 - **Kindle Sync** - Import highlights from your Kindle library
 - **CSV Import** - Bring your reading list over from Pocket, Instapaper, Omnivore, and other read-it-later services
@@ -29,8 +29,10 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 
 1. **Create a Supabase project** (free) at [supabase.com](https://supabase.com)
 2. **Run the schema** from `supabase/schema.sql`
-3. **Add your credentials** to `extension/config.js` and `web/config.js`
-4. **Load the extension** in Chrome (`chrome://extensions` > Load unpacked)
+3. **Add your credentials** to `extension/config.js` (and `extension-firefox/config.js` if you also want the Firefox build) and `web/config.js`
+4. **Load the extension**:
+   - Chrome: `chrome://extensions` > Load unpacked > select `extension/`
+   - Firefox: `about:debugging#/runtime/this-firefox` > Load Temporary Add-on > select `extension-firefox/manifest.json`
 5. **Deploy the web app** to Vercel/Netlify (free)
 
 See [SETUP.md](SETUP.md) for detailed instructions.
@@ -39,12 +41,28 @@ See [SETUP.md](SETUP.md) for detailed instructions.
 
 ```
 stash/
-├── extension/       # Chrome extension
-├── web/            # Web app (PWA)
-├── tts/            # Text-to-speech generator
-├── bookmarklet/    # Universal save bookmarklet
-├── ios-shortcut/   # iOS Shortcut for Safari
-└── supabase/       # Database schema & Edge Functions
+├── extension/          # Chrome extension (MV3, service worker background)
+├── extension-firefox/  # Firefox extension (MV3, event page background)
+├── web/                # Web app (PWA)
+├── tts/                # Text-to-speech generator
+├── bookmarklet/        # Universal save bookmarklet
+├── ios-shortcut/       # iOS Shortcut for Safari
+└── supabase/           # Database schema & Edge Functions
+```
+
+### Chrome vs. Firefox extension
+
+`extension/` and `extension-firefox/` share the same content script, popup,
+and Supabase client — only `manifest.json` differs, since Chrome's MV3
+background must be a `service_worker` while Firefox's MV3 background is a
+non-worker event page (`background.scripts`). `extension/background.js`
+guards its `importScripts` call so the exact same file runs in both.
+
+If you edit anything under `extension/` other than `manifest.json`, sync the
+change into the Firefox build with:
+
+```
+npm run sync:firefox-extension
 ```
 
 ## Tech Stack
