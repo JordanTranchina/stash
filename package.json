@@ -6,7 +6,8 @@
     "test": "jest --testPathPattern=tests/unit",
     "test:e2e": "jest --testPathPattern=tests/e2e --testTimeout=30000",
     "test:extension": "playwright test",
-    "test:all": "jest --testTimeout=30000"
+    "test:all": "jest --testTimeout=30000",
+    "sync:firefox-extension": "node scripts/sync-firefox-extension.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
