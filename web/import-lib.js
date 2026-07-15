@@ -99,7 +99,7 @@
     if (rows.length === 0) return [];
 
     const headers = rows[0].map(h => h.trim());
-    const HEADER_RE = /^(url|link|href|title|name|time_added|timeadded|saved|date|created_at|tags|tag|folder|status|selection)$/i;
+    const HEADER_RE = /^(url|link|href|title|name|time_added|timeadded|saved|date|created|created_at|tags|tag|folder|status|selection)$/i;
     const looksLikeHeader = headers.some(h => HEADER_RE.test(h));
 
     let urlIdx, titleIdx, tagsIdx, timeIdx, dataRows;
@@ -107,7 +107,8 @@
       urlIdx = findColumn(headers, ['url', 'link', 'href']);
       titleIdx = findColumn(headers, ['title', 'name']);
       tagsIdx = findColumn(headers, ['tags', 'tag', 'folder']);
-      timeIdx = findColumn(headers, ['time_added', 'timeadded', 'saved', 'date', 'created_at']);
+      // 'created' covers Readwise Reader's export column.
+      timeIdx = findColumn(headers, ['time_added', 'timeadded', 'saved', 'date', 'created', 'created_at']);
       dataRows = rows.slice(1);
     } else {
       // No header row — infer the URL column from the first record's contents.
