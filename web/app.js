@@ -228,22 +228,27 @@ class StashApp {
     window.addEventListener('offline', () => this.updateOnlineStatus());
     
     // PWA: Install Prompt
+    const installBtn = document.getElementById('install-app-settings-btn');
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
-      const installBtn = document.getElementById('pwa-install-btn');
       installBtn.classList.remove('hidden');
-      
-      installBtn.addEventListener('click', () => {
-        installBtn.classList.add('hidden');
-        this.deferredPrompt.prompt();
-        this.deferredPrompt.userChoice.then((choiceResult) => {
-          if (choiceResult.outcome === 'accepted') {
-            console.log('User accepted the install prompt');
-          }
-          this.deferredPrompt = null;
-        });
+    });
+
+    installBtn.addEventListener('click', () => {
+      if (!this.deferredPrompt) return;
+      this.deferredPrompt.prompt();
+      this.deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+        }
+        this.deferredPrompt = null;
       });
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installBtn.classList.add('hidden');
+      this.deferredPrompt = null;
     });
   }
 

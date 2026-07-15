@@ -2244,33 +2244,6 @@ select {
   pointer-events: none;
 }
 
-.pwa-install-btn {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: var(--primary);
-  color: white;
-  border: none;
-  border-radius: 99px;
-  padding: 12px 20px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-  z-index: 999;
-  transition: transform 0.2s;
-}
-
-.pwa-install-btn:active {
-  transform: scale(0.95);
-}
-
-.pwa-install-btn.hidden {
-  display: none;
-}
-
 /* Podcasts View (Listen Later, #12) */
 .podcasts-view {
   max-width: 760px;
