@@ -69,6 +69,21 @@ describe('StashImport.parseCsv — Instapaper export', () => {
   });
 });
 
+describe('StashImport.parseCsv — Readwise Reader export', () => {
+  // Readwise Reader's export uses a bare "created" column (ISO timestamp).
+  const csv = [
+    'id,title,note,excerpt,url,folder,tags,created,cover,highlights,favorite',
+    '123,Some Article,,An excerpt,https://example.com/a,Unsorted,,2025-05-25T00:17:46.679Z,,,false',
+  ].join('\n');
+
+  test('recognizes the bare "created" column as the save-date column', () => {
+    const rows = StashImport.parseCsv(csv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].url).toBe('https://example.com/a');
+    expect(rows[0].created_at).toBe('2025-05-25T00:17:46.679Z');
+  });
+});
+
 describe('StashImport.parseCsv — generic / headerless', () => {
   test('infers the URL column when there is no recognizable header row', () => {
     const csv = 'My Title,https://example.com/x\nOther,https://example.com/y';
