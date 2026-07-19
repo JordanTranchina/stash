@@ -68,28 +68,70 @@ class StashApp {
   }
 
   // Font Size Management (applies to article reading text app-wide)
+  // 'stash-font-size-default' is the app-wide default set from Settings.
+  // 'stash-font-size' is the currently active reading size, which can be
+  // bumped up/down from the reading pane without changing the default.
   loadFontSize() {
-    const saved = parseInt(localStorage.getItem('stash-font-size'), 10);
-    const size = Number.isFinite(saved) ? this.clampFontSize(saved) : this.FONT_SIZE_DEFAULT;
-    this.applyFontSize(size);
+    // Migrate from the old single-value scheme (pre-reset-button), where
+    // 'stash-font-size' doubled as both the default and the current size.
+    if (localStorage.getItem('stash-font-size-default') === null) {
+      const legacy = parseInt(localStorage.getItem('stash-font-size'), 10);
+      localStorage.setItem('stash-font-size-default', Number.isFinite(legacy) ? legacy : this.FONT_SIZE_DEFAULT);
+    }
+
+    const defaultSize = this.getDefaultFontSize();
+    const valueEl = document.getElementById('settings-font-size-value');
+    if (valueEl) valueEl.textContent = `${defaultSize}px`;
+
+    this.applyCurrentFontSize(this.getCurrentFontSize());
   }
 
   clampFontSize(size) {
     return Math.min(this.FONT_SIZE_MAX, Math.max(this.FONT_SIZE_MIN, size));
   }
 
-  applyFontSize(size) {
+  getDefaultFontSize() {
+    const saved = parseInt(localStorage.getItem('stash-font-size-default'), 10);
+    return this.clampFontSize(Number.isFinite(saved) ? saved : this.FONT_SIZE_DEFAULT);
+  }
+
+  getCurrentFontSize() {
+    const saved = parseInt(localStorage.getItem('stash-font-size'), 10);
+    return this.clampFontSize(Number.isFinite(saved) ? saved : this.getDefaultFontSize());
+  }
+
+  // Applies the currently active reading size (footer +/- and reset act on this)
+  applyCurrentFontSize(size) {
     const clamped = this.clampFontSize(size);
     document.documentElement.style.setProperty('--reading-font-size', `${clamped}px`);
     localStorage.setItem('stash-font-size', clamped);
 
-    const valueEl = document.getElementById('settings-font-size-value');
-    if (valueEl) valueEl.textContent = `${clamped}px`;
+    const resetBtn = document.getElementById('reading-font-reset-btn');
+    if (resetBtn) resetBtn.disabled = clamped === this.getDefaultFontSize();
   }
 
   adjustFontSize(delta) {
-    const current = parseInt(localStorage.getItem('stash-font-size'), 10) || this.FONT_SIZE_DEFAULT;
-    this.applyFontSize(current + delta);
+    this.applyCurrentFontSize(this.getCurrentFontSize() + delta);
+  }
+
+  resetFontSize() {
+    this.applyCurrentFontSize(this.getDefaultFontSize());
+  }
+
+  // Sets the app-wide default (Settings stepper); also applies immediately
+  // as the current reading size so Settings changes take effect right away.
+  setDefaultFontSize(size) {
+    const clamped = this.clampFontSize(size);
+    localStorage.setItem('stash-font-size-default', clamped);
+
+    const valueEl = document.getElementById('settings-font-size-value');
+    if (valueEl) valueEl.textContent = `${clamped}px`;
+
+    this.applyCurrentFontSize(clamped);
+  }
+
+  adjustDefaultFontSize(delta) {
+    this.setDefaultFontSize(this.getDefaultFontSize() + delta);
   }
 
   updateThemeToggle(theme) {
@@ -181,11 +223,14 @@ class StashApp {
     document.getElementById('reading-font-increase-btn').addEventListener('click', () => {
       this.adjustFontSize(this.FONT_SIZE_STEP);
     });
+    document.getElementById('reading-font-reset-btn').addEventListener('click', () => {
+      this.resetFontSize();
+    });
     document.getElementById('settings-font-decrease-btn').addEventListener('click', () => {
-      this.adjustFontSize(-this.FONT_SIZE_STEP);
+      this.adjustDefaultFontSize(-this.FONT_SIZE_STEP);
     });
     document.getElementById('settings-font-increase-btn').addEventListener('click', () => {
-      this.adjustFontSize(this.FONT_SIZE_STEP);
+      this.adjustDefaultFontSize(this.FONT_SIZE_STEP);
     });
 
     // Reading progress bar + hide reader chrome while scrolling down

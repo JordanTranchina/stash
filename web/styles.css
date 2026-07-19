@@ -904,6 +904,15 @@ select {
   font-size: 10px;
 }
 
+#reading-font-reset-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#reading-font-reset-btn:disabled:hover {
+  background: transparent;
+}
+
 /* Default font size stepper in Settings */
 .settings-row.font-size-row {
   cursor: default;
