@@ -11,6 +11,9 @@ class StashApp {
     this.audio = null;
     this.isPlaying = false;
 
+    // Reading pane scroll-chrome state
+    this.lastReadingScrollTop = 0;
+
     this.init();
   }
 
@@ -38,6 +41,7 @@ class StashApp {
     const savedTheme = localStorage.getItem('stash-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
     this.updateThemeToggle(savedTheme);
+    this.updateThemeColorMeta(savedTheme);
   }
 
   toggleTheme() {
@@ -46,6 +50,12 @@ class StashApp {
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('stash-theme', newTheme);
     this.updateThemeToggle(newTheme);
+    this.updateThemeColorMeta(newTheme);
+  }
+
+  updateThemeColorMeta(theme) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#111827' : '#ffffff');
   }
 
   updateThemeToggle(theme) {
@@ -130,11 +140,12 @@ class StashApp {
       this.toggleTheme();
     });
 
-    // Reading progress bar
+    // Reading progress bar + hide reader chrome while scrolling down
     const readingContent = document.getElementById('reading-content');
     if (readingContent) {
       readingContent.addEventListener('scroll', () => {
         this.updateReadingProgress();
+        this.updateReadingChromeVisibility();
       });
     }
 
@@ -933,6 +944,8 @@ class StashApp {
     document.getElementById('archive-btn').classList.toggle('active', save.is_archived);
 
     pane.classList.remove('hidden');
+    pane.classList.remove('chrome-hidden');
+    this.lastReadingScrollTop = 0;
     // Add open class for mobile slide-in animation
     requestAnimationFrame(() => {
       pane.classList.add('open');
@@ -946,6 +959,8 @@ class StashApp {
   closeReadingPane({ fromPopState = false } = {}) {
     const pane = document.getElementById('reading-pane');
     pane.classList.remove('open');
+    pane.classList.remove('chrome-hidden');
+    this.lastReadingScrollTop = 0;
     // Stop audio when closing
     this.stopAudio();
     // Reset progress bar
@@ -981,6 +996,29 @@ class StashApp {
       const progress = (scrollTop / scrollHeight) * 100;
       progressFill.style.width = `${Math.min(progress, 100)}%`;
     }
+  }
+
+  // Hide the reader header/progress bar/footer when scrolling down to read,
+  // bring them back when scrolling up.
+  updateReadingChromeVisibility() {
+    const readingContent = document.getElementById('reading-content');
+    const pane = document.getElementById('reading-pane');
+    if (!readingContent || !pane) return;
+
+    const scrollTop = readingContent.scrollTop;
+    const delta = scrollTop - this.lastReadingScrollTop;
+    const SCROLL_THRESHOLD = 8;
+    const TOP_REVEAL_ZONE = 40;
+
+    if (scrollTop < TOP_REVEAL_ZONE) {
+      pane.classList.remove('chrome-hidden');
+    } else if (delta > SCROLL_THRESHOLD) {
+      pane.classList.add('chrome-hidden');
+    } else if (delta < -SCROLL_THRESHOLD) {
+      pane.classList.remove('chrome-hidden');
+    }
+
+    this.lastReadingScrollTop = scrollTop;
   }
 
   // Audio player methods

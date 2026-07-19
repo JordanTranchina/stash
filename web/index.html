@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#6366f1">
+  <meta name="theme-color" content="#ffffff">
   <meta name="description" content="Your personal reading stash">
 
   <title>Stash</title>
@@ -243,16 +243,18 @@
 
       <!-- Reading Pane (for viewing saved content) -->
       <aside id="reading-pane" class="reading-pane hidden">
-        <div class="reading-header">
-          <button class="btn icon" id="close-reading-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="reading-progress-bar">
-          <div class="reading-progress-fill" id="reading-progress-fill"></div>
+        <div class="reading-chrome-top">
+          <div class="reading-header">
+            <button class="btn icon" id="close-reading-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="reading-progress-bar">
+            <div class="reading-progress-fill" id="reading-progress-fill"></div>
+          </div>
         </div>
         <div class="reading-content" id="reading-content">
           <div id="reading-meta" class="reading-meta"></div>
