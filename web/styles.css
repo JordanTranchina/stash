@@ -19,6 +19,7 @@
   --radius-lg: 12px;
   --sidebar-width: 260px;
   --reading-pane-width: 500px;
+  --reading-font-size: 16px;
 }
 
 /* Dark Mode */
@@ -887,9 +888,67 @@ select {
 }
 
 .reading-body {
-  font-size: 16px;
+  font-size: var(--reading-font-size, 16px);
   line-height: 1.8;
   color: var(--text);
+}
+
+/* Font size controls in the reading pane footer */
+.font-size-btn {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.font-size-btn sup {
+  font-size: 10px;
+}
+
+/* Default font size stepper in Settings */
+.settings-row.font-size-row {
+  cursor: default;
+}
+
+.settings-row.font-size-row:hover {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
+.font-size-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.font-size-step-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.font-size-step-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--primary);
+}
+
+.font-size-value {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: center;
 }
 
 .reading-body p {
@@ -1171,7 +1230,7 @@ select {
   }
 
   .reading-body {
-    font-size: 17px;
+    font-size: var(--reading-font-size, 17px);
     line-height: 1.7;
   }
 

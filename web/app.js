@@ -14,6 +14,12 @@ class StashApp {
     // Reading pane scroll-chrome state
     this.lastReadingScrollTop = 0;
 
+    // Font size bounds (px) for article reading text
+    this.FONT_SIZE_MIN = 14;
+    this.FONT_SIZE_MAX = 24;
+    this.FONT_SIZE_STEP = 1;
+    this.FONT_SIZE_DEFAULT = 16;
+
     this.init();
   }
 
@@ -26,6 +32,9 @@ class StashApp {
 
     // Load theme preference
     this.loadTheme();
+
+    // Load default font size preference
+    this.loadFontSize();
 
     // Skip auth - go straight to main screen
     this.showMainScreen();
@@ -56,6 +65,31 @@ class StashApp {
   updateThemeColorMeta(theme) {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme === 'dark' ? '#111827' : '#ffffff');
+  }
+
+  // Font Size Management (applies to article reading text app-wide)
+  loadFontSize() {
+    const saved = parseInt(localStorage.getItem('stash-font-size'), 10);
+    const size = Number.isFinite(saved) ? this.clampFontSize(saved) : this.FONT_SIZE_DEFAULT;
+    this.applyFontSize(size);
+  }
+
+  clampFontSize(size) {
+    return Math.min(this.FONT_SIZE_MAX, Math.max(this.FONT_SIZE_MIN, size));
+  }
+
+  applyFontSize(size) {
+    const clamped = this.clampFontSize(size);
+    document.documentElement.style.setProperty('--reading-font-size', `${clamped}px`);
+    localStorage.setItem('stash-font-size', clamped);
+
+    const valueEl = document.getElementById('settings-font-size-value');
+    if (valueEl) valueEl.textContent = `${clamped}px`;
+  }
+
+  adjustFontSize(delta) {
+    const current = parseInt(localStorage.getItem('stash-font-size'), 10) || this.FONT_SIZE_DEFAULT;
+    this.applyFontSize(current + delta);
   }
 
   updateThemeToggle(theme) {
@@ -138,6 +172,20 @@ class StashApp {
     // Theme toggle
     document.getElementById('theme-toggle').addEventListener('click', () => {
       this.toggleTheme();
+    });
+
+    // Font size controls (reading pane footer + Settings default)
+    document.getElementById('reading-font-decrease-btn').addEventListener('click', () => {
+      this.adjustFontSize(-this.FONT_SIZE_STEP);
+    });
+    document.getElementById('reading-font-increase-btn').addEventListener('click', () => {
+      this.adjustFontSize(this.FONT_SIZE_STEP);
+    });
+    document.getElementById('settings-font-decrease-btn').addEventListener('click', () => {
+      this.adjustFontSize(-this.FONT_SIZE_STEP);
+    });
+    document.getElementById('settings-font-increase-btn').addEventListener('click', () => {
+      this.adjustFontSize(this.FONT_SIZE_STEP);
     });
 
     // Reading progress bar + hide reader chrome while scrolling down
