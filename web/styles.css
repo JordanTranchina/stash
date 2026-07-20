@@ -730,6 +730,13 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
+.reading-progress-percent {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .reading-content {
   flex: 1;
   overflow-y: auto;

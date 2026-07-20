@@ -37,6 +37,7 @@ create table saves (
   is_archived boolean default false,
   is_favorite boolean default false,
   read_at timestamp with time zone,
+  read_percent smallint not null default 0 check (read_percent >= 0 and read_percent <= 100),
 
   -- Source tracking
   source text default 'extension', -- 'extension', 'import', 'manual'
