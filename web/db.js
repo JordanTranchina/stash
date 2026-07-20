@@ -85,6 +85,26 @@ self.StashDB = {
         });
     },
 
+    // Update the cached read_percent on a single article in place, mirroring
+    // setArchived so offline reopens show the last-synced progress.
+    async setReadPercent(id, percent) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_ARTICLES], 'readwrite');
+        const store = transaction.objectStore(STORE_ARTICLES);
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+            const article = getReq.result;
+            if (article) {
+                article.read_percent = percent;
+                store.put(article);
+            }
+        };
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
     async savePendingShare(shareData) {
         const db = await dbPromise;
         const transaction = db.transaction([STORE_PENDING], 'readwrite');

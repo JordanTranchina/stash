@@ -1036,12 +1036,24 @@ class StashApp {
     // Update button states
     document.getElementById('archive-btn').classList.toggle('active', save.is_archived);
 
+    // Show the percent already read from a previous session.
+    const initialPercent = Math.min(Math.max(save.read_percent || 0, 0), 100);
+    this.updateReadingProgressDisplay(initialPercent);
+
     pane.classList.remove('hidden');
     pane.classList.remove('chrome-hidden');
     this.lastReadingScrollTop = 0;
     // Add open class for mobile slide-in animation
     requestAnimationFrame(() => {
       pane.classList.add('open');
+      // Resume roughly where the reader left off.
+      const readingContent = document.getElementById('reading-content');
+      if (readingContent && initialPercent > 0) {
+        const scrollHeight = readingContent.scrollHeight - readingContent.clientHeight;
+        if (scrollHeight > 0) {
+          readingContent.scrollTop = (initialPercent / 100) * scrollHeight;
+        }
+      }
     });
 
     // Push a history entry so the Android back gesture closes the reading
@@ -1056,6 +1068,9 @@ class StashApp {
     this.lastReadingScrollTop = 0;
     // Stop audio when closing
     this.stopAudio();
+    // Persist any progress made since the last debounced save before we
+    // lose the reference to currentSave.
+    this.flushReadingProgress();
     // Reset progress bar
     const progressFill = document.getElementById('reading-progress-fill');
     if (progressFill) progressFill.style.width = '0%';
@@ -1078,17 +1093,58 @@ class StashApp {
   // Reading Progress Bar
   updateReadingProgress() {
     const readingContent = document.getElementById('reading-content');
-    const progressFill = document.getElementById('reading-progress-fill');
-
-    if (!readingContent || !progressFill) return;
+    if (!readingContent) return;
 
     const scrollTop = readingContent.scrollTop;
     const scrollHeight = readingContent.scrollHeight - readingContent.clientHeight;
+    // If the article fits without scrolling, it's all on screen at once.
+    const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 100;
 
-    if (scrollHeight > 0) {
-      const progress = (scrollTop / scrollHeight) * 100;
-      progressFill.style.width = `${Math.min(progress, 100)}%`;
-    }
+    this.updateReadingProgressDisplay(progress);
+    this.queueReadingProgressSave(Math.round(Math.min(Math.max(progress, 0), 100)));
+  }
+
+  // Updates the progress bar fill and the "N% read" label. Shared by the
+  // live scroll handler and by openReadingPane (to show progress restored
+  // from a previous session before any scrolling happens).
+  updateReadingProgressDisplay(percent) {
+    const progressFill = document.getElementById('reading-progress-fill');
+    const progressLabel = document.getElementById('reading-progress-percent');
+    const clamped = Math.min(Math.max(percent, 0), 100);
+
+    if (progressFill) progressFill.style.width = `${clamped}%`;
+    if (progressLabel) progressLabel.textContent = `${Math.round(clamped)}% read`;
+  }
+
+  // Debounce persisting scroll progress so we don't hit Supabase on every
+  // scroll event; flushed immediately when the reading pane closes.
+  queueReadingProgressSave(percent) {
+    if (!this.currentSave) return;
+    this.pendingReadPercent = percent;
+    clearTimeout(this.readProgressSaveTimer);
+    this.readProgressSaveTimer = setTimeout(() => {
+      this.flushReadingProgress();
+    }, 1000);
+  }
+
+  async flushReadingProgress() {
+    clearTimeout(this.readProgressSaveTimer);
+    const save = this.currentSave;
+    const percent = this.pendingReadPercent;
+    if (!save || percent === undefined || percent === save.read_percent) return;
+    this.pendingReadPercent = undefined;
+
+    save.read_percent = percent;
+    const localSave = this.saves.find(s => s.id === save.id);
+    if (localSave) localSave.read_percent = percent;
+    window.StashDB.setReadPercent(save.id, percent);
+
+    const { error } = await this.supabase
+      .from('saves')
+      .update({ read_percent: percent })
+      .eq('id', save.id);
+
+    if (error) console.error('Error saving reading progress:', error);
   }
 
   // Hide the reader header/progress bar/footer when scrolling down to read,
