@@ -178,25 +178,14 @@ begin
 end;
 $$ language plpgsql;
 
--- User preferences table (for digest emails, etc.)
+-- User preferences table (podcast host personalities, etc.)
 create table user_preferences (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references auth.users(id) on delete cascade not null unique,
 
-  -- Email digest settings
-  digest_enabled boolean default false,
-  digest_email text, -- email to send digest to
-  digest_day smallint default 0, -- 0 = Sunday, 1 = Monday, etc.
-  digest_hour smallint default 9, -- Hour to send (0-23, default 9am)
-  last_digest_sent timestamp with time zone,
-
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
-
--- Index for finding users due for digest
-create index user_preferences_digest_idx on user_preferences(digest_enabled, digest_day, digest_hour)
-  where digest_enabled = true;
 
 -- RLS for user_preferences
 alter table user_preferences enable row level security;

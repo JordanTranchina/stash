@@ -31,7 +31,7 @@ If you have deployed the `web` folder to Vercel, you should also add environment
 
 ## 3. Supabase (For Edge Functions)
 
-If you use Supabase Edge Functions (like the weekly digest), secrets are managed via the Supabase CLI or Dashboard.
+If you use Supabase Edge Functions (like `save-page`), secrets are managed via the Supabase CLI or Dashboard.
 
 ### Using Dashboard
 
