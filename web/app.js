@@ -261,31 +261,6 @@ class StashApp {
       }
     });
 
-    // Digest Settings Modal
-    const digestModal = document.getElementById('digest-modal');
-
-    document.getElementById('digest-settings-btn').addEventListener('click', () => {
-      this.showDigestModal();
-    });
-
-    digestModal.querySelector('.modal-overlay').addEventListener('click', () => {
-      this.hideDigestModal();
-    });
-    digestModal.querySelector('.modal-close-btn').addEventListener('click', () => {
-      this.hideDigestModal();
-    });
-    document.getElementById('digest-cancel-btn').addEventListener('click', () => {
-      this.hideDigestModal();
-    });
-    document.getElementById('digest-save-btn').addEventListener('click', () => {
-      this.saveDigestPreferences();
-    });
-
-    // Toggle enabled/disabled state of options
-    document.getElementById('digest-enabled').addEventListener('change', () => {
-      this.updateDigestOptionsState();
-    });
-
     // Podcast Settings Modal (host personalities)
     const podcastModal = document.getElementById('podcast-modal');
 
@@ -303,6 +278,25 @@ class StashApp {
     });
     document.getElementById('podcast-save-btn').addEventListener('click', () => {
       this.savePodcastPreferences();
+    });
+
+    // Add URL Modal (manually ingest a single link)
+    const addUrlModal = document.getElementById('add-url-modal');
+
+    document.getElementById('add-url-settings-btn').addEventListener('click', () => {
+      this.showAddUrlModal();
+    });
+    addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
+      this.hideAddUrlModal();
+    });
+    addUrlModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+      this.hideAddUrlModal();
+    });
+    document.getElementById('add-url-cancel-btn').addEventListener('click', () => {
+      this.hideAddUrlModal();
+    });
+    document.getElementById('add-url-save-btn').addEventListener('click', () => {
+      this.saveUrlManually();
     });
 
     // Import Articles Modal (CSV from other read-it-later services)
@@ -1432,120 +1426,87 @@ class StashApp {
     return `<div style="white-space: pre-wrap;">${this.escapeHtml(text)}</div>`;
   }
 
-  // Digest Settings Methods
-  showDigestModal() {
-    const modal = document.getElementById('digest-modal');
+  // Add URL Methods (manually ingest a single link from Settings)
+  showAddUrlModal() {
+    const modal = document.getElementById('add-url-modal');
     modal.classList.remove('hidden');
-    this.loadDigestPreferences();
+    this.resetAddUrlModal();
+    document.getElementById('add-url-url').focus();
   }
 
-  hideDigestModal() {
-    const modal = document.getElementById('digest-modal');
-    modal.classList.add('hidden');
-    document.getElementById('digest-status').classList.add('hidden');
+  hideAddUrlModal() {
+    if (this.addUrlRunning) return;
+    document.getElementById('add-url-modal').classList.add('hidden');
   }
 
-  async loadDigestPreferences() {
+  resetAddUrlModal() {
+    this.addUrlRunning = false;
+    document.getElementById('add-url-url').value = '';
+    document.getElementById('add-url-title').value = '';
+    document.getElementById('add-url-highlight').value = '';
+    document.getElementById('add-url-status').classList.add('hidden');
+
+    const saveBtn = document.getElementById('add-url-save-btn');
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
+
+  async saveUrlManually() {
+    const status = document.getElementById('add-url-status');
+    const saveBtn = document.getElementById('add-url-save-btn');
+    const url = document.getElementById('add-url-url').value.trim();
+
+    if (!url) {
+      status.textContent = 'Please enter a URL.';
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+      return;
+    }
+
     try {
-      const { data, error } = await this.supabase
-        .from('user_preferences')
-        .select('*')
-        .eq('user_id', this.user.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
-        throw error;
-      }
-
-      // Populate form with existing preferences or defaults
-      const prefs = data || {};
-      document.getElementById('digest-enabled').checked = prefs.digest_enabled || false;
-      document.getElementById('digest-email').value = prefs.digest_email || '';
-      document.getElementById('digest-day').value = prefs.digest_day ?? 0;
-      document.getElementById('digest-hour').value = prefs.digest_hour ?? 9;
-
-      // Update UI state
-      this.updateDigestOptionsState();
-
-    } catch (error) {
-      console.error('Error loading digest preferences:', error);
-    }
-  }
-
-  updateDigestOptionsState() {
-    const enabled = document.getElementById('digest-enabled').checked;
-    const options = document.getElementById('digest-options');
-    const schedule = document.getElementById('digest-schedule-group');
-
-    if (enabled) {
-      options.classList.remove('disabled');
-      schedule.classList.remove('disabled');
-    } else {
-      options.classList.add('disabled');
-      schedule.classList.add('disabled');
-    }
-  }
-
-  async saveDigestPreferences() {
-    const status = document.getElementById('digest-status');
-    const saveBtn = document.getElementById('digest-save-btn');
-
-    const enabled = document.getElementById('digest-enabled').checked;
-    const email = document.getElementById('digest-email').value.trim();
-    const day = parseInt(document.getElementById('digest-day').value);
-    const hour = parseInt(document.getElementById('digest-hour').value);
-
-    // Validate email if enabled
-    if (enabled && !email) {
-      status.textContent = 'Please enter an email address';
+      new URL(url);
+    } catch (e) {
+      status.textContent = 'That doesn\'t look like a valid URL.';
       status.className = 'digest-status error';
       status.classList.remove('hidden');
       return;
     }
 
-    if (enabled && !email.includes('@')) {
-      status.textContent = 'Please enter a valid email address';
-      status.className = 'digest-status error';
-      status.classList.remove('hidden');
-      return;
-    }
-
+    this.addUrlRunning = true;
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
+    status.classList.add('hidden');
+
+    const request = window.StashSave.buildScrapeRequest({
+      url,
+      user_id: this.user.id,
+      source: 'manual',
+      highlight: document.getElementById('add-url-highlight').value.trim() || null,
+      title: document.getElementById('add-url-title').value.trim() || null,
+    });
 
     try {
-      // Upsert preferences (insert or update)
-      const { error } = await this.supabase
-        .from('user_preferences')
-        .upsert({
-          user_id: this.user.id,
-          digest_enabled: enabled,
-          digest_email: email || null,
-          digest_day: day,
-          digest_hour: hour,
-        }, {
-          onConflict: 'user_id'
-        });
+      const ok = await window.StashSave.saveViaScrape(request);
+      if (!ok) throw new Error('Server rejected the save');
 
-      if (error) throw error;
-
-      status.textContent = enabled
-        ? 'Digest enabled! You\'ll receive emails weekly.'
-        : 'Digest disabled. You won\'t receive emails.';
+      status.textContent = 'Saved!';
       status.className = 'digest-status success';
       status.classList.remove('hidden');
 
-      // Close modal after delay
-      setTimeout(() => this.hideDigestModal(), 1500);
+      if (this.currentView === 'all' || this.currentView === 'archived') {
+        this.loadSaves();
+      }
 
+      this.addUrlRunning = false;
+      setTimeout(() => this.hideAddUrlModal(), 1000);
     } catch (error) {
-      console.error('Error saving digest preferences:', error);
-      status.textContent = 'Error saving preferences. Please try again.';
+      console.error('Error saving URL:', error);
+      this.addUrlRunning = false;
+      status.textContent = "Couldn't save this URL. Please try again.";
       status.className = 'digest-status error';
       status.classList.remove('hidden');
-    } finally {
       saveBtn.disabled = false;
-      saveBtn.textContent = 'Save Settings';
+      saveBtn.textContent = 'Save';
     }
   }
 

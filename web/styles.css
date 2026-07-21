@@ -1417,7 +1417,7 @@ select {
   border-top: 1px solid var(--border);
 }
 
-/* Digest Settings Modal */
+/* Shared settings modal (digest/podcast/import/add-url) */
 .digest-modal-content {
   max-width: 420px;
 }
@@ -1468,77 +1468,6 @@ select {
 .digest-form textarea:focus {
   outline: none;
   border-color: var(--primary);
-}
-
-.digest-form select {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 14px;
-  background: var(--bg);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.schedule-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.schedule-row span {
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.timezone-hint {
-  font-size: 12px !important;
-  color: var(--text-muted) !important;
-}
-
-/* Toggle Switch */
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  font-weight: normal !important;
-}
-
-.toggle-label input {
-  display: none;
-}
-
-.toggle-switch {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  background: var(--border);
-  border-radius: 12px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-
-.toggle-switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  background: white;
-  border-radius: 50%;
-  transition: transform 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.toggle-label input:checked + .toggle-switch {
-  background: var(--primary);
-}
-
-.toggle-label input:checked + .toggle-switch::after {
-  transform: translateX(20px);
 }
 
 .digest-status {
@@ -1612,30 +1541,6 @@ select {
   font-size: 13px;
   color: var(--text-muted);
   text-align: center;
-}
-
-/* Digest settings button in nav */
-.digest-settings-btn {
-  margin-left: 26px;
-  font-size: 12px;
-  opacity: 0.7;
-  border: none;
-  background: none;
-}
-
-.digest-settings-btn:hover {
-  opacity: 1;
-}
-
-#digest-options,
-#digest-schedule-group {
-  transition: opacity 0.2s;
-}
-
-#digest-options.disabled,
-#digest-schedule-group.disabled {
-  opacity: 0.5;
-  pointer-events: none;
 }
 
 /* Dropzone */
@@ -2091,61 +1996,6 @@ select {
 
 .credits a:hover {
   color: var(--primary);
-}
-
-/* Weekly Digest Badge */
-.digest-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-  color: white;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-/* Digest Settings Modal */
-.digest-settings {
-  margin-top: 16px;
-  padding: 16px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius);
-}
-
-.digest-settings label {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  cursor: pointer;
-  border-radius: var(--radius);
-  transition: background 0.15s;
-}
-
-.digest-settings label:hover {
-  background: var(--bg-tertiary);
-}
-
-.digest-settings input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--primary);
-}
-
-.digest-email-input {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 14px;
-  margin-top: 12px;
-}
-
-.digest-email-input:focus {
-  outline: none;
-  border-color: var(--primary);
 }
 
 /* Weekly Review */
