@@ -408,6 +408,56 @@ class TestSaveToSupabase:
 
 
 # ---------------------------------------------------------------------------
+# mark_articles_discussed (FIFO + dedup fix)
+# ---------------------------------------------------------------------------
+
+class TestMarkArticlesDiscussed:
+    def test_returns_false_when_client_not_initialized(self):
+        original = script.supabase_client
+        script.supabase_client = None
+        result = script.mark_articles_discussed(["1", "2"], "ep-001")
+        script.supabase_client = original
+        assert result is False
+
+    def test_returns_false_when_no_article_ids(self):
+        mock_client = MagicMock()
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.mark_articles_discussed([], "ep-001")
+        script.supabase_client = original
+
+        assert result is False
+        mock_client.table.assert_not_called()
+
+    def test_updates_saves_with_episode_id_and_timestamp(self):
+        mock_client = MagicMock()
+        mock_client.table.return_value.update.return_value.in_.return_value.execute.return_value = None
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.mark_articles_discussed(["1", "2"], "ep-001")
+        script.supabase_client = original
+
+        assert result is True
+        mock_client.table.assert_called_with("saves")
+        update_call = mock_client.table.return_value.update.call_args[0][0]
+        assert update_call["podcast_episode_id"] == "ep-001"
+        assert "podcast_discussed_at" in update_call
+        mock_client.table.return_value.update.return_value.in_.assert_called_with("id", ["1", "2"])
+
+    def test_returns_false_on_exception(self):
+        mock_client = MagicMock()
+        mock_client.table.side_effect = Exception("boom")
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.mark_articles_discussed(["1"], "ep-001")
+        script.supabase_client = original
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
 # upload_audio_to_supabase
 # ---------------------------------------------------------------------------
 

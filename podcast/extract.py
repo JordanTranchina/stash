@@ -1,6 +1,5 @@
 import os
 import requests
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from youtube import is_youtube_url, fetch_transcript_for_url
@@ -37,17 +36,22 @@ def clean_text(text):
     # Remove common artifacts if any (can be expanded)
     return text.strip()
 
-def fetch_recent_articles(days=7, limit=5):
-    """Fetch unarchived articles from the last X days."""
-    lookback_date = (datetime.now() - timedelta(days=days)).isoformat()
-    
+def fetch_recent_articles(limit=5):
+    """Fetch unarchived, not-yet-discussed articles, oldest first.
+
+    Oldest-first (FIFO) so a save can't be pushed out of a recency window and
+    dropped forever just because newer saves keep arriving. Excluding saves
+    where podcast_discussed_at is already set (rather than relying solely on
+    is_archived) prevents the same article from being re-discussed in a later
+    episode.
+    """
     url = f"{SUPABASE_URL}/rest/v1/saves"
     params = {
         "select": "id,url,title,content,excerpt,site_name,created_at",
         "user_id": f"eq.{USER_ID}",
         "is_archived": "eq.false",
-        "created_at": f"gt.{lookback_date}",
-        "order": "created_at.desc",
+        "podcast_discussed_at": "is.null",
+        "order": "created_at.asc",
         "limit": limit
     }
 
