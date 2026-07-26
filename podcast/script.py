@@ -460,6 +460,27 @@ def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_
         print(f"Error updating database with audio URL: {e}")
         return False
 
+def mark_articles_discussed(article_ids, episode_id):
+    """Flag saves as covered by this episode (dedup, see extract.py).
+
+    Excluding these going forward, independent of is_archived, keeps a save
+    from being re-discussed in a future episode.
+    """
+    if not supabase_client or not article_ids:
+        return False
+
+    try:
+        supabase_client.table("saves").update({
+            "podcast_episode_id": episode_id,
+            "podcast_discussed_at": datetime.utcnow().isoformat(),
+        }).in_("id", article_ids).execute()
+        print(f"Marked {len(article_ids)} article(s) as discussed (episode {episode_id})")
+        return True
+    except Exception as e:
+        print(f"Warning: could not mark articles as discussed: {e}")
+        return False
+
+
 def save_script_locally(script, filename="podcast/script.json"):
     """Save the generated script to a local file."""
     with open(filename, "w") as f:
@@ -477,10 +498,10 @@ async def main():
     print("Fetching articles...")
     articles = fetch_recent_articles(limit=3)
 
-    # Not a failure: there simply weren't any recent unarchived articles to use.
+    # Not a failure: there simply weren't any unarchived, undiscussed articles to use.
     # Exit 0 so the scheduled run stays green on quiet days.
     if not articles:
-        print("No recent articles found in the lookback window — nothing to generate. "
+        print("No unarchived, undiscussed articles found — nothing to generate. "
               "Exiting cleanly (this is not an error).")
         return
 
@@ -503,6 +524,8 @@ async def main():
     if not episode_id:
         fail("could not save the episode record to Supabase — check "
              "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / USER_ID.")
+
+    mark_articles_discussed([art["id"] for art in articles], episode_id)
 
     print("\nPreview of first 3 lines:")
     for line in script[:3]:
