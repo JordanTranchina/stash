@@ -38,6 +38,9 @@ function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/funct
       const chaptersTag = hasChapters
         ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}`)}" type="application/json+chapters"/>`
         : "";
+      const imageTag = ep.artwork_url
+        ? `\n      <itunes:image href="${escapeXml(ep.artwork_url)}"/>`
+        : "";
 
       return `    <item>
       <title>${title}</title>
@@ -46,7 +49,7 @@ function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/funct
       <guid isPermaLink="false">${ep.id}</guid>
       <enclosure url="${audioUrl}" length="${enclosureLength}" type="audio/mpeg"/>
       <itunes:duration>${duration}</itunes:duration>
-      <itunes:explicit>false</itunes:explicit>${chaptersTag}
+      <itunes:explicit>false</itunes:explicit>${imageTag}${chaptersTag}
     </item>`;
     })
     .join("\n");
@@ -292,5 +295,49 @@ describe("podcast:chapters", () => {
       },
     ]);
     expect(xml).not.toMatch(/<podcast:chapters/);
+  });
+});
+
+describe("itunes:image (episode artwork)", () => {
+  test("emits an itunes:image tag only for episodes that have artwork", () => {
+    const xml = buildRssXml([
+      {
+        id: "with-art",
+        title: "Has artwork",
+        audio_url: "https://example.com/a.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+        artwork_url: "https://cdn.example.com/ep-with-art_artwork.jpg",
+      },
+      {
+        id: "no-art",
+        title: "No artwork",
+        audio_url: "https://example.com/b.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-16T08:00:00.000Z",
+      },
+    ]);
+
+    const tags = xml.match(/<itunes:image /g) || [];
+    expect(tags).toHaveLength(1);
+    expect(xml).toMatch(
+      /<itunes:image href="https:\/\/cdn\.example\.com\/ep-with-art_artwork\.jpg"\/>/
+    );
+  });
+
+  test("omits itunes:image tag when artwork_url is absent", () => {
+    const xml = buildRssXml([
+      {
+        id: "x",
+        title: "t",
+        audio_url: "u",
+        duration_seconds: 1,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+      },
+    ]);
+    expect(xml).not.toMatch(/<itunes:image/);
   });
 });

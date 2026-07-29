@@ -47,7 +47,7 @@ def fetch_recent_articles(limit=5):
     """
     url = f"{SUPABASE_URL}/rest/v1/saves"
     params = {
-        "select": "id,url,title,content,excerpt,site_name,created_at",
+        "select": "id,url,title,content,excerpt,site_name,created_at,image_url",
         "user_id": f"eq.{USER_ID}",
         "is_archived": "eq.false",
         "podcast_discussed_at": "is.null",
@@ -88,7 +88,8 @@ def fetch_recent_articles(limit=5):
             "url": save_url,
             "site_name": site_name,
             "content": clean_text(content[:5000]), # Limit to 5k chars per article for context window
-            "created_at": article["created_at"]
+            "created_at": article["created_at"],
+            "image_url": article.get("image_url")
         })
 
     return formatted_articles

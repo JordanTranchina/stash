@@ -40,7 +40,7 @@ serve(async () => {
 
     const { data: episodes, error } = await supabase
       .from("podcast_episodes")
-      .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters")
+      .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters, artwork_url")
       .order("created_at", { ascending: false })
       .limit(10);
 
@@ -64,6 +64,9 @@ serve(async () => {
         const chaptersTag = hasChapters
           ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}`)}" type="application/json+chapters"/>`
           : "";
+        const imageTag = ep.artwork_url
+          ? `\n      <itunes:image href="${escapeXml(ep.artwork_url)}"/>`
+          : "";
 
         return `    <item>
       <title>${title}</title>
@@ -72,7 +75,7 @@ serve(async () => {
       <guid isPermaLink="false">${ep.id}</guid>
       <enclosure url="${audioUrl}" length="${enclosureLength}" type="audio/mpeg"/>
       <itunes:duration>${duration}</itunes:duration>
-      <itunes:explicit>false</itunes:explicit>${chaptersTag}
+      <itunes:explicit>false</itunes:explicit>${imageTag}${chaptersTag}
     </item>`;
       })
       .join("\n");

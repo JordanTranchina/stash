@@ -118,6 +118,29 @@ class TestFetchRecentArticles:
 
         assert articles == []
 
+    def test_image_url_passed_through(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        article_with_image = {**MOCK_ARTICLE, "image_url": "https://example.com/og.jpg"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [article_with_image]
+
+        with patch("extract.requests.get", return_value=mock_response):
+            articles = extract.fetch_recent_articles()
+
+        assert articles[0]["image_url"] == "https://example.com/og.jpg"
+
+    def test_image_url_defaults_to_none_when_missing(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [MOCK_ARTICLE]
+
+        with patch("extract.requests.get", return_value=mock_response):
+            articles = extract.fetch_recent_articles()
+
+        assert articles[0]["image_url"] is None
+
     def test_site_name_defaults_to_unknown(self, monkeypatch):
         self._patch_env(monkeypatch)
         article_no_site = {**MOCK_ARTICLE, "site_name": None}

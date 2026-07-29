@@ -2254,10 +2254,26 @@ select {
 
 .podcast-episode-header {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.podcast-episode-artwork {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm, 6px);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.podcast-episode-header-text {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .podcast-episode-title {
