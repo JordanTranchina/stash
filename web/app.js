@@ -911,7 +911,7 @@ class StashApp {
 
     const { data, error } = await this.supabase
       .from('podcast_episodes')
-      .select('id, title, description, audio_url, duration_seconds, created_at')
+      .select('id, title, description, audio_url, duration_seconds, created_at, artwork_url')
       .order('created_at', { ascending: false });
 
     loading.classList.add('hidden');
@@ -947,8 +947,11 @@ class StashApp {
       return `
         <div class="podcast-episode" data-id="${ep.id}">
           <div class="podcast-episode-header">
-            <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
-            <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
+            ${ep.artwork_url ? `<img class="podcast-episode-artwork" src="${this.escapeHtml(ep.artwork_url)}" alt="">` : ''}
+            <div class="podcast-episode-header-text">
+              <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
+              <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
+            </div>
           </div>
           ${ep.description ? `<div class="podcast-episode-desc">${ep.description}</div>` : ''}
           ${ep.audio_url
