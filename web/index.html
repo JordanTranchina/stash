@@ -22,6 +22,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Markdown parser -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Error reporting (see sentry-init.js) -->
+  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -479,6 +481,7 @@
 
   <!-- Config -->
   <script src="config.js"></script>
+  <script src="sentry-init.js"></script>
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
   <script src="import-lib.js"></script>

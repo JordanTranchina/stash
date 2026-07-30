@@ -7,7 +7,13 @@
 // sharing one global scope, so config.js/supabase.js are already defined by
 // the time this file runs and importScripts doesn't exist.
 if (typeof importScripts === 'function') {
-  importScripts('config.js', 'supabase.js');
+  importScripts('config.js', 'supabase.js', 'sentry-lite.js');
+}
+
+if (typeof SentryLite !== 'undefined') {
+  SentryLite.init(CONFIG.SENTRY_DSN);
+  self.addEventListener('error', (e) => SentryLite.captureException(e.error || e.message));
+  self.addEventListener('unhandledrejection', (e) => SentryLite.captureException(e.reason));
 }
 
 let supabase = null;
@@ -82,6 +88,7 @@ async function saveHighlight(tab, selectionText) {
     return { success: true };
   } catch (err) {
     console.error('Save highlight failed:', err);
+    if (typeof SentryLite !== 'undefined') SentryLite.captureException(err, { tags: { action: 'saveHighlight' } });
     chrome.tabs.sendMessage(tab.id, {
       action: 'showToast',
       message: 'Failed to save: ' + err.message,
@@ -146,6 +153,7 @@ async function savePage(tab) {
     return { success: true };
   } catch (err) {
     console.error('Save page failed:', err);
+    if (typeof SentryLite !== 'undefined') SentryLite.captureException(err, { tags: { action: 'savePage' } });
     chrome.tabs.sendMessage(tab.id, {
       action: 'showToast',
       message: 'Failed to save: ' + err.message,

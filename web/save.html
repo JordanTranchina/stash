@@ -7,6 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Quick Save - Stash</title>
+  <!-- Error reporting (see sentry-init.js) -->
+  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
   <style>
     * {
       margin: 0;
@@ -233,6 +235,7 @@
   </div>
 
   <script src="config.js"></script>
+  <script src="sentry-init.js"></script>
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
   <script>
@@ -299,6 +302,7 @@
           return true;
         } catch (dbErr) {
           console.error('Offline queue save failed', dbErr);
+          if (typeof Sentry !== 'undefined') Sentry.captureException(dbErr, { tags: { action: 'offlineQueueSave' } });
           showSaveError(isAuto);
           return false;
         }
