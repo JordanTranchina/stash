@@ -107,16 +107,15 @@ class TestFetchRecentArticles:
 
         assert len(articles[0]["content"]) <= 5000
 
-    def test_returns_empty_list_on_api_error(self, monkeypatch):
+    def test_raises_on_api_error(self, monkeypatch):
         self._patch_env(monkeypatch)
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
 
         with patch("extract.requests.get", return_value=mock_response):
-            articles = extract.fetch_recent_articles()
-
-        assert articles == []
+            with pytest.raises(RuntimeError, match="500"):
+                extract.fetch_recent_articles()
 
     def test_image_url_passed_through(self, monkeypatch):
         self._patch_env(monkeypatch)

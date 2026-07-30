@@ -561,7 +561,10 @@ def fail(reason):
 
 async def main():
     print("Fetching articles...")
-    articles = fetch_recent_articles(limit=3)
+    try:
+        articles = fetch_recent_articles(limit=3)
+    except Exception as e:
+        fail(str(e))
 
     # Not a failure: there simply weren't any unarchived, undiscussed articles to use.
     # Exit 0 so the scheduled run stays green on quiet days.
