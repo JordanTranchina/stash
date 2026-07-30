@@ -58,8 +58,10 @@ def fetch_recent_articles(limit=5):
     response = requests.get(url, headers=get_headers(), params=params)
 
     if response.status_code != 200:
-        print(f"Error fetching articles: {response.status_code} - {response.text}")
-        return []
+        # A failed query (e.g. schema drift, auth issue) is not the same as
+        # "no articles found" — treating it as empty silently masks real
+        # breakage behind a green scheduled run. Let it fail loudly instead.
+        raise RuntimeError(f"Error fetching articles: {response.status_code} - {response.text}")
 
     articles = response.json()
     formatted_articles = []

@@ -106,6 +106,17 @@ class TestMainFailsLoudly:
         # Should complete without raising SystemExit.
         asyncio.run(script.main())
 
+    def test_exits_nonzero_when_fetch_articles_raises(self, monkeypatch):
+        """A real fetch failure (e.g. schema drift) must not be swallowed as 'no articles'."""
+        def boom(**kw):
+            raise RuntimeError("Error fetching articles: 400 - column does not exist")
+        monkeypatch.setattr(script, "fetch_recent_articles", boom)
+
+        with pytest.raises(SystemExit) as exc:
+            asyncio.run(script.main())
+        assert exc.value.code != 0
+        assert "column does not exist" in str(exc.value.code)
+
     def test_exits_nonzero_when_script_generation_returns_none(self, monkeypatch):
         monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: SAMPLE_ARTICLES)
         monkeypatch.setattr(script, "fetch_podcast_preferences", lambda: script.DEFAULT_PODCAST_PREFS)
