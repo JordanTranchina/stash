@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { reportError } from "../_shared/sentry.ts";
 
 // Convert integer seconds to HH:MM:SS format required by iTunes
 export function formatDuration(seconds: number): string {
@@ -106,6 +107,7 @@ ${items}
       },
     });
   } catch (err) {
+    await reportError(err, "podcast-rss");
     return new Response(`Internal Server Error: ${err.message}`, {
       status: 500,
       headers: { "Content-Type": "text/plain" },

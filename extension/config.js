@@ -14,6 +14,11 @@ const CONFIG = {
   // Your user ID from Supabase (Authentication > Users)
   // For multi-user mode, this can be removed and auth will be required
   USER_ID: "6c7a3a96-16cd-4702-ac7b-0c7a4a81346d",
+
+  // Sentry DSN for error reporting from the background script (see
+  // sentry-lite.js). A Sentry DSN isn't a secret, so it's safe to commit
+  // like the Supabase anon key above. Leave blank to disable.
+  SENTRY_DSN: "https://54bdb933e682bf9d4c9a1103da24fe87@o4511824474210304.ingest.us.sentry.io/4511824499441664",
 };
 
 // Don't edit below this line

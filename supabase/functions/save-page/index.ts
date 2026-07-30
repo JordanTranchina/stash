@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // bundle). We never render <canvas>, so it's only ever lazily referenced.
 import { parseHTML } from "https://esm.sh/linkedom@0.16.8?external=canvas";
 import { Readability } from "https://esm.sh/@mozilla/readability@0.5.0";
+import { reportError } from "../_shared/sentry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -396,6 +397,7 @@ serve(async (req) => {
     );
 
   } catch (err) {
+    await reportError(err, "save-page");
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

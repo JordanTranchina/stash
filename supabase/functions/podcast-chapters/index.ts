@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { reportError } from "../_shared/sentry.ts";
 
 // Serves a Podcasting 2.0 "chapters" JSON document for a single episode.
 // Referenced from the RSS feed via <podcast:chapters url="...?id=<episode_id>"/>.
@@ -59,6 +60,7 @@ serve(async (req) => {
       },
     });
   } catch (err) {
+    await reportError(err, "podcast-chapters");
     return new Response(`Internal Server Error: ${err.message}`, {
       status: 500,
       headers: { ...cors, "Content-Type": "text/plain" },
