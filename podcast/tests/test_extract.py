@@ -152,9 +152,10 @@ class TestFetchRecentArticles:
 
         assert articles[0]["site_name"] == "Unknown"
 
-    def test_queries_oldest_first_excluding_already_discussed(self, monkeypatch):
-        """FIFO + dedup: oldest unarchived, undiscussed saves come first, and
-        already-discussed saves are excluded regardless of age (#fifo-dedup)."""
+    def test_queries_newest_first_excluding_already_discussed(self, monkeypatch):
+        """Newest-first + dedup: most recently saved unarchived, undiscussed
+        saves come first, and already-discussed saves are excluded regardless
+        of age (#fifo-dedup)."""
         self._patch_env(monkeypatch)
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -164,7 +165,7 @@ class TestFetchRecentArticles:
             extract.fetch_recent_articles(limit=3)
 
         params = mock_get.call_args.kwargs["params"]
-        assert params["order"] == "created_at.asc"
+        assert params["order"] == "created_at.desc"
         assert params["podcast_discussed_at"] == "is.null"
         assert params["is_archived"] == "eq.false"
         assert params["limit"] == 3
