@@ -37,13 +37,14 @@ def clean_text(text):
     return text.strip()
 
 def fetch_recent_articles(limit=5):
-    """Fetch unarchived, not-yet-discussed articles, oldest first.
+    """Fetch unarchived, not-yet-discussed articles, most recently saved first.
 
-    Oldest-first (FIFO) so a save can't be pushed out of a recency window and
-    dropped forever just because newer saves keep arriving. Excluding saves
-    where podcast_discussed_at is already set (rather than relying solely on
-    is_archived) prevents the same article from being re-discussed in a later
-    episode.
+    Newest-first so episodes stay current instead of working through however
+    much of a backlog has piled up. Excluding saves where podcast_discussed_at
+    is already set (rather than relying solely on is_archived) prevents the
+    same article from being re-discussed in a later episode, and there's no
+    recency cutoff, so an old undiscussed save is never silently dropped —
+    it just gets picked up once the newer queue thins out.
     """
     url = f"{SUPABASE_URL}/rest/v1/saves"
     params = {
@@ -51,7 +52,7 @@ def fetch_recent_articles(limit=5):
         "user_id": f"eq.{USER_ID}",
         "is_archived": "eq.false",
         "podcast_discussed_at": "is.null",
-        "order": "created_at.asc",
+        "order": "created_at.desc",
         "limit": limit
     }
 

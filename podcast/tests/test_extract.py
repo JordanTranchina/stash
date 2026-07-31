@@ -152,9 +152,10 @@ class TestFetchRecentArticles:
 
         assert articles[0]["site_name"] == "Unknown"
 
-    def test_queries_oldest_first_excluding_already_discussed(self, monkeypatch):
-        """FIFO + dedup: oldest unarchived, undiscussed saves come first, and
-        already-discussed saves are excluded regardless of age (#fifo-dedup)."""
+    def test_queries_newest_first_excluding_already_discussed(self, monkeypatch):
+        """Newest-first + dedup: most recently saved unarchived, undiscussed
+        saves come first, and already-discussed saves are excluded regardless
+        of age (#fifo-dedup)."""
         self._patch_env(monkeypatch)
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -164,11 +165,31 @@ class TestFetchRecentArticles:
             extract.fetch_recent_articles(limit=3)
 
         params = mock_get.call_args.kwargs["params"]
-        assert params["order"] == "created_at.asc"
+        assert params["order"] == "created_at.desc"
         assert params["podcast_discussed_at"] == "is.null"
         assert params["is_archived"] == "eq.false"
         assert params["limit"] == 3
         assert "created_at" not in params  # no recency-window cutoff anymore
+
+    def test_recently_saved_article_surfaces_before_ancient_one(self, monkeypatch):
+        """Regression test: episodes were discussing years-old undiscussed
+        saves before anything recently saved, because selection was
+        oldest-first FIFO. Confirms both that newest-first is requested from
+        the API and that extract.py doesn't reorder what comes back."""
+        self._patch_env(monkeypatch)
+        recent_save = {**MOCK_ARTICLE, "id": "recent-1", "title": "Just Saved", "created_at": "2026-07-31T09:00:00Z"}
+        ancient_save = {**MOCK_ARTICLE, "id": "ancient-1", "title": "Saved Years Ago", "created_at": "2013-01-01T00:00:00Z"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # A real Supabase response for order=created_at.desc would put the
+        # newer save first.
+        mock_response.json.return_value = [recent_save, ancient_save]
+
+        with patch("extract.requests.get", return_value=mock_response) as mock_get:
+            articles = extract.fetch_recent_articles(limit=2)
+
+        assert mock_get.call_args.kwargs["params"]["order"] == "created_at.desc"
+        assert [a["id"] for a in articles] == ["recent-1", "ancient-1"]
 
 
 # ---------------------------------------------------------------------------
