@@ -68,6 +68,7 @@
     image_url: getMeta('og:image'),
     site_name: getMeta('og:site_name') || getSiteName(originalUrl),
     author: getMeta('author') || document.querySelector('[rel="author"], .author, .byline')?.innerText?.trim() || null,
+    published_at: document.querySelector('time[datetime]')?.getAttribute('datetime') || getMeta('article:published_time') || null,
   };
 
   // Save via Edge Function with prefetched content
