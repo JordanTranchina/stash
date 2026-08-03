@@ -572,12 +572,16 @@ class StashApp {
         `;
       } else {
         const minutes = this.readingTime(save);
+        const publishedDate = this.formattedPublishedDate(save);
+        const publishedSuffix = publishedDate
+          ? `<span class="meta-date-plain"> - ${this.escapeHtml(publishedDate)}</span>`
+          : '';
         const readtime = minutes === null ? '' : `
                 <span class="save-card-readtime">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="9"></circle>
                     <path d="M12 7v5l3 2"></path>
-                  </svg>${minutes} min read
+                  </svg>${minutes} min read${publishedSuffix}
                 </span>`;
         cardHtml = `
           <div class="save-card" data-id="${save.id}">
@@ -1388,6 +1392,15 @@ class StashApp {
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     if (words === 0) return null;
     return Math.max(1, Math.round(words / 220));
+  }
+
+  // Short "Jul 29" form of the article's original publish date, or null
+  // when the source page didn't expose one.
+  formattedPublishedDate(save) {
+    if (!save.published_at) return null;
+    const d = new Date(save.published_at);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
   // Deterministic gradient for the fallback thumbnail tile, derived from the

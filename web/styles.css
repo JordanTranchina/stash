@@ -655,6 +655,12 @@ select {
   flex-shrink: 0;
 }
 
+/* Article's original publish date, trailing the read time. Muted a step
+   further than read time itself since it's the quieter of the two facts. */
+.meta-date-plain {
+  color: var(--text-muted);
+}
+
 .save-card-highlight {
   font-size: 15px;
   color: var(--text);
