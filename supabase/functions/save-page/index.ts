@@ -215,6 +215,13 @@ function extractArticle(html: string, url: string) {
                 extractMeta(document, "property", "article:author") ||
                 null;
 
+  // Readability's own metadata pass already checks JSON-LD `datePublished`
+  // and the `article:published_time` meta tag; a `<time datetime>` element
+  // covers the rest (matches the extraction the browser extension does).
+  const published_at = article?.publishedTime ||
+                       document.querySelector("time[datetime]")?.getAttribute("datetime") ||
+                       null;
+
   // Serialize the article body to Markdown, keeping images inline where they
   // appear (Pocket-style) instead of dropping them. Relative image/link URLs
   // are resolved against the article URL so they still load in the reading view.
@@ -231,7 +238,7 @@ function extractArticle(html: string, url: string) {
     content = article.textContent;
   }
 
-  return { title, excerpt, image_url, site_name, author, content };
+  return { title, excerpt, image_url, site_name, author, content, published_at };
 }
 
 // Fetch a URL as a browser would, transparently following redirect-wrapper
@@ -304,6 +311,7 @@ serve(async (req) => {
         image_url: prefetched.image_url || null,
         site_name: prefetched.site_name || new URL(url).hostname.replace("www.", ""),
         author: prefetched.author || null,
+        published_at: prefetched.published_at || null,
       };
     } else {
       // Server-side fetch, following share-link/redirect wrappers to the real
@@ -329,6 +337,7 @@ serve(async (req) => {
         image_url: null,
         site_name: new URL(resolvedUrl).hostname.replace(/^www\./, ""),
         author: null,
+        published_at: null,
       };
     }
 
@@ -372,6 +381,16 @@ serve(async (req) => {
       const d = new Date(created_at);
       if (!isNaN(d.getTime())) {
         saveData.created_at = d.toISOString();
+      }
+    }
+
+    // The article's own publish date, when the source page exposed one.
+    // Ignore anything that isn't a valid date so a malformed meta tag just
+    // leaves the save without one instead of failing the insert.
+    if (article.published_at) {
+      const p = new Date(article.published_at);
+      if (!isNaN(p.getTime())) {
+        saveData.published_at = p.toISOString();
       }
     }
 
