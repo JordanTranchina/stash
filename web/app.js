@@ -283,7 +283,7 @@ class StashApp {
     // Add URL Modal (manually ingest a single link)
     const addUrlModal = document.getElementById('add-url-modal');
 
-    document.getElementById('add-url-settings-btn').addEventListener('click', () => {
+    document.getElementById('header-add-btn').addEventListener('click', () => {
       this.showAddUrlModal();
     });
     addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
@@ -870,11 +870,16 @@ class StashApp {
       item.classList.toggle('active', item.dataset.view === view);
     });
 
-    // Sorting only applies to lists of saves, so hide the sort control on
-    // Podcasts and Settings (search stays visible on every view).
+    // Sorting and adding a URL only apply to lists of saves, so hide those
+    // controls on Podcasts and Settings (search stays visible on every view).
+    const showSavesControls = (view === 'all' || view === 'archived') ? '' : 'none';
     const headerSort = document.getElementById('header-sort');
     if (headerSort) {
-      headerSort.style.display = (view === 'all' || view === 'archived') ? '' : 'none';
+      headerSort.style.display = showSavesControls;
+    }
+    const headerAddBtn = document.getElementById('header-add-btn');
+    if (headerAddBtn) {
+      headerAddBtn.style.display = showSavesControls;
     }
 
     // Toggle between the saves view and the settings view
@@ -1435,7 +1440,7 @@ class StashApp {
     return `<div style="white-space: pre-wrap;">${this.escapeHtml(text)}</div>`;
   }
 
-  // Add URL Methods (manually ingest a single link from Settings)
+  // Add URL Methods (manually ingest a single link from the home page)
   showAddUrlModal() {
     const modal = document.getElementById('add-url-modal');
     modal.classList.remove('hidden');
@@ -1451,8 +1456,6 @@ class StashApp {
   resetAddUrlModal() {
     this.addUrlRunning = false;
     document.getElementById('add-url-url').value = '';
-    document.getElementById('add-url-title').value = '';
-    document.getElementById('add-url-highlight').value = '';
     document.getElementById('add-url-status').classList.add('hidden');
 
     const saveBtn = document.getElementById('add-url-save-btn');
@@ -1490,8 +1493,8 @@ class StashApp {
       url,
       user_id: this.user.id,
       source: 'manual',
-      highlight: document.getElementById('add-url-highlight').value.trim() || null,
-      title: document.getElementById('add-url-title').value.trim() || null,
+      highlight: null,
+      title: null,
     });
 
     try {

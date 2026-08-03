@@ -80,6 +80,14 @@
               <option value="title.asc">Title A-Z</option>
             </select>
           </div>
+          <!-- Add: opens the Add URL modal so an article can be saved straight from the home page.
+               Hidden by setView() on Podcasts/Settings, same as sort. -->
+          <button type="button" class="header-add-btn" id="header-add-btn" aria-label="Add article">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
         </header>
 
         <!-- Content Area -->
@@ -157,16 +165,6 @@
 
               <div class="settings-section">
                 <h3>Add Content</h3>
-                <button class="settings-row" id="add-url-settings-btn">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                  </svg>
-                  <span>Add URL</span>
-                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
                 <button class="settings-row" id="import-settings-btn">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -360,16 +358,6 @@
             <div class="form-group">
               <label for="add-url-url">URL</label>
               <input type="url" id="add-url-url" placeholder="https://...">
-            </div>
-
-            <div class="form-group">
-              <label for="add-url-title">Title (optional)</label>
-              <input type="text" id="add-url-title" placeholder="Falls back to the page title">
-            </div>
-
-            <div class="form-group">
-              <label for="add-url-highlight">Highlight or notes (optional)</label>
-              <textarea id="add-url-highlight" rows="2"></textarea>
             </div>
 
             <div id="add-url-status" class="digest-status hidden"></div>
