@@ -357,7 +357,17 @@
           <div class="digest-form">
             <div class="form-group">
               <label for="add-url-url">URL</label>
-              <input type="url" id="add-url-url" placeholder="https://...">
+              <div class="input-with-button">
+                <input type="url" id="add-url-url" name="stash-add-url" placeholder="https://..."
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                  data-lpignore="true" data-1p-ignore data-bwignore data-form-type="other">
+                <button type="button" class="btn icon input-action-btn" id="add-url-paste-btn" title="Paste from clipboard" aria-label="Paste from clipboard">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="8" y="2" width="8" height="4" rx="1"></rect>
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <div id="add-url-status" class="digest-status hidden"></div>

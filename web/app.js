@@ -298,6 +298,9 @@ class StashApp {
     document.getElementById('add-url-save-btn').addEventListener('click', () => {
       this.saveUrlManually();
     });
+    document.getElementById('add-url-paste-btn').addEventListener('click', () => {
+      this.pasteUrlFromClipboard();
+    });
 
     // Import Articles Modal (CSV from other read-it-later services)
     const importModal = document.getElementById('import-modal');
@@ -1464,6 +1467,23 @@ class StashApp {
   hideAddUrlModal() {
     if (this.addUrlRunning) return;
     document.getElementById('add-url-modal').classList.add('hidden');
+  }
+
+  async pasteUrlFromClipboard() {
+    const input = document.getElementById('add-url-url');
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        input.value = text.trim();
+        input.focus();
+      }
+    } catch (error) {
+      console.error('Error reading clipboard:', error);
+      const status = document.getElementById('add-url-status');
+      status.textContent = "Couldn't read clipboard. Paste manually with your keyboard.";
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+    }
   }
 
   resetAddUrlModal() {
