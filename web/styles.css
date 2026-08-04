@@ -1486,6 +1486,7 @@ select {
 
 .digest-form input[type="email"],
 .digest-form input[type="text"],
+.digest-form input[type="url"],
 .digest-form textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -1494,6 +1495,7 @@ select {
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
+  width: 100%;
 }
 
 .digest-form textarea {
@@ -1502,9 +1504,26 @@ select {
 
 .digest-form input[type="email"]:focus,
 .digest-form input[type="text"]:focus,
+.digest-form input[type="url"]:focus,
 .digest-form textarea:focus {
   outline: none;
   border-color: var(--primary);
+}
+
+.input-with-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.digest-form .input-with-button input {
+  padding-right: 40px;
+}
+
+.input-with-button .input-action-btn {
+  position: absolute;
+  right: 4px;
+  padding: 6px;
 }
 
 .digest-status {
