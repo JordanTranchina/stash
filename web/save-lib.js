@@ -52,5 +52,20 @@
     return res.ok;
   }
 
-  root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape };
+  // Pull the first URL out of arbitrary shared/pasted text. Share sheets and
+  // clipboard pastes are rarely a bare link — e.g. Android/Google share text
+  // is "Title https://share.google/…", and forwarding a Slack message pastes
+  // the whole "[Updates] Patch Notes (All Platforms) https://…" line. Returns
+  // '' when no URL is found so callers can fall back to treating the input as
+  // a literal (invalid) URL and showing a real error.
+  function extractUrlFromText(text) {
+    if (!text) return '';
+    const match = String(text).match(/https?:\/\/[^\s]+/);
+    if (!match) return '';
+    // Share text often wraps the link in surrounding punctuation
+    // ("(link)", "link.", "<link>") that isn't part of the URL itself.
+    return match[0].replace(/[)\]}>.,;:!?'"]+$/, '');
+  }
+
+  root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape, extractUrlFromText };
 })(self);

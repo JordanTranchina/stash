@@ -158,18 +158,19 @@ describe('StashSave.saveViaScrape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. Share-target URL extraction (mirrors web/save.html)
+// 2. Share-target / paste URL extraction (StashSave.extractUrlFromText, used
+//    by save.html's share-target + clipboard fallback and app.js's Add URL
+//    modal paste button, paste event, and Save fallback)
 // ---------------------------------------------------------------------------
 
-describe('share-target URL extraction', () => {
-  // Mirrors the logic in save.html's DOMContentLoaded handler.
+describe('StashSave.extractUrlFromText', () => {
+  const StashSave = loadStashSave({});
+
+  // Mirrors save.html's "explicit url param wins, else extract from text" logic.
   function resolveSharedUrl(pUrl, pText) {
     pUrl = pUrl || '';
     pText = pText || '';
-    if (!pUrl && pText) {
-      const match = pText.match(/https?:\/\/[^\s]+/);
-      if (match) pUrl = match[0];
-    }
+    if (!pUrl && pText) pUrl = StashSave.extractUrlFromText(pText);
     return pUrl;
   }
 
@@ -193,6 +194,35 @@ describe('share-target URL extraction', () => {
 
   test('returns empty string when no URL is anywhere in the share', () => {
     expect(resolveSharedUrl('', 'just a plain title, no link')).toBe('');
+  });
+
+  test('returns empty string for empty/undefined input', () => {
+    expect(StashSave.extractUrlFromText('')).toBe('');
+    expect(StashSave.extractUrlFromText(undefined)).toBe('');
+  });
+
+  test('passes a bare URL straight through', () => {
+    expect(StashSave.extractUrlFromText('https://example.com/article')).toBe(
+      'https://example.com/article'
+    );
+  });
+
+  test('strips a trailing closing paren picked up from surrounding text', () => {
+    expect(
+      StashSave.extractUrlFromText('[Updates] Patch Notes (All Platforms) (https://example.com/patch-notes)')
+    ).toBe('https://example.com/patch-notes');
+  });
+
+  test('strips trailing sentence punctuation', () => {
+    expect(StashSave.extractUrlFromText('Check this out: https://example.com/foo.')).toBe(
+      'https://example.com/foo'
+    );
+  });
+
+  test('strips angle brackets around a Markdown-style link', () => {
+    expect(StashSave.extractUrlFromText('See <https://example.com/bar> for details')).toBe(
+      'https://example.com/bar'
+    );
   });
 });
 
