@@ -301,6 +301,17 @@ class StashApp {
     document.getElementById('add-url-paste-btn').addEventListener('click', () => {
       this.pasteUrlFromClipboard();
     });
+    // Native paste (long-press / Ctrl+V) doesn't go through the button above,
+    // but people often paste a whole forwarded message rather than a bare
+    // link — detect the URL inside it the same way.
+    document.getElementById('add-url-url').addEventListener('paste', (e) => {
+      const pasted = (e.clipboardData || window.clipboardData).getData('text');
+      const detected = window.StashSave.extractUrlFromText(pasted);
+      if (detected && detected !== pasted.trim()) {
+        e.preventDefault();
+        e.target.value = detected;
+      }
+    });
 
     // Import Articles Modal (CSV from other read-it-later services)
     const importModal = document.getElementById('import-modal');
@@ -1474,7 +1485,7 @@ class StashApp {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        input.value = text.trim();
+        input.value = window.StashSave.extractUrlFromText(text) || text.trim();
         input.focus();
       }
     } catch (error) {
@@ -1499,7 +1510,12 @@ class StashApp {
   async saveUrlManually() {
     const status = document.getElementById('add-url-status');
     const saveBtn = document.getElementById('add-url-save-btn');
-    const url = document.getElementById('add-url-url').value.trim();
+    const input = document.getElementById('add-url-url');
+    const raw = input.value.trim();
+    // Belt-and-suspenders: if a URL still made it through surrounded by other
+    // text (e.g. the paste listeners missed it), pull the link out of it here
+    // too rather than failing validation on the whole blob.
+    const url = window.StashSave.extractUrlFromText(raw) || raw;
 
     if (!url) {
       status.textContent = 'Please enter a URL.';
@@ -1517,6 +1533,7 @@ class StashApp {
       return;
     }
 
+    input.value = url;
     this.addUrlRunning = true;
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
