@@ -66,6 +66,39 @@
       resize: vertical;
     }
 
+    /* Paste affordance sits inside the URL field, the same way the web app's
+       Add URL dialog does it. Extra right padding keeps a long URL from
+       running underneath the button. */
+    .input-with-button {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-with-button input {
+      padding-right: 48px;
+    }
+
+    .input-action-btn {
+      position: absolute;
+      right: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+      background: none;
+      border: none;
+      border-radius: 8px;
+      color: #6b7280;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+
+    .input-action-btn:hover {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
     .btn {
       padding: 16px;
       background: #6366f1;
@@ -248,8 +281,16 @@
   <div class="container" id="main-container">
     <h1>Quick Save</h1>
     <form class="form" id="save-form">
-      <input type="url" id="url" placeholder="https://..." required>
-      <input type="text" id="title" placeholder="Title (optional)">
+      <div class="input-with-button">
+        <input type="url" id="url" placeholder="https://..." required
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button type="button" class="input-action-btn" id="paste-btn" title="Paste from clipboard" aria-label="Paste from clipboard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="8" y="2" width="8" height="4" rx="1"></rect>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+          </svg>
+        </button>
+      </div>
       <textarea id="highlight" placeholder="Highlight or notes (optional)"></textarea>
       <button type="submit" class="btn" id="save-btn">Save to Stash</button>
     </form>
@@ -274,7 +315,6 @@
     const saveBtn = document.getElementById('save-btn');
     const statusEl = document.getElementById('status');
     const urlInput = document.getElementById('url');
-    const titleInput = document.getElementById('title');
     const highlightInput = document.getElementById('highlight');
     
     // UI Elements
@@ -496,14 +536,12 @@
       const url = urlInput.value.trim();
       const highlight = highlightInput.value.trim();
 
-      // The scraper derives the title/site name from the page itself; we pass
-      // any title the user typed only as a fallback for pages that can't be
-      // scraped (bot-blocked / paywalled), plus the URL, source and note.
+      // The scraper derives the title and site name from the page itself, so
+      // the form only needs the URL and an optional note.
       const data = window.StashSave.buildScrapeRequest({
         url: url,
         source: 'mobile-web',
         highlight: highlight || null,
-        title: titleInput.value.trim() || null,
       });
 
       await handleSave(data, false);
@@ -511,7 +549,6 @@
 
     function resetForm() {
       urlInput.value = '';
-      titleInput.value = '';
       highlightInput.value = '';
     }
     
@@ -540,11 +577,12 @@
         pUrl = window.StashSave.extractUrlFromText(pText);
       }
 
-      // Pre-fill fields always (in case of error fallback). We deliberately do
+      // Pre-fill the URL always (in case of error fallback). We deliberately do
       // NOT pre-fill the notes box with the shared text — that snippet is the
       // article title, not a user highlight, and the scraper fetches the body.
+      // The shared title never becomes a form field; it's only handed to the
+      // scraper below as a fallback for pages it can't read.
       if (pUrl) urlInput.value = pUrl;
-      if (pTitle) titleInput.value = pTitle;
 
       // If we have a URL, TRIGGER STEALTH AUTO-SAVE
       if (pUrl) {
@@ -582,6 +620,23 @@
       } catch (e) { }
     }
     urlInput.addEventListener('focus', checkClipboard);
+
+    // Explicit paste, for the (common) case where the focus-triggered read is
+    // denied — iOS Safari in particular only allows a clipboard read that a
+    // user gesture asked for. Overwrites whatever is in the field, since the
+    // user asked for it, unlike checkClipboard which never clobbers.
+    document.getElementById('paste-btn').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text) return;
+        urlInput.value = window.StashSave.extractUrlFromText(text) || text.trim();
+        urlInput.focus();
+      } catch (e) {
+        statusEl.textContent = "Couldn't read the clipboard. Paste with your keyboard instead.";
+        statusEl.className = 'status error';
+        statusEl.style.display = 'block';
+      }
+    });
   </script>
 </body>
 
