@@ -400,18 +400,37 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // `maybeSingle` rather than `single`: a duplicate save legitimately returns
+    // no row. The database's dedup trigger (supabase/migrations/
+    // 20260824_saves_url_dedup.sql) recognises a URL that's already stashed and
+    // bumps that save's date instead of inserting a second copy, so PostgREST
+    // has nothing to hand back.
     const { data, error } = await supabase
       .from("saves")
       .insert(saveData)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw error;
     }
 
+    if (!data) {
+      // Look up the save this one collapsed into so the caller can link to it.
+      const { data: existing } = await supabase.rpc("stash_find_save_by_url", {
+        p_user_id: user_id,
+        p_url: resolvedUrl,
+      });
+      const existingSave = Array.isArray(existing) ? existing[0] : existing;
+
+      return new Response(
+        JSON.stringify({ success: true, duplicate: true, save: existingSave ?? null }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ success: true, save: data }),
+      JSON.stringify({ success: true, duplicate: false, save: data }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

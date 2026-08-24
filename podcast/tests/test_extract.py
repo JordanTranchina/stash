@@ -51,11 +51,16 @@ class TestCleanText:
 # fetch_recent_articles
 # ---------------------------------------------------------------------------
 
+# Long enough to clear MIN_ARTICLE_CHARS — a save with less body text than
+# that is skipped as unusable for a podcast segment (see TestPodcastEligibility).
+LONG_BODY = "This is the body content. " * 40
+LONG_EXCERPT = "Excerpt text. " * 80
+
 MOCK_ARTICLE = {
     "id": "abc-123",
     "title": "Test Article",
-    "content": "This is the body content.",
-    "excerpt": "Excerpt text.",
+    "content": LONG_BODY,
+    "excerpt": LONG_EXCERPT,
     "site_name": "Test Site",
     "created_at": "2026-02-20T10:00:00Z",
 }
@@ -81,6 +86,7 @@ class TestFetchRecentArticles:
         assert article["id"] == "abc-123"
         assert article["title"] == "Test Article"
         assert article["site_name"] == "Test Site"
+        assert article["content"].startswith("This is the body content.")
 
     def test_content_falls_back_to_excerpt_when_content_is_none(self, monkeypatch):
         self._patch_env(monkeypatch)
@@ -92,7 +98,7 @@ class TestFetchRecentArticles:
         with patch("extract.requests.get", return_value=mock_response):
             articles = extract.fetch_recent_articles()
 
-        assert articles[0]["content"] == "Excerpt text."
+        assert articles[0]["content"] == LONG_EXCERPT.strip()
 
     def test_content_is_truncated_to_5000_chars(self, monkeypatch):
         self._patch_env(monkeypatch)
@@ -168,8 +174,11 @@ class TestFetchRecentArticles:
         assert params["order"] == "created_at.desc"
         assert params["podcast_discussed_at"] == "is.null"
         assert params["is_archived"] == "eq.false"
-        assert params["limit"] == 3
+        # Ineligible saves are filtered after the query, so we ask for a pool of
+        # candidates rather than exactly `limit` rows.
+        assert params["limit"] > 3
         assert "created_at" not in params  # no recency-window cutoff anymore
+        assert "published_at" in params["select"]
 
     def test_recently_saved_article_surfaces_before_ancient_one(self, monkeypatch):
         """Regression test: episodes were discussing years-old undiscussed
@@ -208,6 +217,10 @@ MOCK_YOUTUBE_SAVE = {
 
 
 class TestYouTubeIngestion:
+    """Transcript resolution lives in format_article, which shapes one raw
+    `saves` row; it runs before the podcast-eligibility filter, so these tests
+    call it directly rather than going through fetch_recent_articles."""
+
     def _patch_env(self, monkeypatch):
         # extract.py reads these into module globals at import time, so set the
         # attributes directly (env vars alone wouldn't reach the already-loaded
@@ -218,18 +231,14 @@ class TestYouTubeIngestion:
 
     def test_transcript_used_as_content_for_youtube_save(self, monkeypatch):
         self._patch_env(monkeypatch)
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [dict(MOCK_YOUTUBE_SAVE)]
 
-        with patch("extract.requests.get", return_value=mock_response), \
-             patch("extract.requests.patch") as mock_patch, \
+        with patch("extract.requests.patch") as mock_patch, \
              patch("extract.fetch_transcript_for_url", return_value="the spoken transcript"):
-            articles = extract.fetch_recent_articles()
+            article = extract.format_article(dict(MOCK_YOUTUBE_SAVE))
 
-        assert articles[0]["content"] == "the spoken transcript"
+        assert article["content"] == "the spoken transcript"
         # site_name defaults to YouTube when the save has none.
-        assert articles[0]["site_name"] == "YouTube"
+        assert article["site_name"] == "YouTube"
         # Transcript is cached back to the save.
         mock_patch.assert_called_once()
 
@@ -238,43 +247,147 @@ class TestYouTubeIngestion:
         self._patch_env(monkeypatch)
         cached = "x" * (extract.YOUTUBE_CONTENT_MIN_CHARS + 10)
         save = {**MOCK_YOUTUBE_SAVE, "content": cached}
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [save]
 
-        with patch("extract.requests.get", return_value=mock_response), \
-             patch("extract.fetch_transcript_for_url") as mock_fetch:
-            articles = extract.fetch_recent_articles()
+        with patch("extract.fetch_transcript_for_url") as mock_fetch:
+            article = extract.format_article(save)
 
         mock_fetch.assert_not_called()
-        assert articles[0]["content"].startswith("x")
+        assert article["content"].startswith("x")
 
     def test_falls_back_to_stored_content_when_no_transcript(self, monkeypatch):
         self._patch_env(monkeypatch)
         save = {**MOCK_YOUTUBE_SAVE, "excerpt": "short description"}
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [save]
 
-        with patch("extract.requests.get", return_value=mock_response), \
-             patch("extract.requests.patch") as mock_patch, \
+        with patch("extract.requests.patch") as mock_patch, \
              patch("extract.fetch_transcript_for_url", return_value=None):
-            articles = extract.fetch_recent_articles()
+            article = extract.format_article(save)
 
         # No transcript -> use whatever the save already had, no cache write.
-        assert articles[0]["content"] == "short description"
+        assert article["content"] == "short description"
         mock_patch.assert_not_called()
 
     def test_non_youtube_save_never_fetches_transcript(self, monkeypatch):
         self._patch_env(monkeypatch)
         save = {**MOCK_ARTICLE, "url": "https://blog.example.com/post"}
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [save]
 
-        with patch("extract.requests.get", return_value=mock_response), \
-             patch("extract.fetch_transcript_for_url") as mock_fetch:
-            articles = extract.fetch_recent_articles()
+        with patch("extract.fetch_transcript_for_url") as mock_fetch:
+            article = extract.format_article(save)
 
         mock_fetch.assert_not_called()
-        assert articles[0]["content"] == "This is the body content."
+        assert article["content"] == LONG_BODY.strip()
+
+
+# ---------------------------------------------------------------------------
+# Podcast eligibility — thin, empty and paywalled saves are not discussable
+# ---------------------------------------------------------------------------
+
+class TestPodcastSkipReason:
+    def test_empty_content_is_skipped(self):
+        assert extract.podcast_skip_reason("") == "no body text was saved"
+        assert extract.podcast_skip_reason(None) == "no body text was saved"
+        assert extract.podcast_skip_reason("   \n  ") == "no body text was saved"
+
+    def test_short_content_is_skipped(self):
+        # An X/Twitter save keeps the post text at most — nothing to discuss.
+        reason = extract.podcast_skip_reason("Just posted a hot take about AI.")
+        assert reason is not None
+        assert "minimum" in reason
+
+    def test_full_length_article_is_kept(self):
+        assert extract.podcast_skip_reason("word " * 400) is None
+
+    def test_paywall_stub_is_skipped(self):
+        stub = (
+            "The opening paragraph of the article runs for a little while and then "
+            "stops abruptly. " * 10
+            + "Subscribe to continue reading this article."
+        )
+        assert len(stub) > extract.MIN_ARTICLE_CHARS  # long enough to pass the length gate
+        assert extract.podcast_skip_reason(stub) == (
+            "body text looks like a paywall or bot-check interstitial"
+        )
+
+    def test_bot_check_stub_is_skipped(self):
+        stub = "Please enable JavaScript to view this page. " * 20
+        assert extract.podcast_skip_reason(stub) is not None
+
+    def test_long_article_mentioning_subscriptions_is_kept(self):
+        # A real article about the subscription economy must not be mistaken for
+        # a paywall stub, hence the PAYWALL_MAX_CHARS guard.
+        article = "Media companies keep asking readers to subscribe to continue. " * 60
+        assert len(article) > extract.PAYWALL_MAX_CHARS
+        assert extract.podcast_skip_reason(article) is None
+
+
+class TestFetchRecentArticlesFiltering:
+    def _patch_env(self, monkeypatch):
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "fake-key")
+        monkeypatch.setenv("USER_ID", "user-001")
+
+    def _respond_with(self, rows):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = rows
+        return mock_response
+
+    def test_thin_saves_are_left_out_of_the_episode(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        x_post = {**MOCK_ARTICLE, "id": "x-1", "title": "An X post",
+                  "content": "", "excerpt": ""}
+        paywalled = {**MOCK_ARTICLE, "id": "pw-1", "title": "Paywalled",
+                     "content": "The first two paragraphs are free. " * 15
+                                + "Already a subscriber? Sign in.", "excerpt": ""}
+        good = {**MOCK_ARTICLE, "id": "ok-1", "title": "A real article"}
+
+        with patch("extract.requests.get", return_value=self._respond_with([x_post, paywalled, good])):
+            articles = extract.fetch_recent_articles(limit=3)
+
+        assert [a["id"] for a in articles] == ["ok-1"]
+
+    def test_fetches_a_larger_candidate_pool_than_limit(self, monkeypatch):
+        """Filtering happens after the query, so asking for exactly `limit`
+        rows would yield half-empty episodes whenever the newest saves are
+        unusable."""
+        self._patch_env(monkeypatch)
+
+        with patch("extract.requests.get", return_value=self._respond_with([])) as mock_get:
+            extract.fetch_recent_articles(limit=3)
+
+        assert mock_get.call_args.kwargs["params"]["limit"] >= extract.MIN_CANDIDATE_POOL
+
+    def test_stops_once_limit_usable_articles_are_collected(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        rows = [{**MOCK_ARTICLE, "id": f"ok-{i}"} for i in range(10)]
+
+        with patch("extract.requests.get", return_value=self._respond_with(rows)):
+            articles = extract.fetch_recent_articles(limit=3)
+
+        assert [a["id"] for a in articles] == ["ok-0", "ok-1", "ok-2"]
+
+    def test_returns_empty_when_nothing_is_discussable(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        rows = [{**MOCK_ARTICLE, "id": "x-1", "content": "", "excerpt": ""}]
+
+        with patch("extract.requests.get", return_value=self._respond_with(rows)):
+            articles = extract.fetch_recent_articles(limit=3)
+
+        assert articles == []
+
+    def test_published_at_is_passed_through(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        rows = [{**MOCK_ARTICLE, "published_at": "2026-02-01T00:00:00Z"}]
+
+        with patch("extract.requests.get", return_value=self._respond_with(rows)):
+            articles = extract.fetch_recent_articles(limit=1)
+
+        assert articles[0]["published_at"] == "2026-02-01T00:00:00Z"
+        assert articles[0]["created_at"] == MOCK_ARTICLE["created_at"]
+
+    def test_published_at_defaults_to_none(self, monkeypatch):
+        self._patch_env(monkeypatch)
+
+        with patch("extract.requests.get", return_value=self._respond_with([dict(MOCK_ARTICLE)])):
+            articles = extract.fetch_recent_articles(limit=1)
+
+        assert articles[0]["published_at"] is None

@@ -1548,10 +1548,12 @@ class StashApp {
     });
 
     try {
-      const ok = await window.StashSave.saveViaScrape(request);
+      const { ok, duplicate } = await window.StashSave.saveViaScrapeDetailed(request);
       if (!ok) throw new Error('Server rejected the save');
 
-      status.textContent = 'Saved!';
+      // Re-saving something you already have isn't an error: the existing save
+      // just moves back to the top of the list.
+      status.textContent = duplicate ? 'Already saved — moved to the top' : 'Saved!';
       status.className = 'digest-status success';
       status.classList.remove('hidden');
 

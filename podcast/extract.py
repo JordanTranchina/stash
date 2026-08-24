@@ -12,6 +12,49 @@ load_dotenv()
 # assumed to already be a cached transcript (or a real article) and reused.
 YOUTUBE_CONTENT_MIN_CHARS = 500
 
+# A save needs this much real body text before it's worth a podcast segment.
+# Below it there is nothing for the hosts to discuss and they hallucinate to
+# fill the gap: X/Twitter posts save no body at all, paywalled pages save only
+# the teaser paragraph before the wall, and link-only saves (bot-blocked
+# fetches) save nothing but a title. ~250 characters is roughly 40 words.
+MIN_ARTICLE_CHARS = 250
+
+# Paywall/consent interstitials leave a short stub of text that *looks* like an
+# article. These phrases only disqualify a save when its body is also short
+# (see PAYWALL_MAX_CHARS), so a full-length article that merely talks about
+# paywalls isn't dropped.
+PAYWALL_MARKERS = (
+    "subscribe to continue",
+    "subscribe to read",
+    "continue reading",
+    "already a subscriber",
+    "become a subscriber",
+    "subscribers only",
+    "for subscribers",
+    "this article is for",
+    "create an account to read",
+    "sign in to read",
+    "sign up to read",
+    "register to continue",
+    "to continue reading",
+    "you have reached your",
+    "free articles remaining",
+    "enable javascript",
+    "javascript is disabled",
+    "accept cookies",
+    "verify you are a human",
+    "are you a robot",
+    "access denied",
+)
+PAYWALL_MAX_CHARS = 2500
+
+# How many candidate saves to pull per requested article. Ineligible saves are
+# filtered out client-side, so fetching exactly `limit` rows would produce
+# half-empty (or empty) episodes whenever the newest saves happen to be X posts
+# or paywalled pages.
+CANDIDATE_MULTIPLIER = 6
+MIN_CANDIDATE_POOL = 20
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") # Use service role key for backend extraction
 USER_ID = os.getenv("USER_ID")
@@ -36,6 +79,73 @@ def clean_text(text):
     # Remove common artifacts if any (can be expanded)
     return text.strip()
 
+def is_paywalled(content):
+    """True when a short body looks like a paywall / bot-check interstitial.
+
+    Only short bodies are tested (PAYWALL_MAX_CHARS) so a full-length article
+    that happens to mention subscriptions isn't mistaken for a wall.
+    """
+    if not content:
+        return False
+    if len(content) > PAYWALL_MAX_CHARS:
+        return False
+    lowered = content.lower()
+    return any(marker in lowered for marker in PAYWALL_MARKERS)
+
+
+def podcast_skip_reason(content):
+    """Return why this body can't carry a podcast segment, or None if it can.
+
+    The hosts only ever see `content`, so a save with no real body (an X/Twitter
+    post, a bot-blocked or paywalled page, a bare link) gives them nothing to
+    work from and they invent the article instead. Better to leave those out of
+    the episode entirely.
+    """
+    text = (content or "").strip()
+    if not text:
+        return "no body text was saved"
+    if len(text) < MIN_ARTICLE_CHARS:
+        return f"only {len(text)} chars of body text (minimum {MIN_ARTICLE_CHARS})"
+    if is_paywalled(text):
+        return "body text looks like a paywall or bot-check interstitial"
+    return None
+
+
+def format_article(article):
+    """Shape a raw `saves` row into the dict the script generator consumes.
+
+    Resolves a YouTube save to its transcript (caching it back onto the save)
+    so videos are ingested like articles.
+    """
+    content = article.get("content") or article.get("excerpt") or ""
+    site_name = article.get("site_name") or "Unknown"
+    save_url = article.get("url")
+
+    # YouTube videos are ingested just like articles: fetch the spoken
+    # transcript and use it as the content the hosts discuss (issue: treat
+    # saved Watch Later videos as podcast inputs).
+    if save_url and is_youtube_url(save_url) and len(content) < YOUTUBE_CONTENT_MIN_CHARS:
+        transcript = fetch_transcript_for_url(save_url)
+        if transcript:
+            content = transcript
+            if not article.get("site_name"):
+                site_name = "YouTube"
+            # Cache the transcript back onto the save so future runs and the
+            # reading view reuse it instead of re-scraping YouTube.
+            persist_transcript(article["id"], transcript)
+
+    return {
+        "id": article["id"],
+        "title": article["title"],
+        "url": save_url,
+        "site_name": site_name,
+        "content": clean_text(content[:5000]), # Limit to 5k chars per article for context window
+        "created_at": article["created_at"],
+        "published_at": article.get("published_at"),
+        "image_url": article.get("image_url")
+    }
+
+
 def fetch_recent_articles(limit=5):
     """Fetch unarchived, not-yet-discussed articles, most recently saved first.
 
@@ -45,15 +155,21 @@ def fetch_recent_articles(limit=5):
     same article from being re-discussed in a later episode, and there's no
     recency cutoff, so an old undiscussed save is never silently dropped —
     it just gets picked up once the newer queue thins out.
+
+    Saves without enough real body text to discuss (X posts, paywalled pages,
+    link-only saves) are skipped — see :func:`podcast_skip_reason`. Because
+    that filtering happens after the query, we ask for a larger candidate pool
+    than `limit` and stop once `limit` usable articles have been collected.
     """
     url = f"{SUPABASE_URL}/rest/v1/saves"
+    candidate_limit = max(limit * CANDIDATE_MULTIPLIER, MIN_CANDIDATE_POOL)
     params = {
-        "select": "id,url,title,content,excerpt,site_name,created_at,image_url",
+        "select": "id,url,title,content,excerpt,site_name,created_at,published_at,image_url",
         "user_id": f"eq.{USER_ID}",
         "is_archived": "eq.false",
         "podcast_discussed_at": "is.null",
         "order": "created_at.desc",
-        "limit": limit
+        "limit": candidate_limit
     }
 
     response = requests.get(url, headers=get_headers(), params=params)
@@ -68,32 +184,17 @@ def fetch_recent_articles(limit=5):
     formatted_articles = []
 
     for article in articles:
-        content = article.get("content") or article.get("excerpt") or ""
-        site_name = article.get("site_name") or "Unknown"
-        save_url = article.get("url")
+        if len(formatted_articles) >= limit:
+            break
 
-        # YouTube videos are ingested just like articles: fetch the spoken
-        # transcript and use it as the content the hosts discuss (issue: treat
-        # saved Watch Later videos as podcast inputs).
-        if save_url and is_youtube_url(save_url) and len(content) < YOUTUBE_CONTENT_MIN_CHARS:
-            transcript = fetch_transcript_for_url(save_url)
-            if transcript:
-                content = transcript
-                if not article.get("site_name"):
-                    site_name = "YouTube"
-                # Cache the transcript back onto the save so future runs and the
-                # reading view reuse it instead of re-scraping YouTube.
-                persist_transcript(article["id"], transcript)
+        formatted = format_article(article)
 
-        formatted_articles.append({
-            "id": article["id"],
-            "title": article["title"],
-            "url": save_url,
-            "site_name": site_name,
-            "content": clean_text(content[:5000]), # Limit to 5k chars per article for context window
-            "created_at": article["created_at"],
-            "image_url": article.get("image_url")
-        })
+        skip_reason = podcast_skip_reason(formatted["content"])
+        if skip_reason:
+            print(f"Skipping '{formatted['title']}' — {skip_reason}.")
+            continue
+
+        formatted_articles.append(formatted)
 
     return formatted_articles
 
