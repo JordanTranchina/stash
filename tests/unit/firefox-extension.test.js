@@ -42,6 +42,11 @@ describe('extension-firefox/manifest.json', () => {
     expect(firefoxManifest.permissions).toContain('scripting');
   });
 
+  test('has no default_popup so the toolbar click saves in one action', () => {
+    expect(firefoxManifest.action.default_popup).toBeUndefined();
+    expect(firefoxManifest.action.default_icon).toBeDefined();
+  });
+
   test('registers the same content scripts as the Chrome build', () => {
     const chromeManifest = JSON.parse(
       fs.readFileSync(path.join(CHROME_DIR, 'manifest.json'), 'utf8')
@@ -69,9 +74,30 @@ describe('shared files between extension/ and extension-firefox/', () => {
   });
 });
 
+describe('extension/manifest.json', () => {
+  const chromeManifest = JSON.parse(
+    fs.readFileSync(path.join(CHROME_DIR, 'manifest.json'), 'utf8')
+  );
+
+  test('has no default_popup so the toolbar click saves in one action', () => {
+    expect(chromeManifest.action.default_popup).toBeUndefined();
+    expect(chromeManifest.action.default_icon).toBeDefined();
+  });
+});
+
 describe('extension/background.js', () => {
+  const source = fs.readFileSync(path.join(CHROME_DIR, 'background.js'), 'utf8');
+
   test('guards importScripts so the same file works as a Firefox event page', () => {
-    const source = fs.readFileSync(path.join(CHROME_DIR, 'background.js'), 'utf8');
     expect(source).toMatch(/typeof importScripts === 'function'/);
+  });
+
+  test('saves on a toolbar click', () => {
+    expect(source).toMatch(/chrome\.action\.onClicked\.addListener/);
+  });
+
+  test('restores the sign-in popup when there is no session', () => {
+    expect(source).toMatch(/chrome\.action\.setPopup/);
+    expect(source).toMatch(/popup\.html/);
   });
 });

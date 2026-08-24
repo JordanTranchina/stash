@@ -44,7 +44,6 @@ describe('StashSave.buildScrapeRequest', () => {
     });
     expect(req).toEqual({
       url: 'https://example.com/article',
-      user_id: 'user-1',
       source: 'share-target',
       highlight: null,
       // Included as a fallback title only; the server prefers the scraped
@@ -126,18 +125,40 @@ describe('StashSave.saveViaScrape', () => {
 
     const ok = await sandbox.self.StashSave.saveViaScrape({
       url: 'https://example.com',
-      user_id: 'u1',
       source: 'share-target',
       highlight: null,
-    });
+    }, 'access-token-123');
 
     expect(ok).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe('https://fake.supabase.co/functions/v1/save-page');
     expect(calls[0].opts.method).toBe('POST');
+    // The user is derived from the JWT server-side, so the token — not a
+    // client-supplied id — is what attributes the save.
+    expect(calls[0].opts.headers.Authorization).toBe('Bearer access-token-123');
     const body = JSON.parse(calls[0].opts.body);
     expect(body.url).toBe('https://example.com');
-    expect(body.user_id).toBe('u1');
+    expect(body).not.toHaveProperty('user_id');
+  });
+
+  test('refuses to send a save with no access token, flagging it as a sign-in problem', async () => {
+    const sandbox = {
+      self: {},
+      CONFIG,
+      fetch: () => {
+        throw new Error('should not have been called');
+      },
+    };
+    const code = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'web', 'save-lib.js'),
+      'utf8'
+    );
+    vm.createContext(sandbox);
+    vm.runInContext(code, sandbox);
+
+    await expect(
+      sandbox.self.StashSave.saveViaScrape({ url: 'https://example.com' })
+    ).rejects.toMatchObject({ noSession: true });
   });
 
   test('returns false when the function responds non-ok', async () => {
@@ -152,7 +173,7 @@ describe('StashSave.saveViaScrape', () => {
     );
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox);
-    const ok = await sandbox.self.StashSave.saveViaScrape({ url: 'x', user_id: 'u' });
+    const ok = await sandbox.self.StashSave.saveViaScrape({ url: 'x' }, 'access-token-123');
     expect(ok).toBe(false);
   });
 });

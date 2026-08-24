@@ -112,6 +112,29 @@
       margin-top: 24px;
     }
 
+    /* Signed-out notice: shown instead of saving, never alongside a fake success */
+    .signin-prompt {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 10px;
+      background: #fef3c7;
+      color: #92400e;
+      text-align: center;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .signin-prompt.visible {
+      display: block;
+    }
+
+    .signin-prompt .btn {
+      margin-top: 12px;
+      text-decoration: none;
+      display: block;
+    }
+
     /* Stealth / Overlay View */
     .overlay {
       position: fixed;
@@ -229,9 +252,16 @@
       <button type="submit" class="btn" id="save-btn">Save to Stash</button>
     </form>
     <div class="status" id="status"></div>
+    <div class="signin-prompt" id="signin-prompt">
+      <strong>You're signed out.</strong><br>
+      Sign in to Stash in the tab that opens, then come back — this link will be
+      waiting in the box above, and we'll save it for you automatically.
+      <a class="btn" href="/" target="_blank" rel="opener">Sign in to Stash</a>
+    </div>
     <p class="hint">Add to Home Screen for quick access</p>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
@@ -245,12 +275,41 @@
     const highlightInput = document.getElementById('highlight');
     
     // UI Elements
+    const signinPrompt = document.getElementById('signin-prompt');
     const mainContainer = document.getElementById('main-container');
     const overlay = document.getElementById('saving-overlay');
     const spinner = document.getElementById('spinner');
     const checkmark = document.getElementById('checkmark');
     const overlayText = document.getElementById('overlay-text');
     const viewInStashBtn = document.getElementById('view-in-stash');
+
+    // This page saves on the user's behalf, so it needs their session too — the
+    // Edge Function reads the owner off the access token.
+    const supabaseClient = window.supabase.createClient(
+      CONFIG.SUPABASE_URL,
+      CONFIG.SUPABASE_ANON_KEY
+    );
+
+    // Returns the current session, or null when signed out. Also mirrors it into
+    // IndexedDB: a share saved from the sheet may be the only time this device
+    // touches Stash for a while, and Background Sync can't read the localStorage
+    // copy supabase-js keeps, so the queue would have no way to authenticate.
+    async function getSession() {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data && data.session;
+      if (!session) return null;
+      try {
+        await window.StashDB.saveSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_at: session.expires_at,
+          user_id: session.user.id,
+        });
+      } catch (e) {
+        // Mirroring is best-effort; the save itself doesn't depend on it.
+      }
+      return session;
+    }
 
     // Ensure the Service Worker controls this page so Background Sync can fire.
     if ('serviceWorker' in navigator) {
@@ -270,8 +329,23 @@
       }
     }
 
+    // A save we couldn't complete because nobody was signed in. supabase-js
+    // mirrors the session across tabs, so signing in from the tab the prompt
+    // opens fires onAuthStateChange here and we can pick this back up.
+    let blockedSave = null;
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      if (!session || !blockedSave) return;
+      const pending = blockedSave;
+      blockedSave = null;
+      signinPrompt.classList.remove('visible');
+      handleSave(pending.data, pending.isAuto);
+    });
+
     // 1. Common Save Logic
     async function handleSave(data, isAuto = false) {
+      signinPrompt.classList.remove('visible');
+
       if (!isAuto) {
         // Form UI updates
         saveBtn.textContent = 'Saving...';
@@ -281,16 +355,41 @@
         statusEl.style.display = 'block';
       }
 
+      // A save with no session has no owner. Queueing it would either strand it
+      // in the pending list forever or hand it to whoever signs in next, so we
+      // stop here and ask for a sign-in — the URL stays in the form so the
+      // shared link isn't lost.
+      let session = null;
+      try {
+        session = await getSession();
+      } catch (e) {
+        console.warn('Could not read session', e);
+      }
+      if (!session) {
+        // Hold onto the save so the auth listener below can finish it the
+        // moment the user signs in, instead of making them click again.
+        blockedSave = { data: data, isAuto: isAuto };
+        showSignInRequired(isAuto);
+        return false;
+      }
+
       let savedOnline = false;
       try {
         // Route through the save-page Edge Function so the article is fully
         // scraped server-side (Readability), the same way the extension and
         // bookmarklet ingest pages — instead of storing just the shared link.
-        savedOnline = await window.StashSave.saveViaScrape(data);
+        savedOnline = await window.StashSave.saveViaScrape(data, session.access_token);
       } catch (err) {
-        // fetch() only rejects on a genuine network failure (offline / server
-        // unreachable). THAT is what the pending queue is for — queue it and
-        // let Background Sync retry when connectivity returns.
+        // saveViaScrape also throws when the session vanished between our check
+        // and the request; that isn't something a retry fixes.
+        if (err.noSession) {
+          showSignInRequired(isAuto);
+          return false;
+        }
+
+        // Otherwise fetch() only rejects on a genuine network failure (offline /
+        // server unreachable). THAT is what the pending queue is for — queue it
+        // and let Background Sync retry when connectivity returns.
         console.warn('Network error saving; queueing for later sync...', err);
         try {
           await window.StashDB.savePendingShare(data);
@@ -316,6 +415,19 @@
       console.warn('Server rejected the save.');
       showSaveError(isAuto);
       return false;
+    }
+
+    // Signed out: drop back to the form (the shared URL is already pre-filled
+    // there) and point at the sign-in page instead of pretending we saved.
+    function showSignInRequired(isAuto) {
+      if (isAuto) {
+        showForm();
+      } else {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save to Stash';
+      }
+      statusEl.style.display = 'none';
+      signinPrompt.classList.add('visible');
     }
 
     function showSaveError(isAuto) {
@@ -361,7 +473,14 @@
         statusEl.className = 'status success';
         resetForm();
         setTimeout(() => {
-           window.location.href = '/';
+          // Opened by the bookmarklet? Close the popup and leave the page the
+          // user was reading exactly where it was. Otherwise this is the
+          // standalone quick-save page, so go on into the app.
+          if (window.name === 'stash-save') {
+            try { window.close(); } catch (e) {}
+            return;
+          }
+          window.location.href = '/';
         }, 1500);
       }
     }
@@ -377,7 +496,6 @@
       // any title the user typed only as a fallback for pages that can't be
       // scraped (bot-blocked / paywalled), plus the URL, source and note.
       const data = window.StashSave.buildScrapeRequest({
-        user_id: CONFIG.USER_ID,
         url: url,
         source: 'mobile-web',
         highlight: highlight || null,
@@ -435,7 +553,6 @@
         // shared title is passed only as a fallback for pages the server can't
         // scrape (bot-blocked / paywalled), so they still get a real title.
         const data = window.StashSave.buildScrapeRequest({
-          user_id: CONFIG.USER_ID,
           url: pUrl,
           source: 'share-target',
           highlight: null,

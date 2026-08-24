@@ -31,23 +31,53 @@ function cdata(str: string): string {
   return `<![CDATA[${str.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
 }
 
-serve(async () => {
+serve(async (req) => {
   try {
+    // Podcast apps can't sign in, so the feed is scoped by an unguessable token
+    // from podcast_feeds instead of a JWT. No token, no feed.
+    const token = new URL(req.url).searchParams.get("token");
+    if (!token) {
+      return new Response("Not Found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    const { data: feed } = await supabase
+      .from("podcast_feeds")
+      .select("user_id")
+      .eq("token", token)
+      .maybeSingle();
+
+    // An unknown token is a 404, not a 500 — podcast apps retry 5xx forever but
+    // handle a 404 as "this feed is gone".
+    if (!feed) {
+      return new Response("Not Found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
     const { data: episodes, error } = await supabase
       .from("podcast_episodes")
       .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters")
+      .eq("user_id", feed.user_id)
       .order("created_at", { ascending: false })
       .limit(10);
 
     if (error) throw error;
 
-    // Base URL for the companion chapters endpoint (Podcasting 2.0 chapters).
-    const chaptersBase = `${Deno.env.get("SUPABASE_URL")}/functions/v1/podcast-chapters`;
+    // Base URLs for the companion chapters endpoint (Podcasting 2.0 chapters)
+    // and this feed itself. Both carry the token: the chapters endpoint uses it
+    // to check the episode belongs to this feed's user.
+    const functionsBase = `${Deno.env.get("SUPABASE_URL")}/functions/v1`;
+    const chaptersBase = `${functionsBase}/podcast-chapters`;
+    const selfUrl = `${functionsBase}/podcast-rss?token=${token}`;
 
     const items = (episodes ?? [])
       .map((ep) => {
@@ -62,7 +92,7 @@ serve(async () => {
         // Only advertise chapters when the episode actually has them.
         const hasChapters = Array.isArray(ep.chapters) && ep.chapters.length > 0;
         const chaptersTag = hasChapters
-          ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}`)}" type="application/json+chapters"/>`
+          ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}&token=${token}`)}" type="application/json+chapters"/>`
           : "";
 
         return `    <item>
@@ -80,16 +110,19 @@ serve(async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+  xmlns:atom="http://www.w3.org/2005/Atom"
   xmlns:content="http://purl.org/rss/modules/content/"
   xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
     <title>Stash: Listen Later</title>
     <link>https://stash.app</link>
+    <atom:link href="${escapeXml(selfUrl)}" rel="self" type="application/rss+xml"/>
     <description>Your personal Stash articles, read aloud by AI.</description>
     <language>en-us</language>
     <itunes:author>Stash</itunes:author>
     <itunes:category text="Technology"/>
     <itunes:explicit>false</itunes:explicit>
+    <itunes:block>yes</itunes:block>
 ${items}
   </channel>
 </rss>`;
@@ -98,7 +131,9 @@ ${items}
       status: 200,
       headers: {
         "Content-Type": "application/rss+xml; charset=utf-8",
-        "Cache-Control": "s-maxage=3600",
+        // Private per-user feed: a shared cache (s-maxage) would risk serving
+        // one listener's episodes to another.
+        "Cache-Control": "private, max-age=300",
         "Access-Control-Allow-Origin": "*",
       },
     });

@@ -3,14 +3,25 @@ class SupabaseClient {
   constructor(url, anonKey) {
     this.url = url;
     this.anonKey = anonKey;
-    this.accessToken = null;
+    this.session = null;
   }
 
+  // Load the stored session from extension storage. Does not refresh; call
+  // getAccessToken() (or any DB operation) for a guaranteed-valid token.
   async init() {
     const stored = await chrome.storage.local.get(['stash_session']);
-    if (stored.stash_session) {
-      this.accessToken = stored.stash_session.access_token;
-    }
+    this.session = stored.stash_session || null;
+    return this.session;
+  }
+
+  get accessToken() {
+    return this.session?.access_token || null;
+  }
+
+  // The signed-in user's id, taken from the session Supabase returned.
+  // Never hardcoded — no session means no user.
+  get userId() {
+    return this.session?.user?.id || null;
   }
 
   get headers() {
@@ -22,6 +33,67 @@ class SupabaseClient {
       h['Authorization'] = `Bearer ${this.accessToken}`;
     }
     return h;
+  }
+
+  // Supabase returns expires_at (unix seconds) on token responses, but fall
+  // back to expires_in in case it's missing.
+  async storeSession(data) {
+    const expiresAt = data.expires_at
+      || Math.floor(Date.now() / 1000) + (data.expires_in || 3600);
+    this.session = { ...data, expires_at: expiresAt };
+    await chrome.storage.local.set({ stash_session: this.session });
+    return this.session;
+  }
+
+  // Treat a token as expired 60s early so an in-flight save doesn't land on
+  // the far side of the expiry.
+  isExpired() {
+    if (!this.session?.expires_at) return true;
+    return Date.now() / 1000 >= this.session.expires_at - 60;
+  }
+
+  async refreshSession() {
+    const refreshToken = this.session?.refresh_token;
+    if (!refreshToken) {
+      await this.signOut();
+      return null;
+    }
+
+    const res = await fetch(`${this.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        'apikey': this.anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!res.ok) {
+      // The refresh token is dead (revoked, or the user signed out elsewhere).
+      // Drop the session so the popup falls back to the sign-in view.
+      await this.signOut();
+      return null;
+    }
+
+    return await this.storeSession(await res.json());
+  }
+
+  // Returns a valid access token, refreshing if needed, or null if signed out.
+  async getAccessToken() {
+    if (!this.session) await this.init();
+    if (!this.session) return null;
+    if (this.isExpired()) await this.refreshSession();
+    return this.accessToken;
+  }
+
+  // Returns { token, userId } or throws the "sign in" error every caller
+  // wants to surface verbatim.
+  async requireSession() {
+    const token = await this.getAccessToken();
+    if (!token || !this.userId) {
+      throw new Error('Sign in to Stash');
+    }
+    return { token, userId: this.userId };
   }
 
   async signIn(email, password) {
@@ -39,10 +111,7 @@ class SupabaseClient {
       throw new Error(err.error_description || err.msg || 'Sign in failed');
     }
 
-    const data = await res.json();
-    this.accessToken = data.access_token;
-    await chrome.storage.local.set({ stash_session: data });
-    return data;
+    return await this.storeSession(await res.json());
   }
 
   async signUp(email, password) {
@@ -64,12 +133,13 @@ class SupabaseClient {
   }
 
   async signOut() {
-    this.accessToken = null;
+    this.session = null;
     await chrome.storage.local.remove(['stash_session']);
   }
 
   async getUser() {
-    if (!this.accessToken) return null;
+    const token = await this.getAccessToken();
+    if (!token) return null;
 
     const res = await fetch(`${this.url}/auth/v1/user`, {
       headers: this.headers,
@@ -81,6 +151,7 @@ class SupabaseClient {
 
   // Database operations
   async insert(table, data) {
+    await this.requireSession();
     console.log('Supabase insert:', table, 'data keys:', Object.keys(data));
     const res = await fetch(`${this.url}/rest/v1/${table}`, {
       method: 'POST',
@@ -102,6 +173,7 @@ class SupabaseClient {
   }
 
   async select(table, options = {}) {
+    await this.requireSession();
     let url = `${this.url}/rest/v1/${table}?select=${options.select || '*'}`;
 
     if (options.filters) {
@@ -129,6 +201,7 @@ class SupabaseClient {
   }
 
   async update(table, id, data) {
+    await this.requireSession();
     const res = await fetch(`${this.url}/rest/v1/${table}?id=eq.${id}`, {
       method: 'PATCH',
       headers: { ...this.headers, 'Prefer': 'return=representation' },
@@ -144,6 +217,7 @@ class SupabaseClient {
   }
 
   async delete(table, id) {
+    await this.requireSession();
     const res = await fetch(`${this.url}/rest/v1/${table}?id=eq.${id}`, {
       method: 'DELETE',
       headers: this.headers,

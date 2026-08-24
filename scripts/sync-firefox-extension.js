@@ -6,6 +6,10 @@
 // extension-firefox/manifest.json (Firefox, MV3 event page) are
 // intentionally different and are never touched by this script.
 //
+// icons/ is skipped too: ImgBot optimizes the two copies independently, so
+// copying one over the other silently reverts whichever was compressed more
+// recently. The icons are identical artwork; only their byte size diverges.
+//
 // Run after changing anything under extension/ other than manifest.json:
 //   node scripts/sync-firefox-extension.js
 
@@ -15,7 +19,7 @@ const path = require('path');
 const SRC = path.join(__dirname, '..', 'extension');
 const DEST = path.join(__dirname, '..', 'extension-firefox');
 
-const SKIP = new Set(['manifest.json']);
+const SKIP = new Set(['manifest.json', 'icons']);
 
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });

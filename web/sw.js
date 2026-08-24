@@ -3,7 +3,7 @@
 // Background Sync handler can drain the offline "pending saves" queue.
 importScripts('/config.js', '/db.js', '/save-lib.js');
 
-const CACHE_NAME = 'stash-v4';
+const CACHE_NAME = 'stash-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -73,6 +73,50 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// Refresh an expiring session against the Supabase token endpoint. The stored
+// session is the only credential a Service Worker has (it can't read the
+// localStorage copy supabase-js maintains), so if it goes stale the queue is
+// stuck until the app is opened again — refresh it here instead. Returns the
+// usable session, or null if the refresh failed. Note the endpoint reports
+// `expires_at` in seconds; StashDB.saveSession normalizes to epoch
+// milliseconds, which is what the comparison below assumes.
+const TOKEN_EXPIRY_MARGIN_MS = 60 * 1000;
+
+async function getFreshSession() {
+  let session;
+  try {
+    session = await self.StashDB.getSession();
+  } catch (e) {
+    return null;
+  }
+  if (!session || !session.access_token) return null;
+  if (session.expires_at && session.expires_at - Date.now() > TOKEN_EXPIRY_MARGIN_MS) {
+    return session;
+  }
+  if (!session.refresh_token) return null;
+
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: {
+      'apikey': CONFIG.SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ refresh_token: session.refresh_token }),
+  });
+  if (!res.ok) return null;
+
+  const refreshed = await res.json();
+  if (!refreshed.access_token) return null;
+  const next = {
+    access_token: refreshed.access_token,
+    refresh_token: refreshed.refresh_token || session.refresh_token,
+    expires_at: refreshed.expires_at,
+    user_id: (refreshed.user && refreshed.user.id) || session.user_id,
+  };
+  await self.StashDB.saveSession(next);
+  return next;
+}
+
 // Background Sync: robustly retry offline saves that were queued in IndexedDB.
 // Registered from save.html (and app.js) via registration.sync.register('sync-pending-saves').
 async function drainPendingSaves() {
@@ -84,12 +128,24 @@ async function drainPendingSaves() {
   }
   if (!pending || !pending.length) return;
 
+  // Without a usable session there is nobody to attribute these saves to, and
+  // no amount of retrying fixes that until the user signs in again — so leave
+  // the queue alone and return rather than throwing (which would have the
+  // browser reschedule a sync that can only fail the same way).
+  let session;
+  try {
+    session = await getFreshSession();
+  } catch (e) {
+    return; // Refresh couldn't reach the network; the next sync tries again
+  }
+  if (!session) return;
+
   let failed = 0;
   for (const { key, data } of pending) {
     try {
       // Drain through the scraper so queued offline saves get the full article
       // ingested, not just the shared link.
-      const ok = await self.StashSave.saveViaScrape(data);
+      const ok = await self.StashSave.saveViaScrape(data, session.access_token);
       if (ok) {
         await self.StashDB.deletePendingShare(key);
       } else {

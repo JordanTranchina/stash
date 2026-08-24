@@ -12,9 +12,21 @@ To run `podcast/script.py` on a schedule (e.g., every morning), use GitHub Actio
 2. Click **New repository secret** and add the following:
    - `SUPABASE_URL`: `https://jntnmvxkirrosxjquuoy.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY`: Your service role key (the one we rotated)
-   - `USER_ID`: `6c7a3a96-16cd-4702-ac7b-0c7a4a81346d`
+   - `USER_ID`: `6c7a3a96-16cd-4702-ac7b-0c7a4a81346d` — **legacy, single-user only** (see below)
    - `GEMINI_API_KEY`: Your Google AI API key
    - `VERCEL_OIDC_TOKEN`: Your Vercel OIDC token
+
+### Note on `USER_ID` (legacy)
+
+Everything else in Stash is multi-user now: nothing hardcodes a user id, and
+every client signs in. The podcast pipeline is the one holdout — it still runs
+against a single hardcoded account, which is what this secret is.
+
+It's scheduled to be replaced by a loop over the users subscribed in
+`podcast_feeds`, generating one episode per feed. Until that lands, the daily
+job only ever produces a podcast for the account named here, and other users'
+saves are not included. Don't treat this secret as part of the auth story; it
+is a stopgap in the podcast job alone.
 
 ### Scheduling the Podcast
 

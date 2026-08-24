@@ -10,10 +10,6 @@ const CONFIG = {
 
   // Your web app URL (after deploying to Vercel/Netlify)
   WEB_APP_URL: "https://stash-lemon-zeta.vercel.app",
-
-  // Your user ID from Supabase (Authentication > Users)
-  // For multi-user mode, this can be removed and auth will be required
-  USER_ID: "6c7a3a96-16cd-4702-ac7b-0c7a4a81346d",
 };
 
 // Don't edit below this line

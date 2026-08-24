@@ -12,26 +12,89 @@ if (typeof importScripts === 'function') {
 
 let supabase = null;
 
+// Shown whenever there is no usable session. The popup's sign-in form is the
+// way out of this state.
+const SIGN_IN_MESSAGE = 'Sign in to Stash to save';
+
+// Clicking the toolbar icon saves immediately, so the badge is the only
+// feedback the user is guaranteed to see. Keep the text to 1-2 characters,
+// which is all that fits.
+const BADGE_CLEAR_MS = 2000;
+
 // Initialize on startup
-chrome.runtime.onInstalled.addListener(() => {
-  initSupabase();
+chrome.runtime.onInstalled.addListener(async () => {
+  await initSupabase();
   setupContextMenu();
+  await updateActionForSession();
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  initSupabase();
+chrome.runtime.onStartup.addListener(async () => {
+  await initSupabase();
+  await updateActionForSession();
 });
 
 async function initSupabase() {
   supabase = new SupabaseClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-  // In Single User Mode, we must ensure we are NOT using a stale session from a different user
-  // We rely on the 'Allow specific user saves' RLS policy utilizing the Anon Key
-  if (CONFIG.USER_ID) {
-    await supabase.signOut();
-  } else {
-    await supabase.init();
-  }
+  // Load whatever session the popup's sign-in stored. Every save runs as the
+  // signed-in user; there is no anon-key fallback.
+  await supabase.init();
+  return supabase;
 }
+
+async function getClient() {
+  if (!supabase) await initSupabase();
+  return supabase;
+}
+
+// Resolves to the signed-in user's id, refreshing an expired token first.
+// Throws with SIGN_IN_MESSAGE when there is no session to work with, so
+// callers surface a clear state instead of a silent failure.
+async function requireUserId() {
+  const client = await getClient();
+  const token = await client.getAccessToken();
+  if (!token || !client.userId) {
+    throw new Error(SIGN_IN_MESSAGE);
+  }
+  return client.userId;
+}
+
+// The popup is now only the sign-in form. With a session we clear it so a
+// toolbar click fires onClicked and saves in one action; without one we put it
+// back so the click opens the sign-in form instead of failing.
+async function updateActionForSession() {
+  const client = await getClient();
+  const token = await client.getAccessToken();
+  const signedIn = Boolean(token && client.userId);
+  await chrome.action.setPopup({ popup: signedIn ? '' : 'popup.html' });
+}
+
+function setBadge(text, color) {
+  chrome.action.setBadgeText({ text });
+  chrome.action.setBadgeBackgroundColor({ color });
+}
+
+function clearBadgeSoon() {
+  setTimeout(() => chrome.action.setBadgeText({ text: '' }), BADGE_CLEAR_MS);
+}
+
+// The content script can't run on chrome:// pages, the Web Store, or the PDF
+// viewer, so this call fails there. Use the callback form and read
+// runtime.lastError so the rejection can't escape and mask the save result.
+function showToast(tabId, message, isError) {
+  chrome.tabs.sendMessage(tabId, { action: 'showToast', message, isError }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+// One-click save from the toolbar icon
+chrome.action.onClicked.addListener(async (tab) => {
+  const result = await savePage(tab);
+  // The session can expire between the last check and this click; put the
+  // sign-in popup back so the next click has somewhere to go.
+  if (result && result.needsAuth) {
+    await updateActionForSession();
+  }
+});
 
 // Context menu for "Save highlight to Stash"
 function setupContextMenu() {
@@ -47,6 +110,20 @@ function setupContextMenu() {
       title: 'Save page to Stash',
       contexts: ['page'],
     });
+
+    // Right-clicking the toolbar icon is the only route to these now that a
+    // left click saves instead of opening the popup.
+    chrome.contextMenus.create({
+      id: 'open-stash',
+      title: 'Open Stash',
+      contexts: ['action'],
+    });
+
+    chrome.contextMenus.create({
+      id: 'sign-out',
+      title: 'Sign out',
+      contexts: ['action'],
+    });
   });
 }
 
@@ -54,20 +131,27 @@ function setupContextMenu() {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (!supabase) await initSupabase();
+  await getClient();
 
   if (info.menuItemId === 'save-highlight') {
     await saveHighlight(tab, info.selectionText);
   } else if (info.menuItemId === 'save-page') {
     await savePage(tab);
+  } else if (info.menuItemId === 'open-stash') {
+    chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
+  } else if (info.menuItemId === 'sign-out') {
+    await supabase.signOut();
+    await updateActionForSession();
   }
 });
 
 // Save highlighted text
 async function saveHighlight(tab, selectionText) {
   try {
+    const userId = await requireUserId();
+
     const result = await supabase.insert('saves', {
-      user_id: CONFIG.USER_ID,
+      user_id: userId,
       url: tab.url,
       title: tab.title,
       highlight: selectionText,
@@ -75,31 +159,32 @@ async function saveHighlight(tab, selectionText) {
       source: 'extension',
     });
 
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'showToast',
-      message: 'Highlight saved!',
-    });
+    showToast(tab.id, 'Highlight saved!');
     return { success: true };
   } catch (err) {
     console.error('Save highlight failed:', err);
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'showToast',
-      message: 'Failed to save: ' + err.message,
-      isError: true,
-    });
-    return { success: false, error: err.message };
+    showToast(
+      tab.id,
+      err.message === SIGN_IN_MESSAGE ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message,
+      true
+    );
+    return { success: false, error: err.message, needsAuth: err.message === SIGN_IN_MESSAGE };
   }
 }
 
 // Save full page
 async function savePage(tab) {
-  if (!supabase) await initSupabase();
+  await getClient();
+  setBadge('\u2026', '#6b7280');
   try {
     console.log('savePage called for:', tab.url);
-    
+
+    // Fail before extraction if we can't attribute the save to anyone.
+    const userId = await requireUserId();
+
     // ... extraction logic ...
     // (We keep the existing extraction logic, just ensuring error handling bubbles up)
-    
+
     let article;
     // Extract from current page - inject content script first if needed
     console.log('Extracting article...');
@@ -122,10 +207,10 @@ async function savePage(tab) {
       throw new Error('Failed to extract article content');
     }
 
-    console.log('Inserting into Supabase...', { user_id: CONFIG.USER_ID });
-    
+    console.log('Inserting into Supabase...', { user_id: userId });
+
     const result = await supabase.insert('saves', {
-      user_id: CONFIG.USER_ID,
+      user_id: userId,
       url: tab.url,
       title: article.title,
       content: article.content,
@@ -138,20 +223,21 @@ async function savePage(tab) {
     });
     console.log('Insert result:', result);
 
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'showToast',
-      message: 'Page saved!',
-    });
-    
+    showToast(tab.id, 'Page saved!');
+    setBadge('\u2713', '#16a34a');
+    clearBadgeSoon();
+
     return { success: true };
   } catch (err) {
     console.error('Save page failed:', err);
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'showToast',
-      message: 'Failed to save: ' + err.message,
-      isError: true,
-    });
-    return { success: false, error: err.message };
+    showToast(
+      tab.id,
+      err.message === SIGN_IN_MESSAGE ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message,
+      true
+    );
+    setBadge('!', '#dc2626');
+    clearBadgeSoon();
+    return { success: false, error: err.message, needsAuth: err.message === SIGN_IN_MESSAGE };
   }
 }
 
@@ -171,8 +257,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'getUser') {
     (async () => {
-      if (!supabase) await initSupabase();
-      const user = await supabase.getUser();
+      const client = await getClient();
+      const user = await client.getUser();
       sendResponse({ user });
     })();
     return true;
@@ -180,10 +266,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'signIn') {
     (async () => {
-      if (!supabase) await initSupabase();
+      const client = await getClient();
       try {
-        await supabase.signIn(request.email, request.password);
-        const user = await supabase.getUser();
+        await client.signIn(request.email, request.password);
+        const user = await client.getUser();
+        await updateActionForSession();
         sendResponse({ success: true, user });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
@@ -194,8 +281,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'signOut') {
     (async () => {
-      if (!supabase) await initSupabase();
-      await supabase.signOut();
+      const client = await getClient();
+      await client.signOut();
+      await updateActionForSession();
       sendResponse({ success: true });
     })();
     return true;
@@ -203,15 +291,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'getRecentSaves') {
     (async () => {
-      if (!supabase) await initSupabase();
+      const client = await getClient();
       try {
-        const saves = await supabase.select('saves', {
+        await requireUserId();
+        const saves = await client.select('saves', {
           order: 'created_at.desc',
           limit: 10,
         });
         sendResponse({ success: true, saves });
       } catch (err) {
-        sendResponse({ success: false, error: err.message });
+        sendResponse({
+          success: false,
+          error: err.message,
+          needsAuth: err.message === SIGN_IN_MESSAGE,
+        });
       }
     })();
     return true;

@@ -7,14 +7,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const signinBtn = document.getElementById('signin-btn');
   const signupBtn = document.getElementById('signup-btn');
   const signoutBtn = document.getElementById('signout-btn');
-  const savePageBtn = document.getElementById('save-page-btn');
-  const viewInStashBtn = document.getElementById('view-in-stash-btn');
   const savesList = document.getElementById('saves-list');
   const openAppLink = document.getElementById('open-app-link');
 
-  // Single-user mode - skip auth, go straight to main view
-  showMainView();
-  loadRecentSaves();
+  // Saving happens on the toolbar click now, so this popup exists to get the
+  // user signed in. It only opens at all while there is no session, but the
+  // background worker can lag a click behind, so keep the signed-in view.
+  const session = await chrome.runtime.sendMessage({ action: 'getUser' });
+  if (session && session.user) {
+    showMainView();
+    loadRecentSaves();
+  } else {
+    showAuthView();
+  }
 
   function showAuthView() {
     authView.classList.remove('hidden');
@@ -43,12 +48,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (response.success) {
-      showMainView();
-      loadRecentSaves();
-    } else {
-      authError.textContent = response.error;
+      // The background worker has already dropped the popup from the action,
+      // so get out of the way: the next icon click is the save.
+      window.close();
+      return;
     }
 
+    authError.textContent = response.error;
     signinBtn.disabled = false;
     signinBtn.textContent = 'Sign In';
   });
@@ -67,10 +73,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     signupBtn.textContent = 'Signing up...';
     authError.textContent = '';
 
-    // For signup, we'll redirect to the web app
-    // Supabase email confirmation is required by default
-    const signupUrl = `${CONFIG.WEB_APP_URL}/signup`;
-    chrome.tabs.create({ url: signupUrl });
+    // Sign-up happens in the web app: it's invite-only (the address has to be
+    // in allowed_emails) and it's the only place that can run Google OAuth.
+    chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
 
     signupBtn.disabled = false;
     signupBtn.textContent = 'Sign Up';
@@ -82,71 +87,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     showAuthView();
   });
 
-  // Save page
-  savePageBtn.addEventListener('click', async () => {
-    savePageBtn.disabled = true;
-    savePageBtn.innerHTML = `
-      <svg class="spinning" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-      </svg>
-      Saving...
-    `;
-
-    const response = await chrome.runtime.sendMessage({ action: 'savePage' });
-
-    if (response && response.success) {
-      savePageBtn.disabled = false;
-      savePageBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        Saved!
-      `;
-
-      // Reveal the "View in Stash" shortcut now that there's a save to view
-      viewInStashBtn.classList.remove('hidden');
-
-      setTimeout(() => {
-        savePageBtn.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
-          </svg>
-          Save This Page
-        `;
-        loadRecentSaves();
-      }, 1500);
-    } else {
-      savePageBtn.disabled = false;
-      savePageBtn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        Error
-      `;
-      // Error is already shown in toast by background script, but we update UI state
-      setTimeout(() => {
-        savePageBtn.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
-          </svg>
-          Save This Page
-        `;
-      }, 2000);
-    }
-  });
-
   // Load recent saves
   async function loadRecentSaves() {
     const response = await chrome.runtime.sendMessage({ action: 'getRecentSaves' });
 
+    if (response.needsAuth) {
+      showAuthView();
+      return;
+    }
+
     if (!response.success || !response.saves?.length) {
-      savesList.innerHTML = '<p class="empty">No saves yet. Save your first page!</p>';
+      savesList.innerHTML = '<p class="empty">No saves yet. Click the Stash icon to save a page!</p>';
       return;
     }
 
@@ -183,11 +134,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
   });
 
-  // View the just-saved article in the Stash web app
-  viewInStashBtn.addEventListener('click', () => {
-    chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
-  });
-
   // Helper
   function escapeHtml(text) {
     const div = document.createElement('div');
@@ -196,15 +142,3 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
 });
-
-// Add spinning animation
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  .spinning {
-    animation: spin 1s linear infinite;
-  }
-`;
-document.head.appendChild(style);

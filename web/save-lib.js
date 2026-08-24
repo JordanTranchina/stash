@@ -23,11 +23,12 @@
   // page saved as a bare link; a successful scrape always prefers the real
   // page title. `created_at` is an optional ISO timestamp (used by CSV import
   // to preserve the original save date); it is only included when provided so
-  // live shares keep now().
-  function buildScrapeRequest({ url, user_id, source, highlight, created_at, title }) {
+  // live shares keep now(). There is no user_id field — the Edge Function
+  // derives the owner from the caller's JWT, so a save can never be attributed
+  // to anyone but the signed-in user.
+  function buildScrapeRequest({ url, source, highlight, created_at, title }) {
     const request = {
       url: url,
-      user_id: user_id,
       source: source || 'mobile-web',
       highlight: highlight || null,
     };
@@ -36,15 +37,25 @@
     return request;
   }
 
-  // POST a scrape request to the save-page Edge Function. Resolves to true on a
-  // successful save, false otherwise. Throws on network failure so callers can
-  // fall back to the offline queue.
-  async function saveViaScrape(request) {
+  // POST a scrape request to the save-page Edge Function. `accessToken` is the
+  // signed-in user's Supabase access token — the function reads the user from
+  // it, so a save without one has no owner and is refused here rather than
+  // being sent. Resolves to true on a successful save, false otherwise. Throws
+  // on network failure (and on a missing token) so callers can tell a
+  // retry-later failure from a rejection; the thrown Error carries
+  // `.noSession = true` for the missing-token case so callers can prompt a
+  // sign-in instead of queueing.
+  async function saveViaScrape(request, accessToken) {
+    if (!accessToken) {
+      const err = new Error('Not signed in: a save needs a Supabase access token');
+      err.noSession = true;
+      throw err;
+    }
     const res = await fetch(`${CONFIG.SUPABASE_URL}${FUNCTION_PATH}`, {
       method: 'POST',
       headers: {
         'apikey': CONFIG.SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
