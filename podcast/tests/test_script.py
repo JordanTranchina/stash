@@ -252,6 +252,68 @@ class TestBuildDescription:
         assert "• The RSS Renaissance [1:23] — https://ex.com/b" in desc
 
 
+class TestFormatDate:
+    def test_formats_an_iso_timestamp(self):
+        assert script.format_date("2026-02-20T10:00:00Z") == "Feb 20, 2026"
+
+    def test_formats_an_offset_timestamp(self):
+        assert script.format_date("2026-08-01T10:00:00+00:00") == "Aug 1, 2026"
+
+    def test_formats_a_bare_date(self):
+        assert script.format_date("2026-12-05") == "Dec 5, 2026"
+
+    def test_returns_empty_for_missing_or_unparseable_values(self):
+        assert script.format_date(None) == ""
+        assert script.format_date("") == ""
+        assert script.format_date("   ") == ""
+        assert script.format_date("not a date") == ""
+
+
+class TestBuildArticleDates:
+    def test_includes_published_and_saved_dates(self):
+        line = script.build_article_dates(
+            {"published_at": "2026-02-20T10:00:00Z", "created_at": "2026-08-24T09:00:00Z"}
+        )
+        assert line == "Published Feb 20, 2026 · Saved Aug 24, 2026"
+
+    def test_omits_published_when_the_source_had_no_date(self):
+        line = script.build_article_dates({"created_at": "2026-08-24T09:00:00Z"})
+        assert line == "Saved Aug 24, 2026"
+
+    def test_empty_when_neither_date_is_available(self):
+        assert script.build_article_dates({}) == ""
+
+
+class TestDescriptionDates:
+    DATED = [
+        {
+            "title": "Local-First Software",
+            "url": "https://ex.com/a",
+            "published_at": "2026-02-20T10:00:00Z",
+            "created_at": "2026-08-24T09:00:00Z",
+        },
+    ]
+
+    def test_html_shows_published_and_saved_dates(self):
+        desc = script.build_description(self.DATED, {0: 0.0}, html=True)
+        assert "<em>Published Feb 20, 2026 · Saved Aug 24, 2026</em>" in desc
+
+    def test_plain_text_shows_published_and_saved_dates(self):
+        desc = script.build_description(self.DATED, {0: 0.0}, html=False)
+        assert "Published Feb 20, 2026 · Saved Aug 24, 2026" in desc
+        assert "<em>" not in desc
+
+    def test_dates_are_escaped_in_html(self):
+        # A malformed stored date must never break out of the markup.
+        articles = [{"title": "T", "created_at": "<script>", "published_at": None}]
+        desc = script.build_description(articles, html=True)
+        assert "<script>" not in desc
+
+    def test_articles_without_dates_are_unchanged(self):
+        desc = script.build_description([{"title": "T", "url": "https://ex.com/a"}], html=True)
+        assert "Published" not in desc and "Saved" not in desc
+
+
 class TestComputeArticleStartTimes:
     ARTICLES = [{"title": "A"}, {"title": "B"}]
 

@@ -139,3 +139,51 @@ describe('buildHighlightPayload', () => {
     expect(payload.source).toBe('extension');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Duplicate saves
+//
+// The dedup trigger added in supabase/migrations/20260824_saves_url_dedup.sql
+// suppresses the INSERT for a URL that's already stashed (bumping the existing
+// save's date instead), so PostgREST hands back an empty representation.
+// savePage reads that empty array as "already saved" rather than as a failure.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the duplicate detection in background.js savePage. */
+function isDuplicateInsert(result) {
+  return Array.isArray(result) && result.length === 0;
+}
+
+describe('duplicate save detection', () => {
+  test('an empty insert result means the save was deduplicated', () => {
+    expect(isDuplicateInsert([])).toBe(true);
+  });
+
+  test('a returned row means a new save was created', () => {
+    expect(isDuplicateInsert([{ id: 'save-1' }])).toBe(false);
+  });
+
+  test('a non-array response is never treated as a duplicate', () => {
+    expect(isDuplicateInsert(null)).toBe(false);
+    expect(isDuplicateInsert(undefined)).toBe(false);
+    expect(isDuplicateInsert({ id: 'save-1' })).toBe(false);
+  });
+
+  test('background.js reports duplicates instead of claiming a fresh save', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'extension', 'background.js'),
+      'utf8'
+    );
+    expect(source).toContain('Array.isArray(result) && result.length === 0');
+    expect(source).toContain('Already saved');
+    // Highlights are exempt from dedup — several highlights from one page are
+    // distinct saves, so saveHighlight must not report them as duplicates.
+    const highlightFn = source.slice(
+      source.indexOf('async function saveHighlight'),
+      source.indexOf('async function savePage')
+    );
+    expect(highlightFn).not.toContain('duplicate');
+  });
+});

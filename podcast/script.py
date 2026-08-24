@@ -336,11 +336,55 @@ def format_timestamp(seconds):
     return f"{minutes}:{secs:02d}"
 
 
+def format_date(value):
+    """Render an ISO timestamp (or date) as e.g. "Aug 12, 2026".
+
+    Returns "" for anything missing or unparseable so a malformed
+    published_at just drops the date rather than breaking the description.
+    """
+    if not value:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    # Postgres/PostgREST hands back "…Z" or "…+00:00"; fromisoformat only
+    # learned to parse the "Z" suffix in Python 3.11.
+    normalized = text.replace("Z", "+00:00")
+    for candidate in (normalized, normalized[:10]):
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except (ValueError, TypeError):
+            continue
+        # Built by hand rather than with "%b %-d, %Y": the no-pad directive
+        # isn't portable across platforms.
+        return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+    return ""
+
+
+def build_article_dates(article):
+    """One-line "Published … · Saved …" summary for an article.
+
+    The saved date always shows (every save has a created_at); the published
+    date only when the source page exposed one. Returns "" if neither is
+    available.
+    """
+    published = format_date(article.get("published_at"))
+    saved = format_date(article.get("created_at"))
+
+    parts = []
+    if published:
+        parts.append(f"Published {published}")
+    if saved:
+        parts.append(f"Saved {saved}")
+    return " · ".join(parts)
+
+
 def build_description(articles, start_times=None, html=True):
     """Build an episode description listing each article with a link and timestamp.
 
     Args:
-        articles (list): the article dicts (``title`` and ``url``) in the order
+        articles (list): the article dicts (``title``, ``url``, ``published_at``
+            and ``created_at``) in the order
             passed to :func:`generate_script`, so their positions line up with
             the ``article_index`` used for ``start_times``.
         start_times (dict): optional ``{index: seconds}`` (see
@@ -370,6 +414,9 @@ def build_description(articles, start_times=None, html=True):
                 label = title
             if i in start_times:
                 label += f" ({format_timestamp(start_times[i])})"
+            dates = build_article_dates(art)
+            if dates:
+                label += f" — <em>{escape(dates)}</em>"
             items.append(f"<li>{label}</li>")
         return "Discussing:<ul>" + "".join(items) + "</ul>"
 
@@ -380,6 +427,9 @@ def build_description(articles, start_times=None, html=True):
         url = art.get("url")
         suffix = f" — {url}" if url else ""
         lines.append(f"• {title}{stamp}{suffix}")
+        dates = build_article_dates(art)
+        if dates:
+            lines.append(f"  {dates}")
     return "\n".join(lines)
 
 

@@ -157,6 +157,67 @@ describe('StashSave.saveViaScrape', () => {
   });
 });
 
+describe('StashSave.saveViaScrapeDetailed', () => {
+  const CONFIG = {
+    SUPABASE_URL: 'https://fake.supabase.co',
+    SUPABASE_ANON_KEY: 'anon-key',
+  };
+
+  function loadWithFetch(fetchImpl) {
+    const sandbox = { self: {}, CONFIG, fetch: fetchImpl };
+    const code = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'web', 'save-lib.js'),
+      'utf8'
+    );
+    vm.createContext(sandbox);
+    vm.runInContext(code, sandbox);
+    return sandbox.self.StashSave;
+  }
+
+  test('reports a duplicate when the server merged the save into an existing one', async () => {
+    const StashSave = loadWithFetch(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, duplicate: true }) })
+    );
+    const result = await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' });
+    expect(result).toEqual({ ok: true, duplicate: true });
+  });
+
+  test('reports a fresh save as not a duplicate', async () => {
+    const StashSave = loadWithFetch(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, duplicate: false }) })
+    );
+    expect(await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' })).toEqual({
+      ok: true,
+      duplicate: false,
+    });
+  });
+
+  test('a save with an unreadable body still counts as saved', async () => {
+    const StashSave = loadWithFetch(() =>
+      Promise.resolve({ ok: true, json: () => Promise.reject(new Error('bad json')) })
+    );
+    expect(await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' })).toEqual({
+      ok: true,
+      duplicate: false,
+    });
+  });
+
+  test('a non-ok response is not a save', async () => {
+    const StashSave = loadWithFetch(() => Promise.resolve({ ok: false }));
+    expect(await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' })).toEqual({
+      ok: false,
+      duplicate: false,
+    });
+  });
+
+  test('saveViaScrape still answers with a plain boolean', async () => {
+    const StashSave = loadWithFetch(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ duplicate: true }) })
+    );
+    expect(await StashSave.saveViaScrape({ url: 'x', user_id: 'u' })).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 2. Share-target / paste URL extraction (StashSave.extractUrlFromText, used
 //    by save.html's share-target + clipboard fallback and app.js's Add URL

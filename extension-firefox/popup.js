@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
-        Saved!
+        ${response.duplicate ? 'Already saved' : 'Saved!'}
       `;
 
       // Reveal the "View in Stash" shortcut now that there's a save to view

@@ -145,12 +145,19 @@ async function savePage(tab) {
     });
     console.log('Insert result:', result);
 
+    // A duplicate save returns no row: the database's dedup trigger
+    // (supabase/migrations/20260824_saves_url_dedup.sql) recognised the URL as
+    // one that's already stashed and bumped that save's date instead of
+    // inserting a second copy. Report it as a save either way — the article is
+    // in the library and back at the top of the list.
+    const isDuplicate = Array.isArray(result) && result.length === 0;
+
     chrome.tabs.sendMessage(tab.id, {
       action: 'showToast',
-      message: 'Page saved!',
+      message: isDuplicate ? 'Already saved — moved to top' : 'Page saved!',
     });
-    
-    return { success: true };
+
+    return { success: true, duplicate: isDuplicate };
   } catch (err) {
     console.error('Save page failed:', err);
     if (typeof SentryLite !== 'undefined') SentryLite.captureException(err, { tags: { action: 'savePage' } });

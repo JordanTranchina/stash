@@ -36,10 +36,12 @@
     return request;
   }
 
-  // POST a scrape request to the save-page Edge Function. Resolves to true on a
-  // successful save, false otherwise. Throws on network failure so callers can
-  // fall back to the offline queue.
-  async function saveViaScrape(request) {
+  // POST a scrape request to the save-page Edge Function. Resolves to
+  // `{ ok, duplicate }`: `duplicate` is true when the URL was already stashed,
+  // in which case the server bumped the existing save's date instead of
+  // creating a second copy (see supabase/migrations/20260824_saves_url_dedup.sql).
+  // Throws on network failure so callers can fall back to the offline queue.
+  async function saveViaScrapeDetailed(request) {
     const res = await fetch(`${CONFIG.SUPABASE_URL}${FUNCTION_PATH}`, {
       method: 'POST',
       headers: {
@@ -49,7 +51,24 @@
       },
       body: JSON.stringify(request),
     });
-    return res.ok;
+
+    if (!res.ok) return { ok: false, duplicate: false };
+
+    // A save that succeeded but returned an unreadable body is still a save;
+    // only the "was it a duplicate?" detail is lost.
+    try {
+      const body = await res.json();
+      return { ok: true, duplicate: Boolean(body && body.duplicate) };
+    } catch (e) {
+      return { ok: true, duplicate: false };
+    }
+  }
+
+  // Boolean-only form, for callers (offline queue drain, share sheet) that only
+  // need to know whether the save landed.
+  async function saveViaScrape(request) {
+    const { ok } = await saveViaScrapeDetailed(request);
+    return ok;
   }
 
   // Pull the first URL out of arbitrary shared/pasted text. Share sheets and
@@ -67,5 +86,5 @@
     return match[0].replace(/[)\]}>.,;:!?'"]+$/, '');
   }
 
-  root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape, extractUrlFromText };
+  root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape, saveViaScrapeDetailed, extractUrlFromText };
 })(self);
