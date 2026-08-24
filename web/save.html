@@ -291,7 +291,6 @@
           </svg>
         </button>
       </div>
-      <textarea id="highlight" placeholder="Highlight or notes (optional)"></textarea>
       <button type="submit" class="btn" id="save-btn">Save to Stash</button>
     </form>
     <div class="status" id="status"></div>
@@ -315,7 +314,6 @@
     const saveBtn = document.getElementById('save-btn');
     const statusEl = document.getElementById('status');
     const urlInput = document.getElementById('url');
-    const highlightInput = document.getElementById('highlight');
     
     // UI Elements
     const signinPrompt = document.getElementById('signin-prompt');
@@ -534,14 +532,13 @@
       e.preventDefault();
       
       const url = urlInput.value.trim();
-      const highlight = highlightInput.value.trim();
 
-      // The scraper derives the title and site name from the page itself, so
-      // the form only needs the URL and an optional note.
+      // The URL is the whole form. The scraper derives the title, site name and
+      // article body from the page itself.
       const data = window.StashSave.buildScrapeRequest({
         url: url,
         source: 'mobile-web',
-        highlight: highlight || null,
+        highlight: null,
       });
 
       await handleSave(data, false);
@@ -549,7 +546,6 @@
 
     function resetForm() {
       urlInput.value = '';
-      highlightInput.value = '';
     }
     
     function showForm() {
