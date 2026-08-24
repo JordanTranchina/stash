@@ -16,8 +16,8 @@ YOUTUBE_CONTENT_MIN_CHARS = 500
 # Below it there is nothing for the hosts to discuss and they hallucinate to
 # fill the gap: X/Twitter posts save no body at all, paywalled pages save only
 # the teaser paragraph before the wall, and link-only saves (bot-blocked
-# fetches) save nothing but a title. ~750 characters is roughly 120 words.
-MIN_ARTICLE_CHARS = 750
+# fetches) save nothing but a title. ~250 characters is roughly 40 words.
+MIN_ARTICLE_CHARS = 250
 
 # Paywall/consent interstitials leave a short stub of text that *looks* like an
 # article. These phrases only disqualify a save when its body is also short
