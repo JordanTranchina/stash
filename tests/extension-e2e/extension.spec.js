@@ -48,38 +48,49 @@ test('extension loads and registers a background service worker', async () => {
   expect(extensionId).toMatch(/^[a-p]{32}$/);
 });
 
-test('popup renders the main view with a Save button', async () => {
+test('popup opens on the sign-in form when there is no session', async () => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
   await expect(page.locator('header h1')).toHaveText('Stash');
-  // Single-user mode skips auth and shows the main view immediately.
-  await expect(page.locator('#main-view')).toBeVisible();
-  await expect(page.locator('#save-page-btn')).toBeVisible();
-  await expect(page.locator('#auth-view')).toBeHidden();
+  // Saving is attributed to a signed-in user, so a fresh profile lands on the
+  // auth view rather than the library.
+  await expect(page.locator('#auth-view')).toBeVisible();
+  await expect(page.locator('#signin-btn')).toBeVisible();
+  await expect(page.locator('#main-view')).toBeHidden();
 
   await page.close();
 });
 
-test('popup exposes the Open Stash App link and sign-out control', async () => {
+test('popup no longer carries a save button — the toolbar icon is the save', async () => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
+  // Saving moved to a single click on the toolbar icon, so neither the save
+  // button nor the post-save "View in Stash" shortcut exists any more.
+  await expect(page.locator('#save-page-btn')).toHaveCount(0);
+  await expect(page.locator('#view-in-stash-btn')).toHaveCount(0);
+
+  await page.close();
+});
+
+test('signed-in controls live in the main view, behind the session', async () => {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+
+  // Present in the DOM but gated on the main view, which stays hidden until a
+  // session exists. Right-clicking the toolbar icon reaches the same actions.
   await expect(page.locator('#open-app-link')).toHaveText(/Open Stash App/);
-  await expect(page.locator('#signout-btn')).toBeVisible();
+  await expect(page.locator('#signout-btn')).toHaveCount(1);
+  await expect(page.locator('#signout-btn')).toBeHidden();
 
   await page.close();
 });
 
-test('popup has a View in Stash button that is hidden until a page is saved', async () => {
-  const page = await context.newPage();
-  await page.goto(`chrome-extension://${extensionId}/popup.html`);
-
-  const viewBtn = page.locator('#view-in-stash-btn');
-  // The button exists in the DOM but stays hidden until a save succeeds.
-  await expect(viewBtn).toHaveCount(1);
-  await expect(viewBtn).toBeHidden();
-  await expect(viewBtn).toHaveText(/View in Stash/);
-
-  await page.close();
+test('the toolbar icon has no default popup, so a click saves', async () => {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(EXTENSION_PATH, 'manifest.json'), 'utf8')
+  );
+  expect(manifest.action.default_popup).toBeUndefined();
+  expect(manifest.action.default_icon).toBeTruthy();
 });
