@@ -282,7 +282,11 @@
     <h1>Quick Save</h1>
     <form class="form" id="save-form">
       <div class="input-with-button">
-        <input type="url" id="url" placeholder="https://..." required
+        <!-- type="text", not "url": the field accepts a whole forwarded message
+             and digs the link out of it, which the browser's native url
+             validation would reject before the form handler ever ran.
+             inputmode keeps the URL-friendly keyboard on mobile. -->
+        <input type="text" inputmode="url" id="url" placeholder="Paste a link, or text with one in it" required
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <button type="button" class="input-action-btn" id="paste-btn" title="Paste from clipboard" aria-label="Paste from clipboard">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -531,7 +535,21 @@
     saveForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const url = urlInput.value.trim();
+      const raw = urlInput.value.trim();
+      // Share text and forwarded messages rarely arrive as a bare link, so pull
+      // the URL out of whatever was entered rather than failing on the blob.
+      const url = window.StashSave.extractUrlFromText(raw) || raw;
+
+      try {
+        new URL(url);
+      } catch (e) {
+        statusEl.textContent = "That doesn't look like a link. Check for a typo?";
+        statusEl.className = 'status error';
+        statusEl.style.display = 'block';
+        return;
+      }
+
+      urlInput.value = url;
 
       // The URL is the whole form. The scraper derives the title, site name and
       // article body from the page itself.
@@ -616,6 +634,18 @@
       } catch (e) { }
     }
     urlInput.addEventListener('focus', checkClipboard);
+
+    // Native paste (long-press / Ctrl+V) doesn't go through the button below,
+    // so collapse a pasted blob to its link here too — same as the web app's
+    // Add URL field.
+    urlInput.addEventListener('paste', (e) => {
+      const pasted = (e.clipboardData || window.clipboardData).getData('text');
+      const detected = window.StashSave.extractUrlFromText(pasted);
+      if (detected && detected !== pasted.trim()) {
+        e.preventDefault();
+        e.target.value = detected;
+      }
+    });
 
     // Explicit paste, for the (common) case where the focus-triggered read is
     // denied — iOS Safari in particular only allows a clipboard read that a
