@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { reportError } from "../_shared/sentry.ts";
 
 // Convert integer seconds to HH:MM:SS format required by iTunes
 export function formatDuration(seconds: number): string {
@@ -65,7 +66,7 @@ serve(async (req) => {
 
     const { data: episodes, error } = await supabase
       .from("podcast_episodes")
-      .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters")
+      .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters, artwork_url")
       .eq("user_id", feed.user_id)
       .order("created_at", { ascending: false })
       .limit(10);
@@ -94,6 +95,9 @@ serve(async (req) => {
         const chaptersTag = hasChapters
           ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}&token=${token}`)}" type="application/json+chapters"/>`
           : "";
+        const imageTag = ep.artwork_url
+          ? `\n      <itunes:image href="${escapeXml(ep.artwork_url)}"/>`
+          : "";
 
         return `    <item>
       <title>${title}</title>
@@ -102,7 +106,7 @@ serve(async (req) => {
       <guid isPermaLink="false">${ep.id}</guid>
       <enclosure url="${audioUrl}" length="${enclosureLength}" type="audio/mpeg"/>
       <itunes:duration>${duration}</itunes:duration>
-      <itunes:explicit>false</itunes:explicit>${chaptersTag}
+      <itunes:explicit>false</itunes:explicit>${imageTag}${chaptersTag}
     </item>`;
       })
       .join("\n");
@@ -138,6 +142,7 @@ ${items}
       },
     });
   } catch (err) {
+    await reportError(err, "podcast-rss");
     return new Response(`Internal Server Error: ${err.message}`, {
       status: 500,
       headers: { "Content-Type": "text/plain" },

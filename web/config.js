@@ -13,4 +13,9 @@ const CONFIG = {
   // (the workflow has workflow_dispatch enabled). Update the owner/repo to match
   // your fork.
   PODCAST_WORKFLOW_URL: 'https://github.com/JordanTranchina/stash/actions/workflows/podcast.yml',
+
+  // Sentry DSN for client-side error reporting. A Sentry DSN isn't a secret
+  // (it's write-only, meant to be public), so it's safe to commit like the
+  // Supabase anon key above. Leave blank to disable error reporting.
+  SENTRY_DSN: 'https://54bdb933e682bf9d4c9a1103da24fe87@o4511824474210304.ingest.us.sentry.io/4511824499441664',
 };

@@ -330,7 +330,7 @@ class StashApp {
     // Add URL Modal (manually ingest a single link)
     const addUrlModal = document.getElementById('add-url-modal');
 
-    document.getElementById('add-url-settings-btn').addEventListener('click', () => {
+    document.getElementById('header-add-btn').addEventListener('click', () => {
       this.showAddUrlModal();
     });
     addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
@@ -344,6 +344,20 @@ class StashApp {
     });
     document.getElementById('add-url-save-btn').addEventListener('click', () => {
       this.saveUrlManually();
+    });
+    document.getElementById('add-url-paste-btn').addEventListener('click', () => {
+      this.pasteUrlFromClipboard();
+    });
+    // Native paste (long-press / Ctrl+V) doesn't go through the button above,
+    // but people often paste a whole forwarded message rather than a bare
+    // link — detect the URL inside it the same way.
+    document.getElementById('add-url-url').addEventListener('paste', (e) => {
+      const pasted = (e.clipboardData || window.clipboardData).getData('text');
+      const detected = window.StashSave.extractUrlFromText(pasted);
+      if (detected && detected !== pasted.trim()) {
+        e.preventDefault();
+        e.target.value = detected;
+      }
     });
 
     // Import Articles Modal (CSV from other read-it-later services)
@@ -670,12 +684,16 @@ class StashApp {
         `;
       } else {
         const minutes = this.readingTime(save);
+        const publishedDate = this.formattedPublishedDate(save);
+        const publishedSuffix = publishedDate
+          ? `<span class="meta-date-plain"> - ${this.escapeHtml(publishedDate)}</span>`
+          : '';
         const readtime = minutes === null ? '' : `
                 <span class="save-card-readtime">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="9"></circle>
                     <path d="M12 7v5l3 2"></path>
-                  </svg>${minutes} min read
+                  </svg>${minutes} min read${publishedSuffix}
                 </span>`;
         cardHtml = `
           <div class="save-card" data-id="${save.id}">
@@ -970,11 +988,16 @@ class StashApp {
       item.classList.toggle('active', item.dataset.view === view);
     });
 
-    // Sorting only applies to lists of saves, so hide the sort control on
-    // Podcasts and Settings (search stays visible on every view).
+    // Sorting and adding a URL only apply to lists of saves, so hide those
+    // controls on Podcasts and Settings (search stays visible on every view).
+    const showSavesControls = (view === 'all' || view === 'archived') ? '' : 'none';
     const headerSort = document.getElementById('header-sort');
     if (headerSort) {
-      headerSort.style.display = (view === 'all' || view === 'archived') ? '' : 'none';
+      headerSort.style.display = showSavesControls;
+    }
+    const headerAddBtn = document.getElementById('header-add-btn');
+    if (headerAddBtn) {
+      headerAddBtn.style.display = showSavesControls;
     }
 
     // Toggle between the saves view and the settings view
@@ -1011,7 +1034,7 @@ class StashApp {
 
     const { data, error } = await this.supabase
       .from('podcast_episodes')
-      .select('id, title, description, audio_url, duration_seconds, created_at')
+      .select('id, title, description, audio_url, duration_seconds, created_at, artwork_url')
       .order('created_at', { ascending: false });
 
     loading.classList.add('hidden');
@@ -1047,8 +1070,11 @@ class StashApp {
       return `
         <div class="podcast-episode" data-id="${ep.id}">
           <div class="podcast-episode-header">
-            <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
-            <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
+            ${ep.artwork_url ? `<img class="podcast-episode-artwork" src="${this.escapeHtml(ep.artwork_url)}" alt="">` : ''}
+            <div class="podcast-episode-header-text">
+              <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
+              <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
+            </div>
           </div>
           ${ep.description ? `<div class="podcast-episode-desc">${ep.description}</div>` : ''}
           ${ep.audio_url
@@ -1482,6 +1508,15 @@ class StashApp {
     return Math.max(1, Math.round(words / 220));
   }
 
+  // Short "Jul 29" form of the article's original publish date, or null
+  // when the source page didn't expose one.
+  formattedPublishedDate(save) {
+    if (!save.published_at) return null;
+    const d = new Date(save.published_at);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   // Deterministic gradient for the fallback thumbnail tile, derived from the
   // source/title so a given save always gets the same color.
   fallbackGradient(seed) {
@@ -1532,7 +1567,7 @@ class StashApp {
     return `<div style="white-space: pre-wrap;">${this.escapeHtml(text)}</div>`;
   }
 
-  // Add URL Methods (manually ingest a single link from Settings)
+  // Add URL Methods (manually ingest a single link from the home page)
   showAddUrlModal() {
     const modal = document.getElementById('add-url-modal');
     modal.classList.remove('hidden');
@@ -1545,11 +1580,26 @@ class StashApp {
     document.getElementById('add-url-modal').classList.add('hidden');
   }
 
+  async pasteUrlFromClipboard() {
+    const input = document.getElementById('add-url-url');
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        input.value = window.StashSave.extractUrlFromText(text) || text.trim();
+        input.focus();
+      }
+    } catch (error) {
+      console.error('Error reading clipboard:', error);
+      const status = document.getElementById('add-url-status');
+      status.textContent = "Couldn't read clipboard. Paste manually with your keyboard.";
+      status.className = 'digest-status error';
+      status.classList.remove('hidden');
+    }
+  }
+
   resetAddUrlModal() {
     this.addUrlRunning = false;
     document.getElementById('add-url-url').value = '';
-    document.getElementById('add-url-title').value = '';
-    document.getElementById('add-url-highlight').value = '';
     document.getElementById('add-url-status').classList.add('hidden');
 
     const saveBtn = document.getElementById('add-url-save-btn');
@@ -1560,7 +1610,12 @@ class StashApp {
   async saveUrlManually() {
     const status = document.getElementById('add-url-status');
     const saveBtn = document.getElementById('add-url-save-btn');
-    const url = document.getElementById('add-url-url').value.trim();
+    const input = document.getElementById('add-url-url');
+    const raw = input.value.trim();
+    // Belt-and-suspenders: if a URL still made it through surrounded by other
+    // text (e.g. the paste listeners missed it), pull the link out of it here
+    // too rather than failing validation on the whole blob.
+    const url = window.StashSave.extractUrlFromText(raw) || raw;
 
     if (!url) {
       status.textContent = 'Please enter a URL.';
@@ -1578,6 +1633,7 @@ class StashApp {
       return;
     }
 
+    input.value = url;
     this.addUrlRunning = true;
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
@@ -1586,15 +1642,20 @@ class StashApp {
     const request = window.StashSave.buildScrapeRequest({
       url,
       source: 'manual',
-      highlight: document.getElementById('add-url-highlight').value.trim() || null,
-      title: document.getElementById('add-url-title').value.trim() || null,
+      highlight: null,
+      title: null,
     });
 
     try {
-      const ok = await window.StashSave.saveViaScrape(request, await this.getAccessToken());
+      const { ok, duplicate } = await window.StashSave.saveViaScrapeDetailed(
+        request,
+        await this.getAccessToken()
+      );
       if (!ok) throw new Error('Server rejected the save');
 
-      status.textContent = 'Saved!';
+      // Re-saving something you already have isn't an error: the existing save
+      // just moves back to the top of the list.
+      status.textContent = duplicate ? 'Already saved — moved to the top' : 'Saved!';
       status.className = 'digest-status success';
       status.classList.remove('hidden');
 

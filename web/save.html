@@ -7,6 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Quick Save - Stash</title>
+  <!-- Error reporting (see sentry-init.js) -->
+  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
   <style>
     * {
       margin: 0;
@@ -263,6 +265,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="sentry-init.js"></script>
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
   <script>
@@ -398,6 +401,7 @@
           return true;
         } catch (dbErr) {
           console.error('Offline queue save failed', dbErr);
+          if (typeof Sentry !== 'undefined') Sentry.captureException(dbErr, { tags: { action: 'offlineQueueSave' } });
           showSaveError(isAuto);
           return false;
         }
@@ -533,8 +537,7 @@
       // there's no explicit url, pull the first URL out of the shared text
       // wherever it appears, not just when the text starts with it.
       if (!pUrl && pText) {
-        const match = pText.match(/https?:\/\/[^\s]+/);
-        if (match) pUrl = match[0];
+        pUrl = window.StashSave.extractUrlFromText(pText);
       }
 
       // Pre-fill fields always (in case of error fallback). We deliberately do
@@ -567,14 +570,15 @@
       }
     });
 
-    // Auto-paste from clipboard on focus (if permitted)
+    // Auto-paste from clipboard on focus (if permitted). The clipboard is
+    // rarely a bare URL (e.g. a forwarded Slack message or share text with a
+    // title attached), so pull the link out of whatever was copied.
     async function checkClipboard() {
       if (urlInput.value) return;
       try {
         const text = await navigator.clipboard.readText();
-        if (text.startsWith('http')) {
-          urlInput.value = text;
-        }
+        const url = window.StashSave.extractUrlFromText(text);
+        if (url) urlInput.value = url;
       } catch (e) { }
     }
     urlInput.addEventListener('focus', checkClipboard);

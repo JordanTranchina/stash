@@ -9,7 +9,11 @@ A simple, self-hosted Pocket replacement with Chrome extension, web app, and cro
 1. Go to [supabase.com](https://supabase.com) and sign in with GitHub
 2. Create a new project (free tier includes 500MB database, unlimited API requests)
 3. Go to **SQL Editor** and run the contents of `supabase/schema.sql`
-4. Go to **Project Settings > API** and copy:
+4. In the same SQL Editor, run each file in `supabase/migrations/` in filename
+   order. `schema.sql` only covers the original tables; everything added since
+   (podcast episodes, reading progress, URL de-duplication) lives in these
+   migrations, and they're written to be safe to re-run.
+5. Go to **Project Settings > API** and copy:
    - Project URL (e.g., `https://xxxxx.supabase.co`)
    - `anon` public key
 

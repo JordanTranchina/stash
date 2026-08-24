@@ -52,7 +52,8 @@
   background: var(--bg-secondary);
 }
 
-[data-theme="dark"] .header-sort-btn {
+[data-theme="dark"] .header-sort-btn,
+[data-theme="dark"] .header-add-btn {
   background: var(--bg-secondary);
 }
 
@@ -474,6 +475,21 @@ select {
   appearance: none;
 }
 
+/* Add: opens the Add URL modal to save an article from the home page. */
+.header-add-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
 .search-container svg {
   color: var(--text-muted);
   flex-shrink: 0;
@@ -658,6 +674,12 @@ select {
 .save-card-readtime svg {
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+/* Article's original publish date, trailing the read time. Muted a step
+   further than read time itself since it's the quieter of the two facts. */
+.meta-date-plain {
+  color: var(--text-muted);
 }
 
 .save-card-highlight {
@@ -1485,6 +1507,7 @@ select {
 
 .digest-form input[type="email"],
 .digest-form input[type="text"],
+.digest-form input[type="url"],
 .digest-form textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -1493,6 +1516,7 @@ select {
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
+  width: 100%;
 }
 
 .digest-form textarea {
@@ -1501,9 +1525,26 @@ select {
 
 .digest-form input[type="email"]:focus,
 .digest-form input[type="text"]:focus,
+.digest-form input[type="url"]:focus,
 .digest-form textarea:focus {
   outline: none;
   border-color: var(--primary);
+}
+
+.input-with-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.digest-form .input-with-button input {
+  padding-right: 40px;
+}
+
+.input-with-button .input-action-btn {
+  position: absolute;
+  right: 4px;
+  padding: 6px;
 }
 
 .digest-status {
@@ -2026,10 +2067,26 @@ select {
 
 .podcast-episode-header {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.podcast-episode-artwork {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm, 6px);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.podcast-episode-header-text {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .podcast-episode-title {

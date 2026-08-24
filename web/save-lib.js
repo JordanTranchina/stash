@@ -40,12 +40,14 @@
   // POST a scrape request to the save-page Edge Function. `accessToken` is the
   // signed-in user's Supabase access token — the function reads the user from
   // it, so a save without one has no owner and is refused here rather than
-  // being sent. Resolves to true on a successful save, false otherwise. Throws
-  // on network failure (and on a missing token) so callers can tell a
-  // retry-later failure from a rejection; the thrown Error carries
-  // `.noSession = true` for the missing-token case so callers can prompt a
-  // sign-in instead of queueing.
-  async function saveViaScrape(request, accessToken) {
+  // being sent. Resolves to `{ ok, duplicate }`: `duplicate` is true when the
+  // URL was already stashed, in which case the server bumped the existing
+  // save's date instead of creating a second copy (see
+  // supabase/migrations/20260824_saves_url_dedup.sql). Throws on network
+  // failure (and on a missing token) so callers can tell a retry-later failure
+  // from a rejection; the thrown Error carries `.noSession = true` for the
+  // missing-token case so callers can prompt a sign-in instead of queueing.
+  async function saveViaScrapeDetailed(request, accessToken) {
     if (!accessToken) {
       const err = new Error('Not signed in: a save needs a Supabase access token');
       err.noSession = true;
@@ -60,8 +62,40 @@
       },
       body: JSON.stringify(request),
     });
-    return res.ok;
+
+    if (!res.ok) return { ok: false, duplicate: false };
+
+    // A save that succeeded but returned an unreadable body is still a save;
+    // only the "was it a duplicate?" detail is lost.
+    try {
+      const body = await res.json();
+      return { ok: true, duplicate: Boolean(body && body.duplicate) };
+    } catch (e) {
+      return { ok: true, duplicate: false };
+    }
   }
 
-  root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape };
+  // Boolean-only form, for callers (offline queue drain, share sheet) that only
+  // need to know whether the save landed.
+  async function saveViaScrape(request, accessToken) {
+    const { ok } = await saveViaScrapeDetailed(request, accessToken);
+    return ok;
+  }
+
+  // Pull the first URL out of arbitrary shared/pasted text. Share sheets and
+  // clipboard pastes are rarely a bare link — e.g. Android/Google share text
+  // is "Title https://share.google/…", and forwarding a Slack message pastes
+  // the whole "[Updates] Patch Notes (All Platforms) https://…" line. Returns
+  // '' when no URL is found so callers can fall back to treating the input as
+  // a literal (invalid) URL and showing a real error.
+  function extractUrlFromText(text) {
+    if (!text) return '';
+    const match = String(text).match(/https?:\/\/[^\s]+/);
+    if (!match) return '';
+    // Share text often wraps the link in surrounding punctuation
+    // ("(link)", "link.", "<link>") that isn't part of the URL itself.
+    return match[0].replace(/[)\]}>.,;:!?'"]+$/, '');
+  }
+
+  root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape, saveViaScrapeDetailed, extractUrlFromText };
 })(self);

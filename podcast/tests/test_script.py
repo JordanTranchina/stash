@@ -106,6 +106,17 @@ class TestMainFailsLoudly:
         # Should complete without raising SystemExit.
         asyncio.run(script.main())
 
+    def test_exits_nonzero_when_fetch_articles_raises(self, monkeypatch):
+        """A real fetch failure (e.g. schema drift) must not be swallowed as 'no articles'."""
+        def boom(**kw):
+            raise RuntimeError("Error fetching articles: 400 - column does not exist")
+        monkeypatch.setattr(script, "fetch_recent_articles", boom)
+
+        with pytest.raises(SystemExit) as exc:
+            asyncio.run(script.main())
+        assert exc.value.code != 0
+        assert "column does not exist" in str(exc.value.code)
+
     def test_exits_nonzero_when_script_generation_returns_none(self, monkeypatch):
         monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: SAMPLE_ARTICLES)
         monkeypatch.setattr(script, "fetch_podcast_preferences", lambda: script.DEFAULT_PODCAST_PREFS)
@@ -241,6 +252,68 @@ class TestBuildDescription:
         assert "• The RSS Renaissance [1:23] — https://ex.com/b" in desc
 
 
+class TestFormatDate:
+    def test_formats_an_iso_timestamp(self):
+        assert script.format_date("2026-02-20T10:00:00Z") == "Feb 20, 2026"
+
+    def test_formats_an_offset_timestamp(self):
+        assert script.format_date("2026-08-01T10:00:00+00:00") == "Aug 1, 2026"
+
+    def test_formats_a_bare_date(self):
+        assert script.format_date("2026-12-05") == "Dec 5, 2026"
+
+    def test_returns_empty_for_missing_or_unparseable_values(self):
+        assert script.format_date(None) == ""
+        assert script.format_date("") == ""
+        assert script.format_date("   ") == ""
+        assert script.format_date("not a date") == ""
+
+
+class TestBuildArticleDates:
+    def test_includes_published_and_saved_dates(self):
+        line = script.build_article_dates(
+            {"published_at": "2026-02-20T10:00:00Z", "created_at": "2026-08-24T09:00:00Z"}
+        )
+        assert line == "Published Feb 20, 2026 · Saved Aug 24, 2026"
+
+    def test_omits_published_when_the_source_had_no_date(self):
+        line = script.build_article_dates({"created_at": "2026-08-24T09:00:00Z"})
+        assert line == "Saved Aug 24, 2026"
+
+    def test_empty_when_neither_date_is_available(self):
+        assert script.build_article_dates({}) == ""
+
+
+class TestDescriptionDates:
+    DATED = [
+        {
+            "title": "Local-First Software",
+            "url": "https://ex.com/a",
+            "published_at": "2026-02-20T10:00:00Z",
+            "created_at": "2026-08-24T09:00:00Z",
+        },
+    ]
+
+    def test_html_shows_published_and_saved_dates(self):
+        desc = script.build_description(self.DATED, {0: 0.0}, html=True)
+        assert "<em>Published Feb 20, 2026 · Saved Aug 24, 2026</em>" in desc
+
+    def test_plain_text_shows_published_and_saved_dates(self):
+        desc = script.build_description(self.DATED, {0: 0.0}, html=False)
+        assert "Published Feb 20, 2026 · Saved Aug 24, 2026" in desc
+        assert "<em>" not in desc
+
+    def test_dates_are_escaped_in_html(self):
+        # A malformed stored date must never break out of the markup.
+        articles = [{"title": "T", "created_at": "<script>", "published_at": None}]
+        desc = script.build_description(articles, html=True)
+        assert "<script>" not in desc
+
+    def test_articles_without_dates_are_unchanged(self):
+        desc = script.build_description([{"title": "T", "url": "https://ex.com/a"}], html=True)
+        assert "Published" not in desc and "Saved" not in desc
+
+
 class TestComputeArticleStartTimes:
     ARTICLES = [{"title": "A"}, {"title": "B"}]
 
@@ -352,6 +425,42 @@ class TestPodcastPreferences:
 
 
 # ---------------------------------------------------------------------------
+# generate_episode_title
+# ---------------------------------------------------------------------------
+
+class TestGenerateEpisodeTitle:
+    def test_returns_fallback_when_no_api_key(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        result = script.generate_episode_title(SAMPLE_ARTICLES)
+        assert result == script.FALLBACK_EPISODE_TITLE
+
+    def test_returns_fallback_when_no_articles(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        result = script.generate_episode_title([])
+        assert result == script.FALLBACK_EPISODE_TITLE
+
+    def test_returns_generated_title_on_success(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = '"AI Chips and the Future of Search"'
+
+        with patch("script.genai.Client", return_value=mock_client):
+            result = script.generate_episode_title(SAMPLE_ARTICLES)
+
+        assert result == "AI Chips and the Future of Search"
+
+    def test_returns_fallback_on_exception(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("quota exceeded")
+
+        with patch("script.genai.Client", return_value=mock_client):
+            result = script.generate_episode_title(SAMPLE_ARTICLES)
+
+        assert result == script.FALLBACK_EPISODE_TITLE
+
+
+# ---------------------------------------------------------------------------
 # save_to_supabase
 # ---------------------------------------------------------------------------
 
@@ -406,6 +515,80 @@ class TestSaveToSupabase:
         payload = mock_post.call_args[1]["json"]
         assert payload["related_article_ids"] == ["1", "2"]
 
+    def test_payload_uses_passed_in_title(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = [{"id": "ep-001"}]
+
+        with patch("script.requests.post", return_value=mock_response) as mock_post:
+            script.save_to_supabase(SAMPLE_SCRIPT, SAMPLE_ARTICLES, title="Custom Episode Title")
+
+        payload = mock_post.call_args[1]["json"]
+        assert payload["title"] == "Custom Episode Title"
+
+    def test_payload_falls_back_to_default_title_when_none(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = [{"id": "ep-001"}]
+
+        with patch("script.requests.post", return_value=mock_response) as mock_post:
+            script.save_to_supabase(SAMPLE_SCRIPT, SAMPLE_ARTICLES)
+
+        payload = mock_post.call_args[1]["json"]
+        assert payload["title"] == script.FALLBACK_EPISODE_TITLE
+
+
+# ---------------------------------------------------------------------------
+# mark_articles_discussed (FIFO + dedup fix)
+# ---------------------------------------------------------------------------
+
+class TestMarkArticlesDiscussed:
+    def test_returns_false_when_client_not_initialized(self):
+        original = script.supabase_client
+        script.supabase_client = None
+        result = script.mark_articles_discussed(["1", "2"], "ep-001")
+        script.supabase_client = original
+        assert result is False
+
+    def test_returns_false_when_no_article_ids(self):
+        mock_client = MagicMock()
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.mark_articles_discussed([], "ep-001")
+        script.supabase_client = original
+
+        assert result is False
+        mock_client.table.assert_not_called()
+
+    def test_updates_saves_with_episode_id_and_timestamp(self):
+        mock_client = MagicMock()
+        mock_client.table.return_value.update.return_value.in_.return_value.execute.return_value = None
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.mark_articles_discussed(["1", "2"], "ep-001")
+        script.supabase_client = original
+
+        assert result is True
+        mock_client.table.assert_called_with("saves")
+        update_call = mock_client.table.return_value.update.call_args[0][0]
+        assert update_call["podcast_episode_id"] == "ep-001"
+        assert "podcast_discussed_at" in update_call
+        mock_client.table.return_value.update.return_value.in_.assert_called_with("id", ["1", "2"])
+
+    def test_returns_false_on_exception(self):
+        mock_client = MagicMock()
+        mock_client.table.side_effect = Exception("boom")
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.mark_articles_discussed(["1"], "ep-001")
+        script.supabase_client = original
+
+        assert result is False
+
 
 # ---------------------------------------------------------------------------
 # upload_audio_to_supabase
@@ -436,6 +619,39 @@ class TestUploadAudioToSupabase:
         script.supabase_client = original
 
         assert result == "https://cdn.example.com/ep.mp3"
+
+
+# ---------------------------------------------------------------------------
+# upload_artwork_to_supabase
+# ---------------------------------------------------------------------------
+
+class TestUploadArtworkToSupabase:
+    def test_returns_none_when_client_not_initialized(self):
+        original = script.supabase_client
+        script.supabase_client = None
+        result = script.upload_artwork_to_supabase("artwork.jpg", "ep-001")
+        script.supabase_client = original
+        assert result is None
+
+    def test_uploads_file_and_returns_url(self, tmp_path):
+        fake_jpg = tmp_path / "artwork.jpg"
+        fake_jpg.write_bytes(b"fake jpeg data")
+
+        mock_storage = MagicMock()
+        mock_storage.from_.return_value.upload.return_value = None
+        mock_storage.from_.return_value.get_public_url.return_value = "https://cdn.example.com/ep_artwork.jpg"
+
+        mock_client = MagicMock()
+        mock_client.storage = mock_storage
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.upload_artwork_to_supabase(str(fake_jpg), "ep-001")
+        script.supabase_client = original
+
+        assert result == "https://cdn.example.com/ep_artwork.jpg"
+        mock_storage.from_.return_value.upload.assert_called_once()
+        assert mock_storage.from_.call_args_list[0][0][0] == "podcasts"
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +699,25 @@ class TestUpdateEpisodeAudioUrl:
             "audio_url": "https://cdn.example.com/ep.mp3",
             "duration_seconds": 1234,
             "size_bytes": 5000000,
+        })
+        assert result is True
+
+    def test_includes_artwork_url_when_provided(self):
+        """When artwork_url is given, it appears in the update payload."""
+        mock_client = MagicMock()
+        mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value = None
+
+        original = script.supabase_client
+        script.supabase_client = mock_client
+        result = script.update_episode_audio_url(
+            "ep-001", "https://cdn.example.com/ep.mp3",
+            artwork_url="https://cdn.example.com/ep_artwork.jpg",
+        )
+        script.supabase_client = original
+
+        mock_client.table.return_value.update.assert_called_with({
+            "audio_url": "https://cdn.example.com/ep.mp3",
+            "artwork_url": "https://cdn.example.com/ep_artwork.jpg",
         })
         assert result is True
 

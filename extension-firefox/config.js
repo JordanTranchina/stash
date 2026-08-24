@@ -10,6 +10,11 @@ const CONFIG = {
 
   // Your web app URL (after deploying to Vercel/Netlify)
   WEB_APP_URL: "https://stash-lemon-zeta.vercel.app",
+
+  // Sentry DSN for error reporting from the background script (see
+  // sentry-lite.js). A Sentry DSN isn't a secret, so it's safe to commit
+  // like the Supabase anon key above. Leave blank to disable.
+  SENTRY_DSN: "https://54bdb933e682bf9d4c9a1103da24fe87@o4511824474210304.ingest.us.sentry.io/4511824499441664",
 };
 
 // Don't edit below this line

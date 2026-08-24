@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // bundle). We never render <canvas>, so it's only ever lazily referenced.
 import { parseHTML } from "https://esm.sh/linkedom@0.16.8?external=canvas";
 import { Readability } from "https://esm.sh/@mozilla/readability@0.5.0";
+import { reportError } from "../_shared/sentry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -214,6 +215,13 @@ function extractArticle(html: string, url: string) {
                 extractMeta(document, "property", "article:author") ||
                 null;
 
+  // Readability's own metadata pass already checks JSON-LD `datePublished`
+  // and the `article:published_time` meta tag; a `<time datetime>` element
+  // covers the rest (matches the extraction the browser extension does).
+  const published_at = article?.publishedTime ||
+                       document.querySelector("time[datetime]")?.getAttribute("datetime") ||
+                       null;
+
   // Serialize the article body to Markdown, keeping images inline where they
   // appear (Pocket-style) instead of dropping them. Relative image/link URLs
   // are resolved against the article URL so they still load in the reading view.
@@ -230,7 +238,7 @@ function extractArticle(html: string, url: string) {
     content = article.textContent;
   }
 
-  return { title, excerpt, image_url, site_name, author, content };
+  return { title, excerpt, image_url, site_name, author, content, published_at };
 }
 
 // Fetch a URL as a browser would, transparently following redirect-wrapper
@@ -329,6 +337,7 @@ serve(async (req) => {
         image_url: prefetched.image_url || null,
         site_name: prefetched.site_name || new URL(url).hostname.replace("www.", ""),
         author: prefetched.author || null,
+        published_at: prefetched.published_at || null,
       };
     } else {
       // Server-side fetch, following share-link/redirect wrappers to the real
@@ -354,6 +363,7 @@ serve(async (req) => {
         image_url: null,
         site_name: new URL(resolvedUrl).hostname.replace(/^www\./, ""),
         author: null,
+        published_at: null,
       };
     }
 
@@ -400,6 +410,16 @@ serve(async (req) => {
       }
     }
 
+    // The article's own publish date, when the source page exposed one.
+    // Ignore anything that isn't a valid date so a malformed meta tag just
+    // leaves the save without one instead of failing the insert.
+    if (article.published_at) {
+      const p = new Date(article.published_at);
+      if (!isNaN(p.getTime())) {
+        saveData.published_at = p.toISOString();
+      }
+    }
+
     // Save to database. Still the service-role client — the row is written with
     // the JWT-derived user_id above, so bypassing RLS here doesn't widen access.
     const supabase = createClient(
@@ -407,22 +427,42 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // `maybeSingle` rather than `single`: a duplicate save legitimately returns
+    // no row. The database's dedup trigger (supabase/migrations/
+    // 20260824_saves_url_dedup.sql) recognises a URL that's already stashed and
+    // bumps that save's date instead of inserting a second copy, so PostgREST
+    // has nothing to hand back.
     const { data, error } = await supabase
       .from("saves")
       .insert(saveData)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw error;
     }
 
+    if (!data) {
+      // Look up the save this one collapsed into so the caller can link to it.
+      const { data: existing } = await supabase.rpc("stash_find_save_by_url", {
+        p_user_id: user_id,
+        p_url: resolvedUrl,
+      });
+      const existingSave = Array.isArray(existing) ? existing[0] : existing;
+
+      return new Response(
+        JSON.stringify({ success: true, duplicate: true, save: existingSave ?? null }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ success: true, save: data }),
+      JSON.stringify({ success: true, duplicate: false, save: data }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (err) {
+    await reportError(err, "save-page");
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

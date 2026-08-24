@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import edge_tts
 from extract import fetch_recent_articles
 from assembly import assemble_episode
+from artwork import build_episode_collage
 from supabase import create_client, Client
 
 # Load environment variables
@@ -176,6 +177,45 @@ def generate_script(articles, prefs=None):
         # of silently returning None so the pipeline can fail loudly.
         raise RuntimeError(f"Gemini script generation failed ({GEMINI_MODEL}): {e}") from e
 
+
+FALLBACK_EPISODE_TITLE = "Listen Later"
+
+
+def generate_episode_title(articles, prefs=None):
+    """Ask Gemini for a short, punchy episode title summarizing the articles covered.
+
+    Falls back to FALLBACK_EPISODE_TITLE if GEMINI_API_KEY is missing, there
+    are no articles, or generation fails for any reason — the title is
+    cosmetic, so this never raises.
+    """
+    if not articles:
+        return FALLBACK_EPISODE_TITLE
+
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        return FALLBACK_EPISODE_TITLE
+
+    titles = [art["title"] for art in articles if art.get("title")]
+    if not titles:
+        return FALLBACK_EPISODE_TITLE
+
+    prompt = (
+        "Write a short, catchy podcast episode title (under 70 characters, "
+        "no surrounding quotes, no date) that captures what this episode "
+        "covers, based on the following articles:\n"
+        + "\n".join(f"- {t}" for t in titles)
+    )
+
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        title = response.text.strip().strip('"').strip()
+        return title or FALLBACK_EPISODE_TITLE
+    except Exception as e:
+        print(f"Warning: could not generate episode title, using fallback: {e}")
+        return FALLBACK_EPISODE_TITLE
+
+
 # Voices assigned to host slot A and slot B respectively.
 VOICE_A = "en-US-AndrewNeural"  # Confident, male
 VOICE_B = "en-US-AvaNeural"     # Friendly, female
@@ -296,11 +336,55 @@ def format_timestamp(seconds):
     return f"{minutes}:{secs:02d}"
 
 
+def format_date(value):
+    """Render an ISO timestamp (or date) as e.g. "Aug 12, 2026".
+
+    Returns "" for anything missing or unparseable so a malformed
+    published_at just drops the date rather than breaking the description.
+    """
+    if not value:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    # Postgres/PostgREST hands back "…Z" or "…+00:00"; fromisoformat only
+    # learned to parse the "Z" suffix in Python 3.11.
+    normalized = text.replace("Z", "+00:00")
+    for candidate in (normalized, normalized[:10]):
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except (ValueError, TypeError):
+            continue
+        # Built by hand rather than with "%b %-d, %Y": the no-pad directive
+        # isn't portable across platforms.
+        return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+    return ""
+
+
+def build_article_dates(article):
+    """One-line "Published … · Saved …" summary for an article.
+
+    The saved date always shows (every save has a created_at); the published
+    date only when the source page exposed one. Returns "" if neither is
+    available.
+    """
+    published = format_date(article.get("published_at"))
+    saved = format_date(article.get("created_at"))
+
+    parts = []
+    if published:
+        parts.append(f"Published {published}")
+    if saved:
+        parts.append(f"Saved {saved}")
+    return " · ".join(parts)
+
+
 def build_description(articles, start_times=None, html=True):
     """Build an episode description listing each article with a link and timestamp.
 
     Args:
-        articles (list): the article dicts (``title`` and ``url``) in the order
+        articles (list): the article dicts (``title``, ``url``, ``published_at``
+            and ``created_at``) in the order
             passed to :func:`generate_script`, so their positions line up with
             the ``article_index`` used for ``start_times``.
         start_times (dict): optional ``{index: seconds}`` (see
@@ -330,6 +414,9 @@ def build_description(articles, start_times=None, html=True):
                 label = title
             if i in start_times:
                 label += f" ({format_timestamp(start_times[i])})"
+            dates = build_article_dates(art)
+            if dates:
+                label += f" — <em>{escape(dates)}</em>"
             items.append(f"<li>{label}</li>")
         return "Discussing:<ul>" + "".join(items) + "</ul>"
 
@@ -340,10 +427,13 @@ def build_description(articles, start_times=None, html=True):
         url = art.get("url")
         suffix = f" — {url}" if url else ""
         lines.append(f"• {title}{stamp}{suffix}")
+        dates = build_article_dates(art)
+        if dates:
+            lines.append(f"  {dates}")
     return "\n".join(lines)
 
 
-def save_to_supabase(script, articles):
+def save_to_supabase(script, articles, title=None):
     """Save the generated script and metadata to Supabase."""
     if not all([SUPABASE_URL, SUPABASE_KEY, USER_ID]):
         print("Error: Missing Supabase credentials. Skipping Supabase save.")
@@ -359,8 +449,7 @@ def save_to_supabase(script, articles):
 
     # Generate metadata
     article_ids = [art["id"] for art in articles]
-    date_str = datetime.now().strftime("%B %d, %Y")
-    title = f"Listen Later: {date_str}"
+    title = title or FALLBACK_EPISODE_TITLE
 
     # Description with a hyperlink to each article. Timestamps are added later,
     # once audio has been generated (see update_episode_audio_url in main()).
@@ -411,6 +500,29 @@ def upload_audio_to_supabase(file_path, episode_id):
         print(f"Error uploading audio to Supabase: {e}")
         return None
 
+def upload_artwork_to_supabase(file_path, episode_id):
+    """Uploads the episode's collage artwork JPEG to Supabase Storage and returns the public URL."""
+    if not supabase_client:
+        print("Error: Supabase client not initialized. Cannot upload artwork.")
+        return None
+
+    filename = f"episode_{episode_id}_artwork.jpg"
+
+    try:
+        with open(file_path, 'rb') as f:
+            supabase_client.storage.from_("podcasts").upload(
+                path=filename,
+                file=f,
+                file_options={"content-type": "image/jpeg"}
+            )
+        print(f"Uploaded artwork to Supabase Storage: {filename}")
+
+        res = supabase_client.storage.from_("podcasts").get_public_url(filename)
+        return res
+    except Exception as e:
+        print(f"Error uploading artwork to Supabase: {e}")
+        return None
+
 def get_audio_metadata(file_path):
     """Returns (duration_seconds, size_bytes) for an MP3 using ffprobe + os.path."""
     size_bytes = os.path.getsize(file_path)
@@ -434,9 +546,10 @@ def get_audio_metadata(file_path):
 
 
 def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_bytes=None,
-                             chapters=None, description=None):
+                             chapters=None, description=None, artwork_url=None):
     """Updates the database record with the audio URL, duration, size, chapters,
-    and (optionally) a refreshed description carrying per-article timestamps."""
+    and (optionally) a refreshed description carrying per-article timestamps
+    and/or the episode's collage artwork URL."""
     if not supabase_client:
         return False
 
@@ -449,6 +562,8 @@ def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_
         update_data["chapters"] = chapters
     if description is not None:
         update_data["description"] = description
+    if artwork_url is not None:
+        update_data["artwork_url"] = artwork_url
 
     try:
         supabase_client.table("podcast_episodes").update(
@@ -459,6 +574,27 @@ def update_episode_audio_url(episode_id, audio_url, duration_seconds=None, size_
     except Exception as e:
         print(f"Error updating database with audio URL: {e}")
         return False
+
+def mark_articles_discussed(article_ids, episode_id):
+    """Flag saves as covered by this episode (dedup, see extract.py).
+
+    Excluding these going forward, independent of is_archived, keeps a save
+    from being re-discussed in a future episode.
+    """
+    if not supabase_client or not article_ids:
+        return False
+
+    try:
+        supabase_client.table("saves").update({
+            "podcast_episode_id": episode_id,
+            "podcast_discussed_at": datetime.utcnow().isoformat(),
+        }).in_("id", article_ids).execute()
+        print(f"Marked {len(article_ids)} article(s) as discussed (episode {episode_id})")
+        return True
+    except Exception as e:
+        print(f"Warning: could not mark articles as discussed: {e}")
+        return False
+
 
 def save_script_locally(script, filename="podcast/script.json"):
     """Save the generated script to a local file."""
@@ -475,12 +611,15 @@ def fail(reason):
 
 async def main():
     print("Fetching articles...")
-    articles = fetch_recent_articles(limit=3)
+    try:
+        articles = fetch_recent_articles(limit=3)
+    except Exception as e:
+        fail(str(e))
 
-    # Not a failure: there simply weren't any recent unarchived articles to use.
+    # Not a failure: there simply weren't any unarchived, undiscussed articles to use.
     # Exit 0 so the scheduled run stays green on quiet days.
     if not articles:
-        print("No recent articles found in the lookback window — nothing to generate. "
+        print("No unarchived, undiscussed articles found — nothing to generate. "
               "Exiting cleanly (this is not an error).")
         return
 
@@ -499,10 +638,27 @@ async def main():
 
     save_script_locally(script)
 
-    episode_id = save_to_supabase(script, articles)
+    title = generate_episode_title(articles, prefs=prefs)
+
+    episode_id = save_to_supabase(script, articles, title)
     if not episode_id:
         fail("could not save the episode record to Supabase — check "
              "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / USER_ID.")
+
+    mark_articles_discussed([art["id"] for art in articles], episode_id)
+
+    # Best-effort collage artwork from the covered articles' images. Never
+    # fatal — an episode with no artwork is fine, this is enrichment only.
+    artwork_url = None
+    image_urls = [art["image_url"] for art in articles if art.get("image_url")]
+    if image_urls:
+        collage_path = build_episode_collage(image_urls, "podcast/output/artwork.jpg")
+        if collage_path:
+            artwork_url = upload_artwork_to_supabase(collage_path, episode_id)
+            if not artwork_url:
+                print("Warning: failed to upload episode artwork; continuing without it.")
+        else:
+            print("Warning: could not build episode artwork from article images; continuing without it.")
 
     print("\nPreview of first 3 lines:")
     for line in script[:3]:
@@ -529,7 +685,7 @@ async def main():
     # Assemble Episode
     print("Assembling episode...")
     metadata = {
-        "title": f"Listen Later: {datetime.now().strftime('%B %d, %Y')}",
+        "title": title,
         "artist": "Listen Later",
         "album": "Stash Podcast",
         "description": text_description,
@@ -551,7 +707,7 @@ async def main():
     duration_seconds, size_bytes = get_audio_metadata("podcast/output/episode.mp3")
     if not update_episode_audio_url(
         episode_id, audio_url, duration_seconds, size_bytes, chapters=chapters or None,
-        description=html_description,
+        description=html_description, artwork_url=artwork_url,
     ):
         fail("uploaded the MP3 but failed to update the episode row with its audio URL.")
 

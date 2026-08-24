@@ -7,7 +7,13 @@
 // sharing one global scope, so config.js/supabase.js are already defined by
 // the time this file runs and importScripts doesn't exist.
 if (typeof importScripts === 'function') {
-  importScripts('config.js', 'supabase.js');
+  importScripts('config.js', 'supabase.js', 'sentry-lite.js');
+}
+
+if (typeof SentryLite !== 'undefined') {
+  SentryLite.init(CONFIG.SENTRY_DSN);
+  self.addEventListener('error', (e) => SentryLite.captureException(e.error || e.message));
+  self.addEventListener('unhandledrejection', (e) => SentryLite.captureException(e.reason));
 }
 
 let supabase = null;
@@ -163,12 +169,14 @@ async function saveHighlight(tab, selectionText) {
     return { success: true };
   } catch (err) {
     console.error('Save highlight failed:', err);
-    showToast(
-      tab.id,
-      err.message === SIGN_IN_MESSAGE ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message,
-      true
-    );
-    return { success: false, error: err.message, needsAuth: err.message === SIGN_IN_MESSAGE };
+    const needsAuth = err.message === SIGN_IN_MESSAGE;
+    // Being signed out is an expected state, not a bug; only real failures are
+    // worth a Sentry event.
+    if (!needsAuth && typeof SentryLite !== 'undefined') {
+      SentryLite.captureException(err, { tags: { action: 'saveHighlight' } });
+    }
+    showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
+    return { success: false, error: err.message, needsAuth };
   }
 }
 
@@ -223,21 +231,28 @@ async function savePage(tab) {
     });
     console.log('Insert result:', result);
 
-    showToast(tab.id, 'Page saved!');
+    // A duplicate save returns no row: the database's dedup trigger
+    // (supabase/migrations/20260824_saves_url_dedup.sql) recognised the URL as
+    // one that's already stashed and bumped that save's date instead of
+    // inserting a second copy. Report it as a save either way — the article is
+    // in the library and back at the top of the list.
+    const isDuplicate = Array.isArray(result) && result.length === 0;
+
+    showToast(tab.id, isDuplicate ? 'Already saved — moved to top' : 'Page saved!');
     setBadge('\u2713', '#16a34a');
     clearBadgeSoon();
 
-    return { success: true };
+    return { success: true, duplicate: isDuplicate };
   } catch (err) {
     console.error('Save page failed:', err);
-    showToast(
-      tab.id,
-      err.message === SIGN_IN_MESSAGE ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message,
-      true
-    );
+    const needsAuth = err.message === SIGN_IN_MESSAGE;
+    if (!needsAuth && typeof SentryLite !== 'undefined') {
+      SentryLite.captureException(err, { tags: { action: 'savePage' } });
+    }
+    showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
     setBadge('!', '#dc2626');
     clearBadgeSoon();
-    return { success: false, error: err.message, needsAuth: err.message === SIGN_IN_MESSAGE };
+    return { success: false, error: err.message, needsAuth };
   }
 }
 
