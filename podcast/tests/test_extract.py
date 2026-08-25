@@ -7,6 +7,8 @@ without making real network calls to Supabase. All HTTP requests are mocked.
 
 import sys
 import os
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -177,8 +179,60 @@ class TestFetchRecentArticles:
         # Ineligible saves are filtered after the query, so we ask for a pool of
         # candidates rather than exactly `limit` rows.
         assert params["limit"] > 3
-        assert "created_at" not in params  # no recency-window cutoff anymore
         assert "published_at" in params["select"]
+
+    def test_queries_only_saves_from_the_last_24_hours(self, monkeypatch):
+        """Episodes are a digest of what was just saved, so the query carries a
+        24-hour floor on created_at rather than reaching into the backlog."""
+        self._patch_env(monkeypatch)
+        monkeypatch.delenv("PODCAST_MAX_AGE_HOURS", raising=False)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [MOCK_ARTICLE]
+
+        before = datetime.now(timezone.utc)
+        with patch("extract.requests.get", return_value=mock_response) as mock_get:
+            extract.fetch_recent_articles(limit=3)
+        after = datetime.now(timezone.utc)
+
+        cutoff_param = mock_get.call_args.kwargs["params"]["created_at"]
+        assert cutoff_param.startswith("gte.")
+        cutoff = datetime.fromisoformat(cutoff_param[len("gte."):])
+        assert before - timedelta(hours=24) <= cutoff <= after - timedelta(hours=24)
+
+    def test_max_age_window_is_overridable(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        monkeypatch.setenv("PODCAST_MAX_AGE_HOURS", "72")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [MOCK_ARTICLE]
+
+        before = datetime.now(timezone.utc)
+        with patch("extract.requests.get", return_value=mock_response) as mock_get:
+            extract.fetch_recent_articles(limit=3)
+
+        cutoff = datetime.fromisoformat(
+            mock_get.call_args.kwargs["params"]["created_at"][len("gte."):]
+        )
+        assert cutoff <= before - timedelta(hours=71.9)
+        assert cutoff > before - timedelta(hours=73)
+
+    def test_invalid_max_age_falls_back_to_default(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        monkeypatch.setenv("PODCAST_MAX_AGE_HOURS", "not-a-number")
+        assert extract.get_max_age_hours() == extract.DEFAULT_MAX_AGE_HOURS
+        monkeypatch.setenv("PODCAST_MAX_AGE_HOURS", "0")
+        assert extract.get_max_age_hours() == extract.DEFAULT_MAX_AGE_HOURS
+
+    def test_returns_nothing_when_no_recent_saves(self, monkeypatch):
+        """A quiet day yields no episode rather than dredging up old saves."""
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+
+        with patch("extract.requests.get", return_value=mock_response):
+            assert extract.fetch_recent_articles(limit=3) == []
 
     def test_recently_saved_article_surfaces_before_ancient_one(self, monkeypatch):
         """Regression test: episodes were discussing years-old undiscussed
