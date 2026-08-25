@@ -88,13 +88,44 @@
   // the whole "[Updates] Patch Notes (All Platforms) https://…" line. Returns
   // '' when no URL is found so callers can fall back to treating the input as
   // a literal (invalid) URL and showing a real error.
+  // A whole string that reads as a host, optionally with port and path —
+  // "example.com", "www.example.com/a?b=1", "sub.example.co.uk:8443". The
+  // final label must be 2+ letters, so "1.2.3", "e.g" and "etc." don't
+  // qualify as hosts.
+  const BARE_HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}(?::\d{2,5})?(?:[\/?#]\S*)?$/i;
+
+  // A www.-prefixed token anywhere in a sentence. The prefix is a strong
+  // enough signal to pick a host out of prose without a scheme; a bare
+  // "example.com" mid-sentence is not (it would also match "Node.js" and
+  // "report.pdf"), so that case is only honoured when it is the whole input.
+  const WWW_TOKEN = /\bwww\.[^\s]+/i;
+
+  // Share text often wraps the link in surrounding punctuation
+  // ("(link)", "link.", "<link>") that isn't part of the URL itself.
+  function trimWrappingPunctuation(url) {
+    return url.replace(/[)\]}>.,;:!?'"]+$/, '');
+  }
+
   function extractUrlFromText(text) {
     if (!text) return '';
-    const match = String(text).match(/https?:\/\/[^\s]+/);
-    if (!match) return '';
-    // Share text often wraps the link in surrounding punctuation
-    // ("(link)", "link.", "<link>") that isn't part of the URL itself.
-    return match[0].replace(/[)\]}>.,;:!?'"]+$/, '');
+    const raw = String(text);
+
+    const scheme = raw.match(/https?:\/\/[^\s]+/);
+    if (scheme) return trimWrappingPunctuation(scheme[0]);
+
+    // No scheme. A browser's address bar takes "example.com" and so does a
+    // share sheet that stripped the protocol, so rejecting those as "not a
+    // link" is just pedantry — assume https and carry on.
+    const whole = trimWrappingPunctuation(raw.trim());
+    if (BARE_HOST.test(whole)) return 'https://' + whole;
+
+    const www = raw.match(WWW_TOKEN);
+    if (www) {
+      const host = trimWrappingPunctuation(www[0]);
+      if (BARE_HOST.test(host)) return 'https://' + host;
+    }
+
+    return '';
   }
 
   root.StashSave = { FUNCTION_PATH, buildScrapeRequest, saveViaScrape, saveViaScrapeDetailed, extractUrlFromText };

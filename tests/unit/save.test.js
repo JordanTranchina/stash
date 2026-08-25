@@ -306,6 +306,56 @@ describe('StashSave.extractUrlFromText', () => {
       'https://example.com/bar'
     );
   });
+
+  test('takes the target out of a Markdown link, not the label', () => {
+    expect(
+      StashSave.extractUrlFromText('[www.example.com](https://www.example.com/piece)')
+    ).toBe('https://www.example.com/piece');
+  });
+
+  // A browser's address bar accepts a bare host, and share sheets sometimes
+  // strip the protocol, so these are links a person plainly meant.
+  test('assumes https for a bare host pasted on its own', () => {
+    expect(StashSave.extractUrlFromText('example.com')).toBe('https://example.com');
+    expect(StashSave.extractUrlFromText('www.example.com')).toBe('https://www.example.com');
+    expect(StashSave.extractUrlFromText('  example.com  ')).toBe('https://example.com');
+  });
+
+  test('keeps the path, query and port on a bare host', () => {
+    expect(StashSave.extractUrlFromText('example.com/a/b?c=1#d')).toBe(
+      'https://example.com/a/b?c=1#d'
+    );
+    expect(StashSave.extractUrlFromText('sub.example.co.uk:8443/x')).toBe(
+      'https://sub.example.co.uk:8443/x'
+    );
+  });
+
+  test('strips trailing punctuation from a bare host', () => {
+    expect(StashSave.extractUrlFromText('example.com.')).toBe('https://example.com');
+  });
+
+  test('finds a www. host inside a sentence', () => {
+    expect(StashSave.extractUrlFromText('check out www.example.com its good')).toBe(
+      'https://www.example.com'
+    );
+  });
+
+  // Without a scheme or a www. prefix, a dotted token mid-sentence is far more
+  // likely to be prose than a link, so it is only honoured on its own.
+  test('does not treat a dotted word inside a sentence as a host', () => {
+    expect(StashSave.extractUrlFromText('I rewrote it in Node.js last week')).toBe('');
+    expect(StashSave.extractUrlFromText('open report.pdf and tell me')).toBe('');
+  });
+
+  test('does not treat version numbers or abbreviations as hosts', () => {
+    expect(StashSave.extractUrlFromText('1.2.3')).toBe('');
+    expect(StashSave.extractUrlFromText('e.g')).toBe('');
+    expect(StashSave.extractUrlFromText('etc.')).toBe('');
+  });
+
+  test('still returns empty for text with nothing link-shaped in it', () => {
+    expect(StashSave.extractUrlFromText('just a plain title, no link')).toBe('');
+  });
 });
 
 // ---------------------------------------------------------------------------
