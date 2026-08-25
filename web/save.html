@@ -201,6 +201,24 @@
       color: #991b1b;
     }
 
+    /* Underlined text, not a second filled button — reporting a miss is a
+       secondary path out of the error, and shouldn't compete with the save
+       control sitting right below it. */
+    .report-btn {
+      display: block;
+      margin: 8px auto 0;
+      padding: 6px 8px;
+      background: none;
+      border: none;
+      color: #991b1b;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+
     .hint {
       font-size: 13px;
       color: #6b7280;
@@ -549,6 +567,44 @@
       return false;
     }
 
+    // We couldn't find a URL in what was entered. The detector is a regex over
+    // free text, so it has real blind spots (a bare domain with no scheme is
+    // the common one) — offer a way to say so rather than insisting the user
+    // is wrong. Reporting sends the text that was in the box, so it is behind
+    // an explicit tap and never automatic.
+    function showNoLinkFound(raw) {
+      statusEl.className = 'status error';
+      statusEl.style.display = 'block';
+      statusEl.textContent = '';
+
+      const message = document.createElement('div');
+      message.textContent = "Couldn't find a link inside of this text. Perhaps a typo?";
+      statusEl.appendChild(message);
+
+      const report = document.createElement('button');
+      report.type = 'button';
+      report.className = 'report-btn';
+      report.textContent = 'There is a link in here';
+      report.addEventListener('click', () => {
+        reportMissedLink(raw);
+        statusEl.textContent = "Thanks — we'll take a look at why we missed it.";
+      });
+      statusEl.appendChild(report);
+    }
+
+    // Send the text we failed to parse, so the detector can be fixed against
+    // real misses instead of guesses. Only ever called from the button above.
+    function reportMissedLink(raw) {
+      const text = String(raw || '').slice(0, 500);
+      console.warn('Reported missed link:', text);
+      if (typeof Sentry === 'undefined') return;
+      Sentry.captureMessage('Missed link reported by user', {
+        level: 'info',
+        tags: { action: 'missedLinkReport' },
+        extra: { text: text, length: String(raw || '').length },
+      });
+    }
+
     // Signed out: drop back to the form (the shared URL is already pre-filled
     // there) and point at the sign-in page instead of pretending we saved.
     function showSignInRequired(isAuto) {
@@ -629,9 +685,7 @@
       try {
         new URL(url);
       } catch (e) {
-        statusEl.textContent = "That doesn't look like a link. Check for a typo?";
-        statusEl.className = 'status error';
-        statusEl.style.display = 'block';
+        showNoLinkFound(raw);
         return;
       }
 
