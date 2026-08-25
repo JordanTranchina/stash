@@ -616,11 +616,12 @@ async def main():
     except Exception as e:
         fail(str(e))
 
-    # Not a failure: there simply weren't any unarchived, undiscussed articles to use.
-    # Exit 0 so the scheduled run stays green on quiet days.
+    # Not a failure: nothing was saved recently enough to discuss (see
+    # fetch_recent_articles' recency window). Exit 0 so the scheduled run stays
+    # green on quiet days.
     if not articles:
-        print("No unarchived, undiscussed articles found — nothing to generate. "
-              "Exiting cleanly (this is not an error).")
+        print("No recent unarchived, undiscussed articles found — nothing to "
+              "generate. Exiting cleanly (this is not an error).")
         return
 
     # Load custom host personalities once and reuse for script + audio (#13)
