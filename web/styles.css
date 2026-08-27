@@ -2071,6 +2071,13 @@ select {
   color: var(--primary);
 }
 
+.app-version {
+  margin-top: 8px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
 /* Weekly Review */
 .weekly-review {
   max-width: 900px;

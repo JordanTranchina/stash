@@ -43,6 +43,20 @@ class StashApp {
 
     this.bindEvents();
     this.setupRealtime();
+    this.renderVersion();
+  }
+
+  // Show the current build/version at the bottom of Settings. STASH_VERSION is
+  // written by .github/workflows/version-bump.yml on every merge to main.
+  renderVersion() {
+    const el = document.getElementById('app-version');
+    const v = window.STASH_VERSION;
+    if (!el || !v) return;
+    const parts = [];
+    if (v.build) parts.push(`Build ${v.build}`);
+    if (v.date) parts.push(`updated ${v.date}`);
+    el.textContent = parts.join(' · ');
+    if (v.commit) el.title = `commit ${v.commit}`;
   }
 
   // Theme Management
