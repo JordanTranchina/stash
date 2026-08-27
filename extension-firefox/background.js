@@ -7,13 +7,17 @@
 // sharing one global scope, so config.js/supabase.js are already defined by
 // the time this file runs and importScripts doesn't exist.
 if (typeof importScripts === 'function') {
-  importScripts('config.js', 'supabase.js', 'sentry-lite.js');
+  importScripts('config.js', 'supabase.js', 'sentry-lite.js', 'analytics.js');
 }
 
 if (typeof SentryLite !== 'undefined') {
   SentryLite.init(CONFIG.SENTRY_DSN);
   self.addEventListener('error', (e) => SentryLite.captureException(e.error || e.message));
   self.addEventListener('unhandledrejection', (e) => SentryLite.captureException(e.reason));
+}
+
+if (typeof StashAnalytics !== 'undefined') {
+  StashAnalytics.init(CONFIG.POSTHOG_API_KEY, CONFIG.POSTHOG_HOST, CONFIG.USER_ID);
 }
 
 let supabase = null;
@@ -166,6 +170,9 @@ async function saveHighlight(tab, selectionText) {
     });
 
     showToast(tab.id, 'Highlight saved!');
+    if (typeof StashAnalytics !== 'undefined') {
+      StashAnalytics.capture('save_created', { source: 'extension', type: 'highlight' });
+    }
     return { success: true };
   } catch (err) {
     console.error('Save highlight failed:', err);
@@ -241,6 +248,9 @@ async function savePage(tab) {
     showToast(tab.id, isDuplicate ? 'Already saved — moved to top' : 'Page saved!');
     setBadge('\u2713', '#16a34a');
     clearBadgeSoon();
+    if (typeof StashAnalytics !== 'undefined') {
+      StashAnalytics.capture('save_created', { source: 'extension', type: 'page', duplicate: isDuplicate });
+    }
 
     return { success: true, duplicate: isDuplicate };
   } catch (err) {

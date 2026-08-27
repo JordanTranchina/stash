@@ -1,4 +1,6 @@
 import os
+from datetime import datetime, timedelta, timezone
+
 import requests
 from dotenv import load_dotenv
 
@@ -55,9 +57,35 @@ PAYWALL_MAX_CHARS = 2500
 CANDIDATE_MULTIPLIER = 6
 MIN_CANDIDATE_POOL = 20
 
+# Only saves from the last day are eligible. The show is a daily digest of what
+# was just saved, so pulling from an older backlog makes episodes feel stale
+# (and re-surfaces articles the listener has long since moved on from). Quiet
+# days simply produce no episode rather than dredging up old saves. Override
+# with PODCAST_MAX_AGE_HOURS if a run needs a wider window (e.g. catching up
+# after the daily Action was down).
+DEFAULT_MAX_AGE_HOURS = 24
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") # Use service role key for backend extraction
 USER_ID = os.getenv("USER_ID")
+
+def get_max_age_hours():
+    """Recency window in hours, from PODCAST_MAX_AGE_HOURS or the default."""
+    raw = os.getenv("PODCAST_MAX_AGE_HOURS")
+    if not raw:
+        return DEFAULT_MAX_AGE_HOURS
+    try:
+        hours = float(raw)
+    except ValueError:
+        print(f"Warning: invalid PODCAST_MAX_AGE_HOURS={raw!r}; "
+              f"using {DEFAULT_MAX_AGE_HOURS}.")
+        return DEFAULT_MAX_AGE_HOURS
+    if hours <= 0:
+        print(f"Warning: PODCAST_MAX_AGE_HOURS={raw!r} must be positive; "
+              f"using {DEFAULT_MAX_AGE_HOURS}.")
+        return DEFAULT_MAX_AGE_HOURS
+    return hours
+
 
 def get_headers():
     return {
@@ -147,14 +175,15 @@ def format_article(article):
 
 
 def fetch_recent_articles(limit=5):
-    """Fetch unarchived, not-yet-discussed articles, most recently saved first.
+    """Fetch unarchived, not-yet-discussed articles saved in the last day.
 
-    Newest-first so episodes stay current instead of working through however
-    much of a backlog has piled up. Excluding saves where podcast_discussed_at
-    is already set (rather than relying solely on is_archived) prevents the
-    same article from being re-discussed in a later episode, and there's no
-    recency cutoff, so an old undiscussed save is never silently dropped —
-    it just gets picked up once the newer queue thins out.
+    Only saves newer than the recency cutoff (see :func:`get_max_age_hours`)
+    are eligible, so each episode covers what was actually saved that day
+    rather than working through however much of a backlog has piled up. Older
+    undiscussed saves are dropped for good; if nothing recent qualifies the
+    run produces no episode. Excluding saves where podcast_discussed_at is
+    already set (rather than relying solely on is_archived) prevents the same
+    article from being re-discussed in a later episode.
 
     Saves without enough real body text to discuss (X posts, paywalled pages,
     link-only saves) are skipped — see :func:`podcast_skip_reason`. Because
@@ -163,11 +192,14 @@ def fetch_recent_articles(limit=5):
     """
     url = f"{SUPABASE_URL}/rest/v1/saves"
     candidate_limit = max(limit * CANDIDATE_MULTIPLIER, MIN_CANDIDATE_POOL)
+    max_age_hours = get_max_age_hours()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
     params = {
         "select": "id,url,title,content,excerpt,site_name,created_at,published_at,image_url",
         "user_id": f"eq.{USER_ID}",
         "is_archived": "eq.false",
         "podcast_discussed_at": "is.null",
+        "created_at": f"gte.{cutoff.isoformat()}",
         "order": "created_at.desc",
         "limit": candidate_limit
     }
@@ -181,6 +213,8 @@ def fetch_recent_articles(limit=5):
         raise RuntimeError(f"Error fetching articles: {response.status_code} - {response.text}")
 
     articles = response.json()
+    if not articles:
+        print(f"No saves in the last {max_age_hours:g}h to discuss.")
     formatted_articles = []
 
     for article in articles:

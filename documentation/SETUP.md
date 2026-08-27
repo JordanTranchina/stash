@@ -133,6 +133,65 @@ See `ios-shortcut/README.md` for setup instructions.
 - **Cross-device sync** - Access anywhere via web app
 - **PWA support** - Install as an app on mobile
 
+## Analytics (optional)
+
+Stash can send usage events (saves, sorting, search, reading progress, etc.) to
+[PostHog](https://posthog.com) so you can see how you actually use your own
+reading list — no signal is sent anywhere unless you configure it.
+
+**Why PostHog:** its free tier includes 1M events/month and 5k session
+replays/month with no time limit and no credit card required — for a
+single-user app that's effectively unlimited. It also self-hosts if you'd
+rather not use their cloud. (Alternatives if you want to compare: Umami is
+fully open-source and free to self-host, but its cloud free tier caps at 3
+websites/100k events; Mixpanel's free tier is generous on paper but is
+priced per Monthly Tracked User, a metric that doesn't map well onto "one
+person, forever.")
+
+To enable it:
+
+1. Create a free account at [posthog.com](https://posthog.com) (or self-host)
+   and create a project.
+2. Copy the **Project API Key** from Project Settings.
+3. Paste it into `POSTHOG_API_KEY` in `web/config.js` and `extension/config.js`
+   (then run `npm run sync:firefox-extension` if you edited the extension
+   config). Set `POSTHOG_HOST` to match your project's region
+   (`https://us.i.posthog.com` or `https://eu.i.posthog.com`), or your
+   self-hosted instance's URL.
+4. Reload the extension / web app. Events start flowing immediately; leaving
+   `POSTHOG_API_KEY` blank disables analytics entirely (the default).
+
+Stash posts directly to PostHog's HTTP capture API via `fetch` (see
+`web/analytics.js` / `extension/analytics.js`) rather than loading their JS
+SDK — this keeps it CSP-safe inside the Manifest V3 extension, which can't
+load remotely-hosted code, and keeps the web app's footprint small.
+
+### Events tracked out of the box
+
+| Event | Fired when | Key properties |
+|---|---|---|
+| `save_created` | An article/highlight is saved, from any client | `source` (extension/manual/import/share-target/mobile-web), `duplicate` |
+| `save_archived` / `save_unarchived` | A save is archived or restored | `via` (swipe/reading_pane/undo) |
+| `article_opened` | The reading pane opens | `save_id`, `has_audio` |
+| `article_read_progress` | Scroll progress crosses 25/50/75/100% | `save_id`, `percent` |
+| `sort_changed` | The sort order is changed | `sort`, `view` |
+| `search_performed` | A search query returns results | `result_count` |
+| `audio_played` | TTS/podcast audio playback starts | `save_id` |
+| `import_completed` | A CSV import finishes | `total`, `imported`, `failed` |
+| `theme_changed` | Light/dark mode is toggled | `theme` |
+
+### Suggested stats to build in PostHog
+
+Once events are flowing, a few dashboards/insights worth building:
+
+- **Save → read funnel**: `save_created` → `article_opened` → `article_read_progress` (percent=100). Shows what fraction of what you save you actually finish — the core "read it later" question.
+- **Save source breakdown**: pie/bar of `save_created` by `source`, to see whether you save more from the extension, mobile share sheet, or manual paste.
+- **Time-to-read**: time delta between a save's `save_created` and its first `article_opened`, to see how long things sit in the queue.
+- **Read-it-never rate**: saves with no `article_opened` event after N days — candidates for pruning or for a "stale saves" reminder.
+- **Search usage**: trend of `search_performed` over time and whether `result_count` is often 0 (a sign the search needs work).
+- **Daily/weekly active usage**: any event at all, grouped by day, as a simple habit tracker for the app itself.
+- **Import health**: `imported`/`failed` ratio on `import_completed`, useful when bulk-importing from Pocket/Instapaper/Omnivore.
+
 ## Troubleshooting
 
 ### Extension not saving

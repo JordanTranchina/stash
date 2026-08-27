@@ -58,6 +58,7 @@ describe('extension-firefox/manifest.json', () => {
 describe('shared files between extension/ and extension-firefox/', () => {
   const sharedFiles = [
     'Readability.js',
+    'analytics.js',
     'background.js',
     'content.js',
     'config.js',
