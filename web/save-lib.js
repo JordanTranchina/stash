@@ -56,12 +56,19 @@
 
     // A save that succeeded but returned an unreadable body is still a save;
     // only the "was it a duplicate?" detail is lost.
+    let duplicate = false;
     try {
       const body = await res.json();
-      return { ok: true, duplicate: Boolean(body && body.duplicate) };
+      duplicate = Boolean(body && body.duplicate);
     } catch (e) {
-      return { ok: true, duplicate: false };
+      // body unreadable — still a successful save, just missing the detail.
     }
+
+    if (typeof StashAnalytics !== 'undefined') {
+      StashAnalytics.capture('save_created', { source: request.source, duplicate });
+    }
+
+    return { ok: true, duplicate };
   }
 
   // Boolean-only form, for callers (offline queue drain, share sheet) that only

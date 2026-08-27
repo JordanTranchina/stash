@@ -65,6 +65,7 @@ class StashApp {
   setTheme(choice) {
     localStorage.setItem('stash-theme', choice);
     this.applyTheme(choice);
+    window.StashAnalytics?.capture('theme_changed', { theme: choice });
   }
 
   resolveTheme(choice) {
@@ -201,6 +202,7 @@ class StashApp {
 
     // Sort
     document.getElementById('sort-select').addEventListener('change', (e) => {
+      window.StashAnalytics?.capture('sort_changed', { sort: e.target.value, view: this.currentView });
       this.loadSaves();
     });
 
@@ -763,6 +765,7 @@ class StashApp {
     // Keep the cached copy's archived flag in sync so it doesn't flash back
     // into the "all" list on the next offline-first render.
     window.StashDB.setArchived(id, true);
+    window.StashAnalytics?.capture('save_archived', { via: 'swipe' });
     this.showToast('Archived', {
       label: 'Undo',
       onClick: () => this.unarchiveSaveById(id),
@@ -793,6 +796,7 @@ class StashApp {
     // Keep the cache in sync so the restored item is filed correctly on the
     // next offline-first render (rather than lingering as archived).
     window.StashDB.setArchived(id, false);
+    window.StashAnalytics?.capture('save_unarchived', { via: 'undo' });
 
     // Reload the current list so the restored item reappears
     await this.loadSaves();
@@ -1018,6 +1022,7 @@ class StashApp {
     });
 
     this.saves = data || [];
+    window.StashAnalytics?.capture('search_performed', { result_count: this.saves.length });
     this.renderSaves();
   }
 
@@ -1078,6 +1083,9 @@ class StashApp {
     // Show the percent already read from a previous session.
     const initialPercent = Math.min(Math.max(save.read_percent || 0, 0), 100);
     this.updateReadingProgressDisplay(initialPercent);
+    // Milestones already passed in a previous session shouldn't refire here.
+    this.readMilestonesFired = new Set([25, 50, 75, 100].filter(m => initialPercent >= m));
+    window.StashAnalytics?.capture('article_opened', { save_id: save.id, view: this.currentView, has_audio: !!save.audio_url });
 
     pane.classList.remove('hidden');
     pane.classList.remove('chrome-hidden');
@@ -1140,7 +1148,22 @@ class StashApp {
     const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 100;
 
     this.updateReadingProgressDisplay(progress);
-    this.queueReadingProgressSave(Math.round(Math.min(Math.max(progress, 0), 100)));
+    const rounded = Math.round(Math.min(Math.max(progress, 0), 100));
+    this.queueReadingProgressSave(rounded);
+    this.captureReadMilestones(rounded);
+  }
+
+  // Fires 'article_read_progress' once per milestone (25/50/75/100%) per
+  // reading-pane session, so scrolling back and forth doesn't double-count.
+  captureReadMilestones(percent) {
+    if (!this.currentSave) return;
+    if (!this.readMilestonesFired) this.readMilestonesFired = new Set();
+    for (const milestone of [25, 50, 75, 100]) {
+      if (percent >= milestone && !this.readMilestonesFired.has(milestone)) {
+        this.readMilestonesFired.add(milestone);
+        window.StashAnalytics?.capture('article_read_progress', { save_id: this.currentSave.id, percent: milestone });
+      }
+    }
   }
 
   // Updates the progress bar fill and the "N% read" label. Shared by the
@@ -1262,6 +1285,7 @@ class StashApp {
     } else {
       this.audio.play();
       this.isPlaying = true;
+      window.StashAnalytics?.capture('audio_played', { save_id: this.currentSave?.id });
     }
     this.updatePlayButton();
   }
@@ -1321,6 +1345,7 @@ class StashApp {
     this.currentSave.is_archived = newValue;
     // Keep the offline cache in sync so the next render files this item correctly.
     window.StashDB.setArchived(this.currentSave.id, newValue);
+    window.StashAnalytics?.capture(newValue ? 'save_archived' : 'save_unarchived', { via: 'reading_pane' });
     this.loadSaves();
     if (newValue) this.closeReadingPane();
   }
@@ -1821,6 +1846,8 @@ class StashApp {
     status.textContent = message;
     status.className = `digest-status ${failed && imported === 0 ? 'error' : 'success'}`;
     status.classList.remove('hidden');
+
+    window.StashAnalytics?.capture('import_completed', { total, imported, failed, stopped });
 
     startBtn.textContent = 'Import';
     cancelBtn.textContent = 'Close';
