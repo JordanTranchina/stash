@@ -258,7 +258,9 @@
 
     // Ensure the Service Worker controls this page so Background Sync can fire.
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js');
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        // Registration failed; save still works without Background Sync.
+      });
     }
 
     // Ask the Service Worker to retry the pending queue once connectivity returns.

@@ -3,15 +3,17 @@
 // Background Sync handler can drain the offline "pending saves" queue.
 importScripts('/config.js', '/analytics.js', '/db.js', '/save-lib.js');
 
-const CACHE_NAME = 'stash-v4';
+const CACHE_NAME = 'stash-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/save.html',
   '/styles.css',
   '/app.js',
   '/db.js',
   '/save-lib.js',
   '/config.js',
+  '/analytics.js',
   '/manifest.json',
   '/icons/icon192.png',
   '/icons/icon512.png'
