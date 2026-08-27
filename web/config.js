@@ -22,4 +22,14 @@ const CONFIG = {
   // (it's write-only, meant to be public), so it's safe to commit like the
   // Supabase anon key above. Leave blank to disable error reporting.
   SENTRY_DSN: 'https://54bdb933e682bf9d4c9a1103da24fe87@o4511824474210304.ingest.us.sentry.io/4511824499441664',
+
+  // PostHog project API key for usage analytics (saves, sorting, search,
+  // reading progress — see analytics.js). Like the Sentry DSN above, a
+  // PostHog API key is write-only and safe to commit. Leave blank to disable
+  // analytics. See documentation/SETUP.md for how to get one.
+  POSTHOG_API_KEY: '',
+
+  // PostHog ingestion host: 'https://us.i.posthog.com' (US cloud, default)
+  // or 'https://eu.i.posthog.com' (EU cloud) — match your project's region.
+  POSTHOG_HOST: 'https://us.i.posthog.com',
 };
