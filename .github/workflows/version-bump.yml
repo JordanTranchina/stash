@@ -1,0 +1,48 @@
+name: Bump web version
+
+# Regenerates web/version.js on every merge to main (a production deploy) so the
+# Settings page can show which build is live. Pushes made with GITHUB_TOKEN do not
+# retrigger workflows, so this never loops; the [skip ci] guard is belt-and-braces.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate web/version.js
+        run: |
+          BUILD=$(git rev-list --count HEAD)
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%d)
+          cat > web/version.js <<EOF
+          // AUTO-GENERATED on merge to main by .github/workflows/version-bump.yml — do not edit by hand.
+          window.STASH_VERSION = {
+            build: ${BUILD},
+            commit: "${COMMIT}",
+            date: "${DATE}"
+          };
+          EOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet web/version.js; then
+            echo "version.js unchanged, nothing to commit"
+            exit 0
+          fi
+          git add web/version.js
+          git commit -m "Bump web version to build $(git rev-list --count HEAD) [skip ci]"
+          git push
