@@ -46,20 +46,39 @@ class StashApp {
   }
 
   // Theme Management
+  // 'stash-theme' stores the user's choice: 'light', 'dark', or 'auto'
+  // (follows the OS/browser color-scheme preference). The actually-applied
+  // theme is always resolved to 'light' or 'dark' and written to
+  // documentElement's data-theme attribute, which drives the CSS variables.
   loadTheme() {
-    const savedTheme = localStorage.getItem('stash-theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    this.updateThemeToggle(savedTheme);
-    this.updateThemeColorMeta(savedTheme);
+    const choice = localStorage.getItem('stash-theme') || 'auto';
+    this.applyTheme(choice);
+
+    this.darkMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    this.darkMediaQuery.addEventListener('change', () => {
+      if ((localStorage.getItem('stash-theme') || 'auto') === 'auto') {
+        this.applyTheme('auto');
+      }
+    });
   }
 
-  toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
-    const newTheme = current === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('stash-theme', newTheme);
-    this.updateThemeToggle(newTheme);
-    this.updateThemeColorMeta(newTheme);
+  setTheme(choice) {
+    localStorage.setItem('stash-theme', choice);
+    this.applyTheme(choice);
+  }
+
+  resolveTheme(choice) {
+    if (choice === 'auto') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return choice;
+  }
+
+  applyTheme(choice) {
+    const effective = this.resolveTheme(choice);
+    document.documentElement.setAttribute('data-theme', effective);
+    this.updateThemeToggle(choice);
+    this.updateThemeColorMeta(effective);
   }
 
   updateThemeColorMeta(theme) {
@@ -134,20 +153,12 @@ class StashApp {
     this.setDefaultFontSize(this.getDefaultFontSize() + delta);
   }
 
-  updateThemeToggle(theme) {
-    const sunIcon = document.querySelector('.sun-icon');
-    const moonIcon = document.querySelector('.moon-icon');
-    const label = document.querySelector('.theme-label');
-
-    if (theme === 'dark') {
-      sunIcon?.classList.add('hidden');
-      moonIcon?.classList.remove('hidden');
-      if (label) label.textContent = 'Light Mode';
-    } else {
-      sunIcon?.classList.remove('hidden');
-      moonIcon?.classList.add('hidden');
-      if (label) label.textContent = 'Dark Mode';
-    }
+  updateThemeToggle(choice) {
+    document.querySelectorAll('.theme-segment-btn').forEach(btn => {
+      const isActive = btn.dataset.themeChoice === choice;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-checked', String(isActive));
+    });
   }
 
   bindEvents() {
@@ -211,9 +222,11 @@ class StashApp {
       this.toggleArchive();
     });
 
-    // Theme toggle
-    document.getElementById('theme-toggle').addEventListener('click', () => {
-      this.toggleTheme();
+    // Theme selection (Light / Dark / Auto)
+    document.querySelectorAll('.theme-segment-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.setTheme(btn.dataset.themeChoice);
+      });
     });
 
     // Font size controls (reading pane footer + Settings default)
