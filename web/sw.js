@@ -1,7 +1,7 @@
 // Stash Service Worker
 // Pull in config (CONFIG) and the IndexedDB wrapper (self.StashDB) so the
 // Background Sync handler can drain the offline "pending saves" queue.
-importScripts('/config.js', '/db.js', '/save-lib.js');
+importScripts('/config.js', '/analytics.js', '/db.js', '/save-lib.js');
 
 const CACHE_NAME = 'stash-v4';
 const STATIC_ASSETS = [
