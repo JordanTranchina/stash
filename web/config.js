@@ -23,7 +23,7 @@ const CONFIG = {
   // reading progress — see analytics.js). Like the Sentry DSN above, a
   // PostHog API key is write-only and safe to commit. Leave blank to disable
   // analytics. See documentation/SETUP.md for how to get one.
-  POSTHOG_API_KEY: '',
+  POSTHOG_API_KEY: 'phc_srWbtErFLCzbZcMKmQ48mU8cf77CKG522dyPvoUnRGE3',
 
   // PostHog ingestion host: 'https://us.i.posthog.com' (US cloud, default)
   // or 'https://eu.i.posthog.com' (EU cloud) — match your project's region.

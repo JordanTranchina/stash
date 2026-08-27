@@ -65,26 +65,47 @@
   background: var(--bg);
 }
 
-/* Dark mode toggle button */
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-  width: 100%;
-  margin-bottom: 8px;
+/* Appearance (theme) row in Settings */
+.theme-toggle-row {
+  cursor: default;
 }
 
-.theme-toggle:hover {
+.theme-toggle-row:hover {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
+.theme-segmented {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  flex-shrink: 0;
   background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.theme-segment-btn {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.theme-segment-btn:hover {
   color: var(--text);
+}
+
+.theme-segment-btn[aria-checked="true"] {
+  background: var(--bg);
+  color: var(--primary);
+  box-shadow: var(--shadow);
 }
 
 /* Reset */
@@ -1820,6 +1841,13 @@ select {
 
 .credits a:hover {
   color: var(--primary);
+}
+
+.app-version {
+  margin-top: 8px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
 }
 
 /* Weekly Review */

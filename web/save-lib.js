@@ -68,15 +68,19 @@
     // A save that succeeded but returned an unreadable body is still a save;
     // only the "was it a duplicate?" detail is lost.
     let duplicate = false;
+    let saveId;
     try {
       const body = await res.json();
       duplicate = Boolean(body && body.duplicate);
+      // save-page returns { success, duplicate, save } — `save` is the row
+      // (or the existing row it collapsed into), so save.id keys the funnel.
+      saveId = body && body.save && body.save.id;
     } catch (e) {
       // body unreadable — still a successful save, just missing the detail.
     }
 
     if (typeof StashAnalytics !== 'undefined') {
-      StashAnalytics.capture('save_created', { source: request.source, duplicate });
+      StashAnalytics.capture('save_created', { source: request.source, duplicate, save_id: saveId });
     }
 
     return { ok: true, duplicate };
