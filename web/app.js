@@ -1022,7 +1022,13 @@ class StashApp {
     });
 
     this.saves = data || [];
-    window.StashAnalytics?.capture('search_performed', { result_count: this.saves.length });
+    // query_length lets zero-result rate ignore half-typed stubs: search runs
+    // on a 300ms debounce, so "re" → "rea" → "reading" each emit an event and
+    // the early ones are usually zero-result through no fault of the search.
+    window.StashAnalytics?.capture('search_performed', {
+      result_count: this.saves.length,
+      query_length: query.trim().length,
+    });
     this.renderSaves();
   }
 
@@ -1085,7 +1091,15 @@ class StashApp {
     this.updateReadingProgressDisplay(initialPercent);
     // Milestones already passed in a previous session shouldn't refire here.
     this.readMilestonesFired = new Set([25, 50, 75, 100].filter(m => initialPercent >= m));
-    window.StashAnalytics?.capture('article_opened', { save_id: save.id, view: this.currentView, has_audio: !!save.audio_url });
+    // Stamp the open so article_read_progress can report dwell time — a
+    // milestone reached in 2 seconds is a scroll-to-bottom flick, not a read.
+    this.readingPaneOpenedAt = Date.now();
+    window.StashAnalytics?.capture('article_opened', {
+      save_id: save.id,
+      view: this.currentView,
+      has_audio: !!save.audio_url,
+      word_count: this.wordCount(save),
+    });
 
     pane.classList.remove('hidden');
     pane.classList.remove('chrome-hidden');
@@ -1155,15 +1169,37 @@ class StashApp {
 
   // Fires 'article_read_progress' once per milestone (25/50/75/100%) per
   // reading-pane session, so scrolling back and forth doesn't double-count.
+  // Milestones are driven purely by scroll position, so a fast flick to the
+  // bottom fires all four at once — dwell_seconds and word_count ride along so
+  // the North Star insight can require a plausible reading time (e.g.
+  // percent = 75 AND dwell_seconds >= word_count / 10) rather than trusting a
+  // raw scroll. Enriching beats suppressing: no genuine read is ever dropped.
   captureReadMilestones(percent) {
     if (!this.currentSave) return;
     if (!this.readMilestonesFired) this.readMilestonesFired = new Set();
+    const dwellSeconds = this.readingPaneOpenedAt
+      ? Math.round((Date.now() - this.readingPaneOpenedAt) / 1000)
+      : null;
     for (const milestone of [25, 50, 75, 100]) {
       if (percent >= milestone && !this.readMilestonesFired.has(milestone)) {
         this.readMilestonesFired.add(milestone);
-        window.StashAnalytics?.capture('article_read_progress', { save_id: this.currentSave.id, percent: milestone });
+        window.StashAnalytics?.capture('article_read_progress', {
+          save_id: this.currentSave.id,
+          percent: milestone,
+          dwell_seconds: dwellSeconds,
+          word_count: this.wordCount(this.currentSave),
+        });
       }
     }
+  }
+
+  // Word count of a save's extracted content, or null when there's no body
+  // text. Shared by article_opened / article_read_progress so length-vs-read
+  // analysis doesn't need a save_id join back to the row.
+  wordCount(save) {
+    const text = (save && save.content) || '';
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    return words || null;
   }
 
   // Updates the progress bar fill and the "N% read" label. Shared by the
@@ -1440,9 +1476,8 @@ class StashApp {
   // Returns null when there's no content to estimate from, so the card can
   // simply omit the reading-time line rather than show a bogus value.
   readingTime(save) {
-    const text = save.content || '';
-    const words = text.trim().split(/\s+/).filter(Boolean).length;
-    if (words === 0) return null;
+    const words = this.wordCount(save);
+    if (!words) return null;
     return Math.max(1, Math.round(words / 220));
   }
 

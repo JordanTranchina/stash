@@ -147,12 +147,12 @@ load remotely-hosted code, and keeps the web app's footprint small.
 
 | Event | Fired when | Key properties |
 |---|---|---|
-| `save_created` | An article/highlight is saved, from any client | `source` (extension/manual/import/share-target/mobile-web), `duplicate` |
+| `save_created` | An article/highlight is saved, from any client | `source` (extension/manual/import/share-target/mobile-web), `duplicate`, `save_id` (absent on a duplicate, and on `import`) |
 | `save_archived` / `save_unarchived` | A save is archived or restored | `via` (swipe/reading_pane/undo) |
-| `article_opened` | The reading pane opens | `save_id`, `has_audio` |
-| `article_read_progress` | Scroll progress crosses 25/50/75/100% | `save_id`, `percent` |
+| `article_opened` | The reading pane opens | `save_id`, `has_audio`, `word_count` |
+| `article_read_progress` | Scroll position crosses 25/50/75/100% | `save_id`, `percent`, `dwell_seconds` (since the pane opened), `word_count` |
 | `sort_changed` | The sort order is changed | `sort`, `view` |
-| `search_performed` | A search query returns results | `result_count` |
+| `search_performed` | Any debounced search runs, including one that returns nothing | `result_count` (0 when nothing matched), `query_length` |
 | `audio_played` | TTS/podcast audio playback starts | `save_id` |
 | `import_completed` | A CSV/Kindle import finishes | `total`, `imported`, `failed` |
 | `theme_changed` | Light/dark mode is toggled | `theme` |
@@ -161,7 +161,7 @@ load remotely-hosted code, and keeps the web app's footprint small.
 
 Once events are flowing, a few dashboards/insights worth building:
 
-- **Save → read funnel**: `save_created` → `article_opened` → `article_read_progress` (percent=100). Shows what fraction of what you save you actually finish — the core "read it later" question.
+- **Save → read funnel**: `save_created` → `article_opened` → `article_read_progress` (percent=75), joined on `save_id`, 14-day conversion window. Shows what fraction of what you save you actually finish — the core "read it later" question. Break down step 1 by `source`. Filter the read step to `dwell_seconds >= word_count / 10` (or a flat floor like 20s) so a scroll-to-bottom flick doesn't count as a read.
 - **Save source breakdown**: pie/bar of `save_created` by `source`, to see whether you save more from the extension, mobile share sheet, or manual paste.
 - **Time-to-read**: time delta between a save's `save_created` and its first `article_opened`, to see how long things sit in the queue.
 - **Read-it-never rate**: saves with no `article_opened` event after N days — candidates for pruning or for a "stale saves" reminder.

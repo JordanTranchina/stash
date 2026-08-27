@@ -90,7 +90,14 @@ async function saveHighlight(tab, selectionText) {
       message: 'Highlight saved!',
     });
     if (typeof StashAnalytics !== 'undefined') {
-      StashAnalytics.capture('save_created', { source: 'extension', type: 'highlight' });
+      // save_id lets the save→open→read funnel join on a per-article key
+      // (article_opened / article_read_progress both carry it). insert()
+      // returns the representation array, so the row id is result[0].id.
+      StashAnalytics.capture('save_created', {
+        source: 'extension',
+        type: 'highlight',
+        save_id: Array.isArray(result) ? result[0]?.id : result?.id,
+      });
     }
     return { success: true };
   } catch (err) {
@@ -164,7 +171,14 @@ async function savePage(tab) {
       message: isDuplicate ? 'Already saved — moved to top' : 'Page saved!',
     });
     if (typeof StashAnalytics !== 'undefined') {
-      StashAnalytics.capture('save_created', { source: 'extension', type: 'page', duplicate: isDuplicate });
+      // save_id is absent on a duplicate (no row inserted) — that's fine, the
+      // funnel only needs it for saves that actually created an article.
+      StashAnalytics.capture('save_created', {
+        source: 'extension',
+        type: 'page',
+        duplicate: isDuplicate,
+        save_id: Array.isArray(result) ? result[0]?.id : undefined,
+      });
     }
 
     return { success: true, duplicate: isDuplicate };
