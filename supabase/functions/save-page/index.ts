@@ -28,6 +28,87 @@ const REDIRECT_WRAPPER_HOSTS = [
   "trib.al",
 ];
 
+// X (Twitter) hosts. X refuses to serve article content to a logged-out
+// server-side reader: what comes back is a login wall, and because that wall is
+// the densest run of text in an otherwise <p>-free React shell, Readability
+// scores it as the article. Left alone, an x.com save lands with "Log in or
+// sign up for X / Relevant people" as its body. See fetchXPost() for the fix.
+const X_HOSTS = ["x.com", "twitter.com"];
+
+function isXHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^(www|mobile|m)\./, "");
+    return X_HOSTS.includes(host);
+  } catch {
+    return false;
+  }
+}
+
+// The numeric post id from /<handle>/status/<id>.
+function xStatusId(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/\/status(?:es)?\/(\d+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+// Pull a post's real text from X's public embed endpoint — the same one that
+// backs embedded posts on other sites, so it needs no auth and exposes nothing
+// that isn't already public. It is X's internal endpoint rather than a
+// documented API, so every failure here is soft: we fall back to the page's
+// own metadata instead of failing the save.
+async function fetchXPost(url: string): Promise<Record<string, unknown> | null> {
+  const id = xStatusId(url);
+  if (!id) return null;
+
+  try {
+    const endpoint = `https://cdn.syndication.twimg.com/tweet-result?id=${id}&lang=en&token=${id}`;
+    const response = await fetch(endpoint, { headers: { "User-Agent": BROWSER_UA } });
+    if (!response.ok) return null;
+
+    // A missing/withheld post answers with an HTML error page, not JSON.
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("json")) return null;
+
+    return xPostToArticle(await response.json());
+  } catch (e) {
+    console.error("X embed lookup failed:", e);
+    return null;
+  }
+}
+
+// Shape an embed-endpoint payload into the article record the rest of the
+// function works with. Returns null for anything without usable text so the
+// caller can fall back to metadata rather than saving an empty body.
+function xPostToArticle(post: any): Record<string, unknown> | null {
+  // Long-form posts carry their full body under note_tweet; `text` is the
+  // truncated preview for those.
+  const noteText = post?.note_tweet?.note_tweet_results?.result?.text;
+  const text = String(noteText || post?.text || "").trim();
+  if (!text) return null;
+
+  const images: string[] = [
+    ...(Array.isArray(post?.photos) ? post.photos.map((p: any) => p?.url) : []),
+    ...(Array.isArray(post?.mediaDetails) ? post.mediaDetails.map((m: any) => m?.media_url_https) : []),
+  ].filter((src: unknown): src is string => typeof src === "string" && src.length > 0);
+
+  const uniqueImages = [...new Set(images)];
+  const firstLine = text.split("\n").map((l: string) => l.trim()).find(Boolean) || "";
+  const handle = post?.user?.screen_name ? `@${post.user.screen_name}` : null;
+
+  return {
+    title: firstLine.slice(0, 100) || "Untitled",
+    excerpt: text.replace(/\s+/g, " ").slice(0, 300),
+    content: [text, ...uniqueImages.map((src) => `![](${src})`)].join("\n\n"),
+    image_url: uniqueImages[0] || post?.user?.profile_image_url_https || null,
+    site_name: "X",
+    author: post?.user?.name || handle,
+    published_at: post?.created_at || null,
+  };
+}
+
 // Extract meta content by name or property
 function extractMeta(doc: any, attr: string, value: string): string | null {
   const el = doc.querySelector(`meta[${attr}="${value}"]`);
@@ -321,6 +402,20 @@ serve(async (req) => {
       const { html, finalUrl } = await fetchArticleHtml(url);
       resolvedUrl = finalUrl;
       article = html ? extractArticle(html, finalUrl) : null;
+
+      // On X, whatever Readability found is the login wall, not the post, so
+      // never keep it as the body. Swap in the real text from X's embed
+      // endpoint when we can get it; otherwise keep only the page metadata so
+      // the save is an honest link rather than a wall of X's own chrome.
+      if (isXHost(finalUrl)) {
+        const post = await fetchXPost(finalUrl);
+        if (post) {
+          article = { ...(article || {}), ...post };
+        } else if (article) {
+          article.content = "";
+          article.site_name = "X";
+        }
+      }
     }
 
     // If the page couldn't be fetched/scraped (bot-blocked, paywalled, origin
