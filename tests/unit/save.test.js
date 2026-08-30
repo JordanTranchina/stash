@@ -44,7 +44,6 @@ describe('StashSave.buildScrapeRequest', () => {
     });
     expect(req).toEqual({
       url: 'https://example.com/article',
-      user_id: 'user-1',
       source: 'share-target',
       highlight: null,
       // Included as a fallback title only; the server prefers the scraped
@@ -126,18 +125,40 @@ describe('StashSave.saveViaScrape', () => {
 
     const ok = await sandbox.self.StashSave.saveViaScrape({
       url: 'https://example.com',
-      user_id: 'u1',
       source: 'share-target',
       highlight: null,
-    });
+    }, 'access-token-123');
 
     expect(ok).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe('https://fake.supabase.co/functions/v1/save-page');
     expect(calls[0].opts.method).toBe('POST');
+    // The user is derived from the JWT server-side, so the token — not a
+    // client-supplied id — is what attributes the save.
+    expect(calls[0].opts.headers.Authorization).toBe('Bearer access-token-123');
     const body = JSON.parse(calls[0].opts.body);
     expect(body.url).toBe('https://example.com');
-    expect(body.user_id).toBe('u1');
+    expect(body).not.toHaveProperty('user_id');
+  });
+
+  test('refuses to send a save with no access token, flagging it as a sign-in problem', async () => {
+    const sandbox = {
+      self: {},
+      CONFIG,
+      fetch: () => {
+        throw new Error('should not have been called');
+      },
+    };
+    const code = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'web', 'save-lib.js'),
+      'utf8'
+    );
+    vm.createContext(sandbox);
+    vm.runInContext(code, sandbox);
+
+    await expect(
+      sandbox.self.StashSave.saveViaScrape({ url: 'https://example.com' })
+    ).rejects.toMatchObject({ noSession: true });
   });
 
   test('returns false when the function responds non-ok', async () => {
@@ -152,7 +173,7 @@ describe('StashSave.saveViaScrape', () => {
     );
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox);
-    const ok = await sandbox.self.StashSave.saveViaScrape({ url: 'x', user_id: 'u' });
+    const ok = await sandbox.self.StashSave.saveViaScrape({ url: 'x' }, 'access-token-123');
     expect(ok).toBe(false);
   });
 });
@@ -178,7 +199,7 @@ describe('StashSave.saveViaScrapeDetailed', () => {
     const StashSave = loadWithFetch(() =>
       Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, duplicate: true }) })
     );
-    const result = await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' });
+    const result = await StashSave.saveViaScrapeDetailed({ url: 'x' }, 'access-token-123');
     expect(result).toEqual({ ok: true, duplicate: true });
   });
 
@@ -186,7 +207,7 @@ describe('StashSave.saveViaScrapeDetailed', () => {
     const StashSave = loadWithFetch(() =>
       Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, duplicate: false }) })
     );
-    expect(await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' })).toEqual({
+    expect(await StashSave.saveViaScrapeDetailed({ url: 'x' }, 'access-token-123')).toEqual({
       ok: true,
       duplicate: false,
     });
@@ -196,7 +217,7 @@ describe('StashSave.saveViaScrapeDetailed', () => {
     const StashSave = loadWithFetch(() =>
       Promise.resolve({ ok: true, json: () => Promise.reject(new Error('bad json')) })
     );
-    expect(await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' })).toEqual({
+    expect(await StashSave.saveViaScrapeDetailed({ url: 'x' }, 'access-token-123')).toEqual({
       ok: true,
       duplicate: false,
     });
@@ -204,7 +225,7 @@ describe('StashSave.saveViaScrapeDetailed', () => {
 
   test('a non-ok response is not a save', async () => {
     const StashSave = loadWithFetch(() => Promise.resolve({ ok: false }));
-    expect(await StashSave.saveViaScrapeDetailed({ url: 'x', user_id: 'u' })).toEqual({
+    expect(await StashSave.saveViaScrapeDetailed({ url: 'x' }, 'access-token-123')).toEqual({
       ok: false,
       duplicate: false,
     });
@@ -214,7 +235,7 @@ describe('StashSave.saveViaScrapeDetailed', () => {
     const StashSave = loadWithFetch(() =>
       Promise.resolve({ ok: true, json: () => Promise.resolve({ duplicate: true }) })
     );
-    expect(await StashSave.saveViaScrape({ url: 'x', user_id: 'u' })).toBe(true);
+    expect(await StashSave.saveViaScrape({ url: 'x' }, 'access-token-123')).toBe(true);
   });
 });
 
@@ -284,6 +305,56 @@ describe('StashSave.extractUrlFromText', () => {
     expect(StashSave.extractUrlFromText('See <https://example.com/bar> for details')).toBe(
       'https://example.com/bar'
     );
+  });
+
+  test('takes the target out of a Markdown link, not the label', () => {
+    expect(
+      StashSave.extractUrlFromText('[www.example.com](https://www.example.com/piece)')
+    ).toBe('https://www.example.com/piece');
+  });
+
+  // A browser's address bar accepts a bare host, and share sheets sometimes
+  // strip the protocol, so these are links a person plainly meant.
+  test('assumes https for a bare host pasted on its own', () => {
+    expect(StashSave.extractUrlFromText('example.com')).toBe('https://example.com');
+    expect(StashSave.extractUrlFromText('www.example.com')).toBe('https://www.example.com');
+    expect(StashSave.extractUrlFromText('  example.com  ')).toBe('https://example.com');
+  });
+
+  test('keeps the path, query and port on a bare host', () => {
+    expect(StashSave.extractUrlFromText('example.com/a/b?c=1#d')).toBe(
+      'https://example.com/a/b?c=1#d'
+    );
+    expect(StashSave.extractUrlFromText('sub.example.co.uk:8443/x')).toBe(
+      'https://sub.example.co.uk:8443/x'
+    );
+  });
+
+  test('strips trailing punctuation from a bare host', () => {
+    expect(StashSave.extractUrlFromText('example.com.')).toBe('https://example.com');
+  });
+
+  test('finds a www. host inside a sentence', () => {
+    expect(StashSave.extractUrlFromText('check out www.example.com its good')).toBe(
+      'https://www.example.com'
+    );
+  });
+
+  // Without a scheme or a www. prefix, a dotted token mid-sentence is far more
+  // likely to be prose than a link, so it is only honoured on its own.
+  test('does not treat a dotted word inside a sentence as a host', () => {
+    expect(StashSave.extractUrlFromText('I rewrote it in Node.js last week')).toBe('');
+    expect(StashSave.extractUrlFromText('open report.pdf and tell me')).toBe('');
+  });
+
+  test('does not treat version numbers or abbreviations as hosts', () => {
+    expect(StashSave.extractUrlFromText('1.2.3')).toBe('');
+    expect(StashSave.extractUrlFromText('e.g')).toBe('');
+    expect(StashSave.extractUrlFromText('etc.')).toBe('');
+  });
+
+  test('still returns empty for text with nothing link-shaped in it', () => {
+    expect(StashSave.extractUrlFromText('just a plain title, no link')).toBe('');
   });
 });
 

@@ -131,8 +131,8 @@
 
     <div id="setup-section">
       <form class="setup-form" id="setup-form">
-        <input type="text" id="user-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}">
-        <p class="input-help">Your user ID from Supabase (Authentication > Users)</p>
+        <input type="url" id="app-url" placeholder="https://your-stash-app.vercel.app" required>
+        <p class="input-help">The URL of your deployed Stash web app</p>
         <button type="submit" class="btn">Generate Bookmarklet</button>
       </form>
     </div>
@@ -150,28 +150,32 @@
           <li><strong>Drag</strong> the button above to your <strong>bookmarks bar</strong></li>
           <li>If your bookmarks bar isn't visible, press <code>Cmd+Shift+B</code> (Mac) or <code>Ctrl+Shift+B</code> (Windows)</li>
           <li>Click it on any page to save - that's it!</li>
+          <li>Stay signed in to Stash in this browser; the bookmarklet saves as you</li>
         </ol>
       </div>
 
       <div class="note">
         <strong>Tip:</strong> Select text first, then click the bookmarklet to save just that highlight!
       </div>
+
+      <div class="note">
+        <strong>How it works:</strong> The bookmarklet opens a small Stash window
+        that does the save. Saves are attributed to whoever is signed in there, so
+        the first click may ask you to sign in.
+      </div>
     </div>
   </div>
 
   <script>
-    // Replace with your Supabase project URL
-    const CONFIG = {
-      SUPABASE_URL: 'https://YOUR_PROJECT_ID.supabase.co',
-    };
-
     document.getElementById('setup-form').addEventListener('submit', (e) => {
       e.preventDefault();
-      const userId = document.getElementById('user-id').value.trim();
-      const functionUrl = CONFIG.SUPABASE_URL + '/functions/v1/save-page';
+      // Trim any trailing slash so we don't build //save.html
+      const appUrl = document.getElementById('app-url').value.trim().replace(/\/$/, '');
 
-      // Generate Save to Stash bookmarklet
-      const bookmarkletCode = `javascript:(async()=>{const f='${functionUrl}',uid='${userId}';const sel=window.getSelection().toString().trim();const t=document.createElement('div');t.textContent='Saving...';t.style.cssText='position:fixed;bottom:20px;right:20px;padding:12px 24px;background:%236366f1;color:white;border-radius:8px;font:500 14px system-ui;z-index:999999';document.body.appendChild(t);function getPs(){const ps=[];document.querySelectorAll('article p,main p,.article-body p,.post-content p,.entry-content p,[role=article] p').forEach(p=>{const x=p.innerText?.trim();if(x&&x.length>20)ps.push(x)});if(ps.length<3)document.querySelectorAll('p').forEach(p=>{const x=p.innerText?.trim();if(x&&x.length>50)ps.push(x)});return ps.join('\\n\\n')}function getMeta(n){const e=document.querySelector('meta[name="'+n+'"],meta[property="'+n+'"],meta[property="og:'+n+'"]');return e?.content||null}const url=location.href;const pf=sel?null:{title:document.querySelector('h1')?.innerText?.trim()||document.title,content:getPs(),excerpt:getMeta('description')||'',image_url:getMeta('og:image'),site_name:getMeta('og:site_name')||(new URL(url).hostname.replace('www.','')),author:getMeta('author')||document.querySelector('[rel=author],.author,.byline')?.innerText?.trim()||null};const res=await fetch(f,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url,user_id:uid,highlight:sel||null,source:'bookmarklet',prefetched:pf})});if(res.ok){t.textContent=sel?'Highlight saved!':'Page saved!';t.style.background='%2310b981'}else{t.textContent='Save failed';t.style.background='%23ef4444'}setTimeout(()=>t.remove(),2000)})();`;
+      // The bookmarklet runs on an arbitrary page with no Supabase session, so
+      // it hands the URL to the web app's quick-save page, which is signed in
+      // and makes the authenticated save.
+      const bookmarkletCode = `javascript:(()=>{const w='${appUrl}';const s=getSelection().toString().trim();const p=new URLSearchParams({url:location.href});const t=document.querySelector('h1')?.innerText?.trim()||document.title;if(t)p.set('title',t);if(s)p.set('text',s);const u=w+'/save.html?'+p;if(!open(u,'stash-save','width=420,height=560'))open(u,'_blank')})();`;
 
       document.getElementById('bookmarklet-link').href = bookmarkletCode;
       document.getElementById('setup-section').style.display = 'none';

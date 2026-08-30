@@ -1,8 +1,10 @@
-// Stash Web App (Single-user mode - no auth required)
+// Stash Web App
 class StashApp {
   constructor() {
     this.supabase = null;
-    this.user = { id: CONFIG.USER_ID }; // Hardcoded single user
+    this.user = null;
+    this.realtimeChannel = null;
+    this.authBootstrapped = false;
     this.currentView = 'all';
     this.currentSave = null;
     this.saves = [];
@@ -36,14 +38,57 @@ class StashApp {
     // Load default font size preference
     this.loadFontSize();
 
-    // Skip auth - go straight to main screen
-    this.showMainScreen();
-    this.loadData();
-    this.syncPendingShares();
-
     this.bindEvents();
-    this.setupRealtime();
+
+    // Everything that touches user data waits on a real session. getSession()
+    // resolves from the persisted token before the listener fires, so a
+    // returning user never sees the auth screen flash.
+    const { data: { session } } = await this.supabase.auth.getSession();
+    this.handleAuthChange(session);
+
+    this.supabase.auth.onAuthStateChange((event, session) => {
+      this.handleAuthChange(session);
+    });
+
+    // Independent of auth: the build stamp shows regardless of who's signed in.
     this.renderVersion();
+  }
+
+  // Single entry point for every auth transition (initial load, sign in,
+  // sign out, token refresh). TOKEN_REFRESHED fires on a timer with the same
+  // user, so we only re-run the signed-in bootstrap when the user actually
+  // changes -- otherwise the list would reload itself every hour.
+  handleAuthChange(session) {
+    // The Service Worker needs its own copy of the token to save shared links
+    // while the app isn't open. db.js owns that store.
+    if (session) {
+      window.StashDB?.saveSession?.({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
+        user_id: session.user.id,
+      })?.catch(() => {});
+    } else {
+      window.StashDB?.clearSession?.()?.catch(() => {});
+    }
+
+    const previousUserId = this.user?.id || null;
+    const nextUserId = session?.user?.id || null;
+    if (this.authBootstrapped && previousUserId === nextUserId) return;
+    this.authBootstrapped = true;
+
+    if (session) {
+      this.user = session.user;
+      this.showMainScreen();
+      this.loadData();
+      this.syncPendingShares();
+      this.setupRealtime();
+    } else {
+      this.user = null;
+      this.teardownRealtime();
+      this.saves = [];
+      this.showAuthScreen();
+    }
   }
 
   // Show the current build/version at the bottom of Settings. STASH_VERSION is
@@ -185,6 +230,10 @@ class StashApp {
 
     document.getElementById('signup-btn').addEventListener('click', () => {
       this.signUp();
+    });
+
+    document.getElementById('google-signin-btn').addEventListener('click', () => {
+      this.signInWithGoogle();
     });
 
     document.getElementById('signout-btn').addEventListener('click', () => {
@@ -394,7 +443,9 @@ class StashApp {
   }
 
   setupRealtime() {
-    this.supabase
+    if (this.realtimeChannel) return;
+
+    this.realtimeChannel = this.supabase
       .channel('public:saves')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'saves' }, (payload) => {
         const updatedSave = payload.new;
@@ -420,6 +471,12 @@ class StashApp {
         }
       })
       .subscribe();
+  }
+
+  teardownRealtime() {
+    if (!this.realtimeChannel) return;
+    this.supabase.removeChannel(this.realtimeChannel);
+    this.realtimeChannel = null;
   }
 
   showAuthScreen() {
@@ -483,7 +540,10 @@ class StashApp {
     });
 
     if (error) {
-      errorEl.textContent = error.message;
+      // The invite allowlist trigger raises its own human-readable message;
+      // surface just that sentence instead of the Postgres wrapper around it.
+      const inviteMatch = error.message.match(/[^.:]*invite-only[^.]*\.?/i);
+      errorEl.textContent = inviteMatch ? inviteMatch[0].trim() : error.message;
     } else {
       messageEl.textContent = 'Check your email to confirm your account!';
     }
@@ -492,8 +552,31 @@ class StashApp {
     btn.textContent = 'Create Account';
   }
 
+  async signInWithGoogle() {
+    const errorEl = document.getElementById('auth-error');
+    errorEl.textContent = '';
+
+    const { error } = await this.supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+
+    if (error) {
+      errorEl.textContent = error.message;
+    }
+  }
+
   async signOut() {
+    // No screen swap here -- onAuthStateChange fires with a null session and
+    // handleAuthChange tears everything down in one place.
     await this.supabase.auth.signOut();
+  }
+
+  // The scraper Edge Function derives the owner from the JWT, so every save
+  // needs the live access token rather than a user_id in the payload.
+  async getAccessToken() {
+    const { data: { session } } = await this.supabase.auth.getSession();
+    return session?.access_token;
   }
 
   async loadData() {
@@ -581,11 +664,28 @@ class StashApp {
     }
 
     if (this.saves.length === 0) {
+      this.renderEmptyState();
       empty.classList.remove('hidden');
       container.innerHTML = ''; // Clear any cached data if server says empty (edge case)
     } else {
       empty.classList.add('hidden');
       this.renderSaves();
+    }
+  }
+
+  // For a brand-new account the empty list is the whole first screen, so it
+  // has to say what to do next rather than just "nothing here".
+  renderEmptyState() {
+    const empty = document.getElementById('empty-state');
+    const heading = empty.querySelector('h3');
+    const body = empty.querySelector('p');
+
+    if (this.currentView === 'archived') {
+      heading.textContent = 'Nothing archived yet';
+      body.innerHTML = 'Swipe a save to the left to file it here when you\'re done with it.';
+    } else {
+      heading.textContent = 'Your stash is empty';
+      body.innerHTML = 'Save your first article: go to <strong>Settings &rarr; Add URL</strong> and paste a link. On your phone you can also hit Share in any browser and pick Stash.';
     }
   }
 
@@ -789,6 +889,7 @@ class StashApp {
     setTimeout(() => {
       swipeEl?.remove();
       if (this.saves.length === 0) {
+        this.renderEmptyState();
         document.getElementById('empty-state').classList.remove('hidden');
       }
     }, 280);
@@ -875,12 +976,13 @@ class StashApp {
     }
     if (!pending.length) return;
 
+    const accessToken = await this.getAccessToken();
     let synced = 0;
     for (const { key, data } of pending) {
       try {
         // Drain through the scraper so the full article is ingested, not just
         // the shared link that was queued while offline.
-        const ok = await window.StashSave.saveViaScrape(data);
+        const ok = await window.StashSave.saveViaScrape(data, accessToken);
         if (ok) {
           await window.StashDB.deletePendingShare(key);
           synced++;
@@ -1628,14 +1730,16 @@ class StashApp {
 
     const request = window.StashSave.buildScrapeRequest({
       url,
-      user_id: this.user.id,
       source: 'manual',
       highlight: null,
       title: null,
     });
 
     try {
-      const { ok, duplicate } = await window.StashSave.saveViaScrapeDetailed(request);
+      const { ok, duplicate } = await window.StashSave.saveViaScrapeDetailed(
+        request,
+        await this.getAccessToken()
+      );
       if (!ok) throw new Error('Server rejected the save');
 
       // Re-saving something you already have isn't an error: the existing save
@@ -1859,17 +1963,17 @@ class StashApp {
     updateProgress();
 
     let cursor = 0;
+    const accessToken = await this.getAccessToken();
     const worker = async () => {
       while (cursor < rows.length && !this.importStop) {
         const row = rows[cursor++];
         try {
           const req = window.StashSave.buildScrapeRequest({
             url: row.url,
-            user_id: this.user.id,
             source: 'import',
             created_at: row.created_at, // preserve original save date when present
           });
-          const ok = await window.StashSave.saveViaScrape(req);
+          const ok = await window.StashSave.saveViaScrape(req, accessToken);
           if (!ok) failed++;
         } catch (e) {
           failed++;

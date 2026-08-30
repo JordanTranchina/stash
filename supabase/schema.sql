@@ -203,3 +203,88 @@ create policy "Users can update own preferences" on user_preferences
 create trigger user_preferences_updated_at
   before update on user_preferences
   for each row execute function update_updated_at();
+
+create policy "Users can delete own preferences" on user_preferences
+  for delete using (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Invite allowlist
+-- ---------------------------------------------------------------------------
+-- Stash is invite-only: a trigger on auth.users refuses a sign-up whose email
+-- isn't listed here, so a link forwarded beyond the intended circle can't
+-- onboard strangers onto the project's quota. No client policies — the trigger
+-- is SECURITY DEFINER and rows are managed from the Supabase dashboard, so RLS
+-- with no policy means anon and authenticated see nothing.
+
+create table allowed_emails (
+  email      text primary key,
+  note       text,
+  invited_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+alter table allowed_emails enable row level security;
+
+create or replace function public.enforce_email_allowlist()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.email is null
+     or not exists (select 1 from allowed_emails where email = lower(new.email))
+  then
+    raise exception 'Stash is invite-only right now. Ask Jordan to add % to the list.', new.email
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger enforce_email_allowlist
+  before insert on auth.users
+  for each row execute function public.enforce_email_allowlist();
+
+-- ---------------------------------------------------------------------------
+-- Per-user podcast feeds
+-- ---------------------------------------------------------------------------
+-- Podcast apps can't do OAuth, so a private feed is scoped by an unguessable
+-- token in the URL rather than by a session. `subscribed` is opt-in: the
+-- generation pipeline only spends Gemini/TTS quota on users who asked for
+-- episodes, so someone who just wants to read costs nothing.
+
+create table podcast_feeds (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  token      text not null unique default encode(gen_random_bytes(24), 'hex'),
+  subscribed boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+alter table podcast_feeds enable row level security;
+
+create policy "Users can view own feed" on podcast_feeds
+  for select using (auth.uid() = user_id);
+
+create policy "Users can insert own feed" on podcast_feeds
+  for insert with check (auth.uid() = user_id);
+
+create policy "Users can update own feed" on podcast_feeds
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create or replace function public.create_podcast_feed_for_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into podcast_feeds (user_id) values (new.id)
+  on conflict (user_id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger create_podcast_feed_for_user
+  after insert on auth.users
+  for each row execute function public.create_podcast_feed_for_user();

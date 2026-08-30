@@ -26,16 +26,49 @@ A simple, self-hosted Pocket replacement with Chrome extension, web app, and cro
      SUPABASE_URL: 'https://your-project.supabase.co',
      SUPABASE_ANON_KEY: 'your-anon-key-here',
      WEB_APP_URL: 'https://your-stash-app.vercel.app', // After step 5
-     USER_ID: 'your-user-id', // After step 3
    };
    ```
 
-### 3. Create Your User Account
+No user ID goes in config. Every client signs in, and the signed-in session
+decides whose saves you're looking at.
 
-1. Go to Supabase > **Authentication** > **Users**
-2. Click "Add user" > "Create new user"
-3. Enter your email and password
-4. Copy the user ID (UUID) and add it to your config files
+### 3. Set Up Sign-In
+
+Stash signs people in two ways: **Continue with Google**, and email/password
+as a fallback. Set up Google first — it's the path everyone but you will use.
+
+**Google Cloud Console**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create (or pick) a project
+2. **APIs & Services > OAuth consent screen**: choose **External**, fill in the app name, support email, and developer contact
+3. **APIs & Services > Credentials > Create credentials > OAuth client ID**
+4. Application type: **Web application**
+5. Under **Authorized redirect URIs**, add:
+   ```
+   https://<your-project>.supabase.co/auth/v1/callback
+   ```
+6. Copy the **Client ID** and **Client secret**
+
+**Supabase**
+
+7. Go to **Authentication > Providers > Google**, enable it, and paste in the client ID and secret
+8. Go to **Authentication > URL Configuration** and add your deployed domain (e.g. `https://your-stash-app.vercel.app`) under **Redirect URLs**. Without this, Google sends people back to the wrong place after sign-in. Add `http://localhost:3000` too if you run the web app locally.
+9. Go to **Authentication > Policies** (Password settings) and turn on **leaked password protection**. It's off by default, and email/password is still a live sign-in path, so leave it on.
+
+### 3b. Invite Yourself
+
+Sign-up is invite-only. A trigger on `auth.users` checks the address against
+the `allowed_emails` table, and anything not listed gets an "invite-only"
+error at sign-up — Google sign-in included.
+
+To let someone in, insert their email:
+
+```sql
+insert into allowed_emails (email) values ('friend@example.com');
+```
+
+Do this for your own address before your first sign-in, or you'll lock
+yourself out of your own install. Then open the web app and sign in.
 
 ### 4. Install the Chrome Extension
 
@@ -81,8 +114,11 @@ After deploying, update `extension/config.js` with your web app URL.
 ### Bookmarklet (for other browsers)
 
 1. Open `bookmarklet/install.html` in your browser
-2. Enter your user ID
+2. Enter your web app URL
 3. Drag the bookmarklet to your bookmarks bar
+
+The bookmarklet hands the page to the web app's quick-save window, which is
+already signed in — so it works in any browser without storing a token.
 
 ### iOS Shortcut (Save from Safari)
 
@@ -92,23 +128,10 @@ See `ios-shortcut/README.md` for setup instructions.
 
 - **Save articles** - Full text extraction with Readability
 - **Save highlights** - Select text and save snippets
-- **Kindle import** - Upload My Clippings.txt to import all your book highlights
 - **Full-text search** - Search across all your saved content
 - **Tags & folders** - Organize your saves
 - **Cross-device sync** - Access anywhere via web app
 - **PWA support** - Install as an app on mobile
-
-## Importing Kindle Highlights
-
-To import your Kindle highlights:
-
-1. Connect your Kindle to your computer via USB
-2. Find `My Clippings.txt` in the `documents` folder
-3. Open the Stash web app and click "Import Kindle" in the sidebar
-4. Drag and drop the file (or click to browse)
-5. Review the highlights and click "Import"
-
-The importer automatically detects duplicates, so you can re-import anytime without creating duplicates.
 
 ## Analytics (optional)
 
@@ -154,7 +177,7 @@ load remotely-hosted code, and keeps the web app's footprint small.
 | `sort_changed` | The sort order is changed | `sort`, `view` |
 | `search_performed` | Any debounced search runs, including one that returns nothing | `result_count` (0 when nothing matched), `query_length` |
 | `audio_played` | TTS/podcast audio playback starts | `save_id` |
-| `import_completed` | A CSV/Kindle import finishes | `total`, `imported`, `failed` |
+| `import_completed` | A CSV import finishes | `total`, `imported`, `failed` |
 | `theme_changed` | Light/dark mode is toggled | `theme` |
 
 ### Suggested stats to build in PostHog
@@ -173,8 +196,11 @@ Once events are flowing, a few dashboards/insights worth building:
 
 ### Extension not saving
 - Verify your Supabase credentials in `config.js`
+- Open the extension popup and check you're signed in — saves fail with "Sign in to Stash to save" when the session is gone
 - Check the browser console (F12) for errors
-- Make sure your user ID is correct
+
+### "Invite only" error at sign-up
+- The address isn't in `allowed_emails`. Add it (see step 3b) and try again.
 
 ### Web app not loading
 - Verify the same credentials in `web/config.js`
@@ -185,14 +211,29 @@ Once events are flowing, a few dashboards/insights worth building:
 - Make sure you're using the `anon` key, not the `service_role` key
 - Supabase handles CORS automatically for the anon key
 
-## Multi-User Setup
+## Adding Other People
 
-By default, Stash runs in single-user mode (hardcoded USER_ID). To enable multi-user:
+Multi-user is the only mode. Row Level Security means each account sees only
+its own saves, so sharing an install with friends and family is just a matter
+of letting them sign up:
 
-1. Remove the `USER_ID` from config files
-2. Enable Supabase Auth in your project
-3. Users will need to sign up/sign in
-4. Row Level Security (RLS) ensures users only see their own data
+1. Add their email to `allowed_emails` (see step 3b)
+2. Send them the web app URL
+3. They sign in with Google (or with a password) and they're in
+
+### What to hand people
+
+- **The web app.** Add to home screen on a phone and it's a real app, including a "Save to Stash" entry in the iOS/Android share sheet.
+- **The bookmarklet**, for saving from a desktop browser.
+
+### What not to hand people
+
+The browser extension isn't part of this. Neither build is published to the
+Chrome Web Store or AMO, so installing it means Developer Mode and "Load
+unpacked" — and in Chrome an unpacked extension has to be re-loaded fairly
+often. That's fine for you and a non-starter for anyone else. Between the PWA
+share target and the bookmarklet, saving is covered without it; the extension
+stays a power tool until a store listing is worth the review cycle.
 
 ## License
 

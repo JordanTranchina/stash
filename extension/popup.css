@@ -106,10 +106,6 @@ input:focus {
   background: #e5e7eb;
 }
 
-.btn.full-width {
-  width: 100%;
-}
-
 .text-btn {
   background: none;
   border: none;
@@ -126,14 +122,6 @@ input:focus {
   color: #ef4444;
   font-size: 13px;
   margin-top: 8px;
-}
-
-/* Actions */
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 20px;
 }
 
 /* Recent Saves */
@@ -236,36 +224,4 @@ input:focus {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-/* Kindle Sync */
-.kindle-sync {
-  margin-bottom: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
-}
-
-.btn.kindle {
-  background: #ff9900;
-  color: #111;
-}
-
-.btn.kindle:hover {
-  background: #e88b00;
-}
-
-.sync-status {
-  font-size: 12px;
-  color: #6b7280;
-  text-align: center;
-  margin-top: 8px;
-  min-height: 16px;
-}
-
-.sync-status.success {
-  color: #10b981;
-}
-
-.sync-status.error {
-  color: #ef4444;
 }

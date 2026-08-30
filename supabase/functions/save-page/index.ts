@@ -289,11 +289,37 @@ serve(async (req) => {
   }
 
   try {
-    const { url, user_id, highlight, source, prefetched, created_at, title } = await req.json();
-
-    if (!url || !user_id) {
+    // The saving user is whoever the JWT says it is. A user_id in the body is
+    // ignored: the anon key is public (it ships in the extension), so trusting
+    // the body would let anyone insert articles into anyone else's library.
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: "url and user_id required" }),
+        JSON.stringify({ error: "Missing Authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const authClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: authData, error: authError } = await authClient.auth.getUser();
+    if (authError || !authData?.user) {
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const userId = authData.user.id;
+
+    const { url, highlight, source, prefetched, created_at, title } = await req.json();
+
+    if (!url) {
+      return new Response(
+        JSON.stringify({ error: "url required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -361,7 +387,7 @@ serve(async (req) => {
     // Build save object. Persist the resolved URL so share.google-style links
     // land on the real article.
     const saveData: Record<string, unknown> = {
-      user_id,
+      user_id: userId,
       url: resolvedUrl,
       title: resolvedTitle,
       excerpt: article.excerpt,
@@ -394,7 +420,8 @@ serve(async (req) => {
       }
     }
 
-    // Save to database
+    // Save to database. Still the service-role client — the row is written with
+    // the JWT-derived user_id above, so bypassing RLS here doesn't widen access.
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!

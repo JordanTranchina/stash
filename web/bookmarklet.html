@@ -127,17 +127,9 @@
   <div class="container">
     <div class="logo">S</div>
     <h1>Stash Bookmarklet</h1>
-    <p class="subtitle">Save pages and highlights - no login required</p>
+    <p class="subtitle">Save pages and highlights from any browser</p>
 
-    <div id="setup-section">
-      <form class="setup-form" id="setup-form">
-        <input type="text" id="user-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}">
-        <p class="input-help">Your user ID from Supabase (Authentication > Users)</p>
-        <button type="submit" class="btn">Generate Bookmarklet</button>
-      </form>
-    </div>
-
-    <div class="bookmarklet-section" id="bookmarklet-section">
+    <div class="bookmarklet-section show" id="bookmarklet-section">
       <div class="success">Your bookmarklet is ready!</div>
 
       <a class="bookmarklet" id="bookmarklet-link" href="#">
@@ -156,27 +148,35 @@
       <div class="note">
         <strong>Tip:</strong> Select text first, then click the bookmarklet to save just that highlight!
       </div>
+
+      <div class="note">
+        The bookmarklet opens Stash's quick-save window, which saves the page as
+        whoever is signed in there. If you're signed out it asks you to sign in
+        first rather than losing the page.
+      </div>
     </div>
   </div>
 
   <script>
-    // Replace with your Supabase project URL
-    const CONFIG = {
-      SUPABASE_URL: 'https://YOUR_PROJECT_ID.supabase.co',
-    };
+    // The bookmarklet no longer talks to Supabase itself. It runs on an
+    // arbitrary page where there's no session to sign the request with, and
+    // save-page now rejects anything without an Authorization header. So it
+    // hands the URL (and any selected text) to this app's quick-save page,
+    // which is signed in and does the authenticated save. Nothing to
+    // configure: the page knows its own origin.
+    const saveBase = location.origin + '/save.html';
 
-    document.getElementById('setup-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const userId = document.getElementById('user-id').value.trim();
-      const functionUrl = CONFIG.SUPABASE_URL + '/functions/v1/save-page';
+    // Param names match web/manifest.json's share_target, so the bookmarklet
+    // and the mobile share sheet land on exactly the same code path.
+    const bookmarkletCode =
+      "javascript:(()=>{const p=new URLSearchParams({url:location.href});" +
+      "const t=document.querySelector('h1')?.innerText?.trim()||document.title;" +
+      "if(t)p.set('title',t);" +
+      "const s=getSelection().toString().trim();if(s)p.set('text',s);" +
+      "const u='" + saveBase + "?'+p;" +
+      "if(!open(u,'stash-save','width=420,height=560'))open(u,'_blank')})();";
 
-      // Generate bookmarklet with client-side extraction
-      const bookmarkletCode = `javascript:(async()=>{const f='${functionUrl}',uid='${userId}';const t=document.createElement('div');t.textContent='Saving...';t.style.cssText='position:fixed;bottom:20px;right:20px;padding:12px 24px;background:%236366f1;color:white;border-radius:8px;font:500 14px system-ui;z-index:999999';document.body.appendChild(t);try{const sel=window.getSelection().toString().trim();const url=location.href;const siteName=location.hostname.replace('www.','');const ps=[];const E=(el,min)=>{if(el.tagName==='IMG'){const s=el.currentSrc||el.src||el.getAttribute('data-src');if(s&&!s.startsWith('data:')){try{ps.push('!['+(el.alt||'').trim()+']('+new URL(s,location.href).href+')')}catch(e){}}}else{const x=el.innerText?.trim();if(x&&x.length>min)ps.push(x)}};if(!sel){const R=document.querySelector('article,main,[role=article],.article-body,.post-content,.entry-content')||document.body;R.querySelectorAll('p,img,h2,h3').forEach(el=>E(el,20));if(ps.filter(x=>x[0]!=='!').length<3){ps.length=0;document.querySelectorAll('p,img,h2,h3').forEach(el=>E(el,50))}}const content=ps.join('\\n\\n');const title=document.querySelector('h1')?.innerText?.trim()||document.title;const pubEl=document.querySelector('time[datetime]');const pubMeta=document.querySelector('meta[property="article:published_time"]');const publishedAt=pubEl?pubEl.getAttribute('datetime'):(pubMeta?pubMeta.content:null);const pf={title:title,content:sel?'':content,excerpt:'',site_name:siteName,author:null,published_at:publishedAt};const res=await fetch(f,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url,user_id:uid,highlight:sel||null,source:'bookmarklet',prefetched:pf})});if(res.ok){t.textContent='Saved!';t.style.background='%2310b981'}else{const err=await res.text();t.textContent='Failed: '+err.slice(0,50);t.style.background='%23ef4444'}setTimeout(()=>t.remove(),3000)}catch(e){t.textContent='Error: '+e.message;t.style.background='%23ef4444';setTimeout(()=>t.remove(),5000)}})();`;
-
-      document.getElementById('bookmarklet-link').href = bookmarkletCode;
-      document.getElementById('setup-section').style.display = 'none';
-      document.getElementById('bookmarklet-section').classList.add('show');
-    });
+    document.getElementById('bookmarklet-link').href = bookmarkletCode;
   </script>
 </body>
 </html>

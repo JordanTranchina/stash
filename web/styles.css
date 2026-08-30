@@ -40,7 +40,6 @@
 
 [data-theme="dark"] .save-card,
 [data-theme="dark"] .stat-card,
-[data-theme="dark"] .kindle-book-card,
 [data-theme="dark"] .modal-content {
   background: var(--bg-secondary);
 }
@@ -60,14 +59,6 @@
 
 [data-theme="dark"] .save-card-highlight {
   background: rgba(245, 158, 11, 0.2);
-}
-
-[data-theme="dark"] .kindle-highlight-snippet {
-  background: rgba(245, 158, 11, 0.15);
-}
-
-[data-theme="dark"] .kindle-stats {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(251, 191, 36, 0.15) 100%);
 }
 
 [data-theme="dark"] .reading-pane {
@@ -237,6 +228,36 @@ select {
   font-size: 14px;
   margin-top: 12px;
   text-align: center;
+}
+
+/* Google is the primary path in, so it sits above the email form. It reads as
+   a surface rather than a filled button so it doesn't compete with Sign In. */
+.btn.google-signin {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn.google-signin:hover {
+  background: var(--bg-secondary);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 /* Buttons */
@@ -1758,255 +1779,6 @@ select {
 .dropzone.processing {
   pointer-events: none;
   opacity: 0.7;
-}
-
-/* Kindle View Styles */
-.kindle-stats {
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  margin-bottom: 24px;
-  padding: 20px;
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-  border-radius: var(--radius-lg);
-}
-
-.kindle-clear-btn {
-  margin-left: auto;
-  background: white;
-  border: 1px solid #d97706;
-  color: #92400e;
-  font-size: 13px;
-  padding: 8px 16px;
-}
-
-.kindle-clear-btn:hover {
-  background: #fef3c7;
-}
-
-.kindle-stat {
-  text-align: center;
-}
-
-.kindle-stat-value {
-  display: block;
-  font-size: 32px;
-  font-weight: 700;
-  color: #92400e;
-}
-
-.kindle-stat-label {
-  font-size: 13px;
-  color: #a16207;
-}
-
-.kindle-books-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 16px;
-}
-
-.kindle-book-card {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.kindle-book-card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-
-.kindle-book-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.kindle-book-icon {
-  font-size: 28px;
-  flex-shrink: 0;
-}
-
-.kindle-book-icon-large {
-  font-size: 48px;
-  flex-shrink: 0;
-}
-
-.kindle-book-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.kindle-book-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0 0 4px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.kindle-book-author {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.kindle-book-count {
-  background: var(--bg-tertiary);
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.kindle-highlights-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.kindle-highlight-snippet {
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-style: italic;
-  padding: 10px 12px;
-  background: #fffbeb;
-  border-radius: var(--radius);
-  border-left: 3px solid #f59e0b;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  transition: background 0.15s;
-}
-
-.kindle-highlight-snippet:hover {
-  background: #fef3c7;
-}
-
-.kindle-more-highlights {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-align: center;
-  padding: 8px;
-}
-
-/* Book Detail View */
-.kindle-book-detail {
-  max-width: 800px;
-}
-
-.kindle-back-btn {
-  margin-bottom: 24px;
-}
-
-.kindle-book-detail-header {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 32px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
-}
-
-.kindle-book-detail-header h2 {
-  font-size: 24px;
-  font-weight: 600;
-  margin: 0 0 4px;
-}
-
-.kindle-book-meta {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-top: 8px;
-}
-
-.kindle-highlights-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.kindle-highlight-card {
-  background: white;
-  border: 1px solid var(--border);
-  border-left: 4px solid #f59e0b;
-  border-radius: var(--radius);
-  padding: 20px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.kindle-highlight-card:hover {
-  box-shadow: var(--shadow);
-  background: #fffbeb;
-}
-
-.kindle-highlight-text {
-  font-size: 15px;
-  line-height: 1.7;
-  color: var(--text);
-  font-style: italic;
-}
-
-.kindle-highlight-meta {
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-@media (max-width: 768px) {
-  .kindle-stats {
-    gap: 24px;
-    padding: 16px;
-  }
-
-  .kindle-stat-value {
-    font-size: 24px;
-  }
-
-  .kindle-books-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .kindle-book-card {
-    padding: 16px;
-  }
-
-  .kindle-book-icon {
-    font-size: 24px;
-  }
-
-  .kindle-book-title {
-    font-size: 15px;
-  }
-
-  .kindle-book-detail-header {
-    gap: 12px;
-  }
-
-  .kindle-book-icon-large {
-    font-size: 36px;
-  }
-
-  .kindle-book-detail-header h2 {
-    font-size: 20px;
-  }
-
-  .kindle-highlight-card {
-    padding: 16px;
-  }
 }
 
 @media (max-width: 768px) {

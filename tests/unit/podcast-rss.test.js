@@ -24,7 +24,12 @@ function cdata(str) {
   return `<![CDATA[${str.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
 }
 
-function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/functions/v1/podcast-chapters") {
+function buildRssXml(
+  episodes,
+  chaptersBase = "https://example.supabase.co/functions/v1/podcast-chapters",
+  token = "feedtoken"
+) {
+  const selfUrl = `https://example.supabase.co/functions/v1/podcast-rss?token=${token}`;
   const items = episodes
     .map((ep) => {
       const title = escapeXml(ep.title ?? "Untitled");
@@ -36,7 +41,7 @@ function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/funct
 
       const hasChapters = Array.isArray(ep.chapters) && ep.chapters.length > 0;
       const chaptersTag = hasChapters
-        ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}`)}" type="application/json+chapters"/>`
+        ? `\n      <podcast:chapters url="${escapeXml(`${chaptersBase}?id=${ep.id}&token=${token}`)}" type="application/json+chapters"/>`
         : "";
       const imageTag = ep.artwork_url
         ? `\n      <itunes:image href="${escapeXml(ep.artwork_url)}"/>`
@@ -57,16 +62,19 @@ function buildRssXml(episodes, chaptersBase = "https://example.supabase.co/funct
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+  xmlns:atom="http://www.w3.org/2005/Atom"
   xmlns:content="http://purl.org/rss/modules/content/"
   xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
     <title>Stash: Listen Later</title>
     <link>https://stash.app</link>
+    <atom:link href="${escapeXml(selfUrl)}" rel="self" type="application/rss+xml"/>
     <description>Your personal Stash articles, read aloud by AI.</description>
     <language>en-us</language>
     <itunes:author>Stash</itunes:author>
     <itunes:category text="Technology"/>
     <itunes:explicit>false</itunes:explicit>
+    <itunes:block>yes</itunes:block>
 ${items}
   </channel>
 </rss>`;
@@ -279,7 +287,7 @@ describe("podcast:chapters", () => {
     const tags = xml.match(/<podcast:chapters /g) || [];
     expect(tags).toHaveLength(1);
     expect(xml).toMatch(
-      /<podcast:chapters url="https:\/\/example\.supabase\.co\/functions\/v1\/podcast-chapters\?id=with-ch" type="application\/json\+chapters"\/>/
+      /<podcast:chapters url="https:\/\/example\.supabase\.co\/functions\/v1\/podcast-chapters\?id=with-ch&amp;token=feedtoken" type="application\/json\+chapters"\/>/
     );
   });
 
@@ -295,6 +303,33 @@ describe("podcast:chapters", () => {
       },
     ]);
     expect(xml).not.toMatch(/<podcast:chapters/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Private-feed markers
+// ---------------------------------------------------------------------------
+// The feed is per-user and reachable by anyone holding the token, so it must
+// not end up in a podcast directory, and clients need a canonical self URL that
+// carries the token (some apps rewrite the subscribed URL from atom:link).
+
+describe("private feed markers", () => {
+  const xml = buildRssXml([]);
+
+  test("asks directories not to list the feed", () => {
+    expect(xml).toContain("<itunes:block>yes</itunes:block>");
+  });
+
+  test("declares the atom namespace and a tokenised self link", () => {
+    expect(xml).toContain('xmlns:atom="http://www.w3.org/2005/Atom"');
+    expect(xml).toContain(
+      '<atom:link href="https://example.supabase.co/functions/v1/podcast-rss?token=feedtoken" rel="self" type="application/rss+xml"/>'
+    );
+  });
+
+  test("does not leak an owner identity into the channel metadata", () => {
+    expect(xml).toContain("<itunes:author>Stash</itunes:author>");
+    expect(xml).not.toMatch(/@/);
   });
 });
 

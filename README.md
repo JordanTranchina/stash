@@ -1,6 +1,6 @@
 # Stash
 
-A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle notes to your own database.
+A simple, self-hosted read-it-later app. Save articles and highlights to your own database.
 
 **Your data. Your server. No subscription.**
 
@@ -8,7 +8,6 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 
 - **Chrome & Firefox Extensions** - Save pages and highlights with one click
 - **Web App** - Access your saves from any device
-- **Kindle Sync** - Import highlights from your Kindle library
 - **CSV Import** - Bring your reading list over from Pocket, Instapaper, Omnivore, and other read-it-later services
 - **Full-Text Search** - Find anything you've saved
 - **Text-to-Speech** - Basic audio generation (Edge TTS)
@@ -21,7 +20,7 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 
 - **Free forever** - Runs on Supabase free tier (500MB, unlimited API calls)
 - **You own your data** - Everything stored in your own database
-- **No account needed** - Single-user mode, no sign-up friction
+- **Invite-only accounts** - Share it with a few people; each account sees only its own saves
 - **Works offline** - PWA support for mobile
 - **Open source** - Fork it, modify it, make it yours
 
@@ -30,12 +29,30 @@ A simple, self-hosted read-it-later app. Save articles, highlights, and Kindle n
 1. **Create a Supabase project** (free) at [supabase.com](https://supabase.com)
 2. **Run the schema** from `supabase/schema.sql`
 3. **Add your credentials** to `extension/config.js` (and `extension-firefox/config.js` if you also want the Firefox build) and `web/config.js`
-4. **Load the extension**:
+4. **Set up sign-in**: enable Google as an auth provider in Supabase, and add your own email to `allowed_emails` so you can sign up
+5. **Deploy the web app** to Vercel/Netlify (free)
+6. **Load the extension** (optional, for you only):
    - Chrome: `chrome://extensions` > Load unpacked > select `extension/`
    - Firefox: `about:debugging#/runtime/this-firefox` > Load Temporary Add-on > select `extension-firefox/manifest.json`
-5. **Deploy the web app** to Vercel/Netlify (free)
 
-See [SETUP.md](SETUP.md) for detailed instructions.
+See [SETUP.md](documentation/SETUP.md) for detailed instructions, including the
+full Google OAuth walkthrough and the invite allowlist.
+
+## Accounts
+
+Stash is multi-user. Everyone signs in — with Google, or with an email and
+password — and Row Level Security keeps each account's saves to itself. Sign-up
+is invite-only: a trigger on `auth.users` checks the address against the
+`allowed_emails` table, so to let someone in you insert their email there.
+
+### A note on the extension
+
+The Chrome and Firefox extensions are not part of sharing Stash with other
+people. Neither is published to a store, so installing one means Developer Mode
+and "Load unpacked" — fine for you, a non-starter for anyone non-technical. The
+PWA share target (add the web app to your home screen) and the bookmarklet
+cover saving on every platform. The extension stays a power tool until a Web
+Store listing is worth the review cycle.
 
 ## Project Structure
 

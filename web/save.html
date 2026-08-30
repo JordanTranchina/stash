@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Quick Save - Stash</title>
@@ -26,23 +26,20 @@
       justify-content: center;
     }
 
-    /* Standard Form View */
+    /* Standard Form View — anchored to the bottom, where the thumb already is.
+       This page is nearly always opened one-handed from a share sheet, and the
+       control doubles as a composer, so it belongs where a composer lives.
+       Fixed rather than flex-end so the soft keyboard can push it (see the
+       visualViewport sync in the script). */
     .container {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
       width: 100%;
       max-width: 400px;
-      padding: 20px;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin-bottom: 24px;
-      text-align: center;
-    }
-
-    .form {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      margin: 0 auto;
+      padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
     }
 
     input,
@@ -64,6 +61,103 @@
     textarea {
       min-height: 100px;
       resize: vertical;
+    }
+
+    /* Field, paste and submit are one control: a composer. Reads as a single
+       object rather than a form, and keeps the whole thing inside thumb reach. */
+    .pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 4px 4px 4px 6px;
+    }
+
+    .pill:focus-within {
+      border-color: #6366f1;
+    }
+
+    .pill input {
+      padding: 10px 4px;
+      border: none;
+      outline: none;
+      border-radius: 0;
+      font-size: 16px;
+      width: 100%;
+      flex-grow: 1;
+      min-width: 0;
+      background: transparent;
+      color: #1f2937;
+      -webkit-appearance: none;
+    }
+
+    .input-action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* 18px icon + 13px padding = a 44px target, matching the submit button
+         and the minimum comfortable tap size. */
+      padding: 13px;
+      background: none;
+      border: none;
+      border-radius: 8px;
+      color: #6b7280;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-appearance: none;
+    }
+
+    .input-action-btn:hover {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .submit-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      background: #6366f1;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-appearance: none;
+    }
+
+    .submit-btn:active {
+      background: #4f46e5;
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+    }
+
+    /* Both icons ship in the button and swap by class — setting textContent
+       for a "Saving..." state would wipe the SVG. */
+    .submit-btn .spinner-sm {
+      display: none;
+    }
+
+    .submit-btn.is-saving .arrow {
+      display: none;
+    }
+
+    .submit-btn.is-saving .spinner-sm {
+      display: block;
+    }
+
+    .spinner-sm {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
 
     .btn {
@@ -91,7 +185,7 @@
       text-align: center;
       padding: 12px;
       border-radius: 8px;
-      margin-top: 16px;
+      margin-bottom: 12px;
       display: none;
     }
 
@@ -107,11 +201,52 @@
       color: #991b1b;
     }
 
+    /* Underlined text, not a second filled button — reporting a miss is a
+       secondary path out of the error, and shouldn't compete with the save
+       control sitting right below it. */
+    .report-btn {
+      display: block;
+      margin: 8px auto 0;
+      padding: 6px 8px;
+      background: none;
+      border: none;
+      color: #991b1b;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+
     .hint {
       font-size: 13px;
       color: #6b7280;
       text-align: center;
-      margin-top: 24px;
+      margin-top: 16px;
+    }
+
+    /* Signed-out notice: shown instead of saving, never alongside a fake success */
+    .signin-prompt {
+      display: none;
+      margin-bottom: 12px;
+      padding: 16px;
+      border-radius: 10px;
+      background: #fef3c7;
+      color: #92400e;
+      text-align: center;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .signin-prompt.visible {
+      display: block;
+    }
+
+    .signin-prompt .btn {
+      margin-top: 12px;
+      text-decoration: none;
+      display: block;
     }
 
     /* Stealth / Overlay View */
@@ -223,17 +358,43 @@
 
   <!-- Standard Form -->
   <div class="container" id="main-container">
-    <h1>Quick Save</h1>
-    <form class="form" id="save-form">
-      <input type="url" id="url" placeholder="https://..." required>
-      <input type="text" id="title" placeholder="Title (optional)">
-      <textarea id="highlight" placeholder="Highlight or notes (optional)"></textarea>
-      <button type="submit" class="btn" id="save-btn">Save to Stash</button>
-    </form>
+    <!-- Status and the signed-out notice sit ABOVE the pill: the bar is
+         anchored to the bottom edge, so anything below it would push the
+         control off-screen instead of growing upward. -->
     <div class="status" id="status"></div>
-    <p class="hint">Add to Home Screen for quick access</p>
+    <div class="signin-prompt" id="signin-prompt">
+      <strong>You're signed out.</strong><br>
+      Sign in to Stash in the tab that opens, then come back — this link will be
+      waiting in the box below, and we'll save it for you automatically.
+      <a class="btn" href="/" target="_blank" rel="opener">Sign in to Stash</a>
+    </div>
+    <form id="save-form">
+      <div class="pill">
+        <button type="button" class="input-action-btn" id="paste-btn" title="Paste from clipboard" aria-label="Paste from clipboard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="8" y="2" width="8" height="4" rx="1"></rect>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+          </svg>
+        </button>
+        <!-- type="text", not "url": the field accepts a whole forwarded message
+             and digs the link out of it, which the browser's native url
+             validation would reject before the form handler ever ran.
+             inputmode keeps the URL-friendly keyboard on mobile. -->
+        <input type="text" inputmode="url" id="url" placeholder="Paste a link" required
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button type="submit" class="submit-btn" id="save-btn" title="Save to Stash" aria-label="Save to Stash">
+          <svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+          <span class="spinner-sm"></span>
+        </button>
+      </div>
+    </form>
+    <p class="hint">Text before/after the link? Don't worry, we'll filter it out.</p>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="sentry-init.js"></script>
   <script src="analytics.js"></script>
@@ -245,16 +406,60 @@
     const saveBtn = document.getElementById('save-btn');
     const statusEl = document.getElementById('status');
     const urlInput = document.getElementById('url');
-    const titleInput = document.getElementById('title');
-    const highlightInput = document.getElementById('highlight');
     
     // UI Elements
+    const signinPrompt = document.getElementById('signin-prompt');
     const mainContainer = document.getElementById('main-container');
     const overlay = document.getElementById('saving-overlay');
     const spinner = document.getElementById('spinner');
     const checkmark = document.getElementById('checkmark');
     const overlayText = document.getElementById('overlay-text');
     const viewInStashBtn = document.getElementById('view-in-stash');
+
+    // This page saves on the user's behalf, so it needs their session too — the
+    // Edge Function reads the owner off the access token.
+    const supabaseClient = window.supabase.createClient(
+      CONFIG.SUPABASE_URL,
+      CONFIG.SUPABASE_ANON_KEY
+    );
+
+    // Returns the current session, or null when signed out. Also mirrors it into
+    // IndexedDB: a share saved from the sheet may be the only time this device
+    // touches Stash for a while, and Background Sync can't read the localStorage
+    // copy supabase-js keeps, so the queue would have no way to authenticate.
+    async function getSession() {
+      const { data } = await supabaseClient.auth.getSession();
+      const session = data && data.session;
+      if (!session) return null;
+      try {
+        await window.StashDB.saveSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_at: session.expires_at,
+          user_id: session.user.id,
+        });
+      } catch (e) {
+        // Mirroring is best-effort; the save itself doesn't depend on it.
+      }
+      return session;
+    }
+
+    // Keep the bar above the soft keyboard. A fixed `bottom: 0` element is
+    // positioned against the LAYOUT viewport, which iOS does not shrink when
+    // the keyboard opens — so the composer would sit behind the keyboard
+    // instead of on top of it. visualViewport is the part actually on screen;
+    // offset the bar by the gap between the two.
+    (function trackKeyboard() {
+      const vv = window.visualViewport;
+      if (!vv) return; // Android/desktop shrink the layout viewport already
+      const sync = () => {
+        const hidden = window.innerHeight - vv.height - vv.offsetTop;
+        mainContainer.style.transform = `translateY(${-Math.max(0, hidden)}px)`;
+      };
+      vv.addEventListener('resize', sync);
+      vv.addEventListener('scroll', sync);
+      sync();
+    })();
 
     // Ensure the Service Worker controls this page so Background Sync can fire.
     if ('serviceWorker' in navigator) {
@@ -274,15 +479,48 @@
       }
     }
 
+    // A save we couldn't complete because nobody was signed in. supabase-js
+    // mirrors the session across tabs, so signing in from the tab the prompt
+    // opens fires onAuthStateChange here and we can pick this back up.
+    let blockedSave = null;
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      if (!session || !blockedSave) return;
+      const pending = blockedSave;
+      blockedSave = null;
+      signinPrompt.classList.remove('visible');
+      handleSave(pending.data, pending.isAuto);
+    });
+
     // 1. Common Save Logic
     async function handleSave(data, isAuto = false) {
+      signinPrompt.classList.remove('visible');
+
       if (!isAuto) {
         // Form UI updates
-        saveBtn.textContent = 'Saving...';
+        saveBtn.classList.add('is-saving');
         saveBtn.disabled = true;
         statusEl.className = 'status';
         statusEl.textContent = 'Saving to Stash...';
         statusEl.style.display = 'block';
+      }
+
+      // A save with no session has no owner. Queueing it would either strand it
+      // in the pending list forever or hand it to whoever signs in next, so we
+      // stop here and ask for a sign-in — the URL stays in the form so the
+      // shared link isn't lost.
+      let session = null;
+      try {
+        session = await getSession();
+      } catch (e) {
+        console.warn('Could not read session', e);
+      }
+      if (!session) {
+        // Hold onto the save so the auth listener below can finish it the
+        // moment the user signs in, instead of making them click again.
+        blockedSave = { data: data, isAuto: isAuto };
+        showSignInRequired(isAuto);
+        return false;
       }
 
       let savedOnline = false;
@@ -290,11 +528,18 @@
         // Route through the save-page Edge Function so the article is fully
         // scraped server-side (Readability), the same way the extension and
         // bookmarklet ingest pages — instead of storing just the shared link.
-        savedOnline = await window.StashSave.saveViaScrape(data);
+        savedOnline = await window.StashSave.saveViaScrape(data, session.access_token);
       } catch (err) {
-        // fetch() only rejects on a genuine network failure (offline / server
-        // unreachable). THAT is what the pending queue is for — queue it and
-        // let Background Sync retry when connectivity returns.
+        // saveViaScrape also throws when the session vanished between our check
+        // and the request; that isn't something a retry fixes.
+        if (err.noSession) {
+          showSignInRequired(isAuto);
+          return false;
+        }
+
+        // Otherwise fetch() only rejects on a genuine network failure (offline /
+        // server unreachable). THAT is what the pending queue is for — queue it
+        // and let Background Sync retry when connectivity returns.
         console.warn('Network error saving; queueing for later sync...', err);
         try {
           await window.StashDB.savePendingShare(data);
@@ -323,6 +568,57 @@
       return false;
     }
 
+    // We couldn't find a URL in what was entered. The detector is a regex over
+    // free text, so it has real blind spots (a bare domain with no scheme is
+    // the common one) — offer a way to say so rather than insisting the user
+    // is wrong. Reporting sends the text that was in the box, so it is behind
+    // an explicit tap and never automatic.
+    function showNoLinkFound(raw) {
+      statusEl.className = 'status error';
+      statusEl.style.display = 'block';
+      statusEl.textContent = '';
+
+      const message = document.createElement('div');
+      message.textContent = "Couldn't find a link inside of this text. Perhaps a typo?";
+      statusEl.appendChild(message);
+
+      const report = document.createElement('button');
+      report.type = 'button';
+      report.className = 'report-btn';
+      report.textContent = 'There is a link in here';
+      report.addEventListener('click', () => {
+        reportMissedLink(raw);
+        statusEl.textContent = "Thanks — we'll take a look at why we missed it.";
+      });
+      statusEl.appendChild(report);
+    }
+
+    // Send the text we failed to parse, so the detector can be fixed against
+    // real misses instead of guesses. Only ever called from the button above.
+    function reportMissedLink(raw) {
+      const text = String(raw || '').slice(0, 500);
+      console.warn('Reported missed link:', text);
+      if (typeof Sentry === 'undefined') return;
+      Sentry.captureMessage('Missed link reported by user', {
+        level: 'info',
+        tags: { action: 'missedLinkReport' },
+        extra: { text: text, length: String(raw || '').length },
+      });
+    }
+
+    // Signed out: drop back to the form (the shared URL is already pre-filled
+    // there) and point at the sign-in page instead of pretending we saved.
+    function showSignInRequired(isAuto) {
+      if (isAuto) {
+        showForm();
+      } else {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('is-saving');
+      }
+      statusEl.style.display = 'none';
+      signinPrompt.classList.add('visible');
+    }
+
     function showSaveError(isAuto) {
       // Auto-save runs behind the stealth overlay; drop back to the form so the
       // error (and the pre-filled URL) is visible and the user can retry.
@@ -330,7 +626,7 @@
         showForm();
       } else {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Save to Stash';
+        saveBtn.classList.remove('is-saving');
       }
       statusEl.textContent = "Couldn't save this one. Please try again.";
       statusEl.className = 'status error';
@@ -366,7 +662,14 @@
         statusEl.className = 'status success';
         resetForm();
         setTimeout(() => {
-           window.location.href = '/';
+          // Opened by the bookmarklet? Close the popup and leave the page the
+          // user was reading exactly where it was. Otherwise this is the
+          // standalone quick-save page, so go on into the app.
+          if (window.name === 'stash-save') {
+            try { window.close(); } catch (e) {}
+            return;
+          }
+          window.location.href = '/';
         }, 1500);
       }
     }
@@ -375,18 +678,26 @@
     saveForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const url = urlInput.value.trim();
-      const highlight = highlightInput.value.trim();
+      const raw = urlInput.value.trim();
+      // Share text and forwarded messages rarely arrive as a bare link, so pull
+      // the URL out of whatever was entered rather than failing on the blob.
+      const url = window.StashSave.extractUrlFromText(raw) || raw;
 
-      // The scraper derives the title/site name from the page itself; we pass
-      // any title the user typed only as a fallback for pages that can't be
-      // scraped (bot-blocked / paywalled), plus the URL, source and note.
+      try {
+        new URL(url);
+      } catch (e) {
+        showNoLinkFound(raw);
+        return;
+      }
+
+      urlInput.value = url;
+
+      // The URL is the whole form. The scraper derives the title, site name and
+      // article body from the page itself.
       const data = window.StashSave.buildScrapeRequest({
-        user_id: CONFIG.USER_ID,
         url: url,
         source: 'mobile-web',
-        highlight: highlight || null,
-        title: titleInput.value.trim() || null,
+        highlight: null,
       });
 
       await handleSave(data, false);
@@ -394,8 +705,8 @@
 
     function resetForm() {
       urlInput.value = '';
-      titleInput.value = '';
-      highlightInput.value = '';
+      saveBtn.disabled = false;
+      saveBtn.classList.remove('is-saving');
     }
     
     function showForm() {
@@ -423,11 +734,12 @@
         pUrl = window.StashSave.extractUrlFromText(pText);
       }
 
-      // Pre-fill fields always (in case of error fallback). We deliberately do
+      // Pre-fill the URL always (in case of error fallback). We deliberately do
       // NOT pre-fill the notes box with the shared text — that snippet is the
       // article title, not a user highlight, and the scraper fetches the body.
+      // The shared title never becomes a form field; it's only handed to the
+      // scraper below as a fallback for pages it can't read.
       if (pUrl) urlInput.value = pUrl;
-      if (pTitle) titleInput.value = pTitle;
 
       // If we have a URL, TRIGGER STEALTH AUTO-SAVE
       if (pUrl) {
@@ -439,7 +751,6 @@
         // shared title is passed only as a fallback for pages the server can't
         // scrape (bot-blocked / paywalled), so they still get a real title.
         const data = window.StashSave.buildScrapeRequest({
-          user_id: CONFIG.USER_ID,
           url: pUrl,
           source: 'share-target',
           highlight: null,
@@ -466,6 +777,35 @@
       } catch (e) { }
     }
     urlInput.addEventListener('focus', checkClipboard);
+
+    // Native paste (long-press / Ctrl+V) doesn't go through the button below,
+    // so collapse a pasted blob to its link here too — same as the web app's
+    // Add URL field.
+    urlInput.addEventListener('paste', (e) => {
+      const pasted = (e.clipboardData || window.clipboardData).getData('text');
+      const detected = window.StashSave.extractUrlFromText(pasted);
+      if (detected && detected !== pasted.trim()) {
+        e.preventDefault();
+        e.target.value = detected;
+      }
+    });
+
+    // Explicit paste, for the (common) case where the focus-triggered read is
+    // denied — iOS Safari in particular only allows a clipboard read that a
+    // user gesture asked for. Overwrites whatever is in the field, since the
+    // user asked for it, unlike checkClipboard which never clobbers.
+    document.getElementById('paste-btn').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text) return;
+        urlInput.value = window.StashSave.extractUrlFromText(text) || text.trim();
+        urlInput.focus();
+      } catch (e) {
+        statusEl.textContent = "Couldn't read the clipboard. Paste with your keyboard instead.";
+        statusEl.className = 'status error';
+        statusEl.style.display = 'block';
+      }
+    });
   </script>
 </body>
 

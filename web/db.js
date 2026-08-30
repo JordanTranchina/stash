@@ -1,8 +1,10 @@
 // Stash IndexedDB Wrapper
 const DB_NAME = 'StashDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_ARTICLES = 'articles';
 const STORE_PENDING = 'pending_saves'; // For offline shares
+const STORE_SESSION = 'session'; // Auth tokens the Service Worker can read
+const SESSION_KEY = 'current'; // Single-record store; one signed-in user per device
 
 const dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -27,6 +29,13 @@ const dbPromise = new Promise((resolve, reject) => {
         // Store for pending saves (write offline, sync later)
         if (!db.objectStoreNames.contains(STORE_PENDING)) {
             const store = db.createObjectStore(STORE_PENDING, { autoIncrement: true });
+        }
+
+        // Store for the Supabase session. supabase-js keeps the session in
+        // localStorage, which a Service Worker cannot read — so the page mirrors
+        // it here for Background Sync to authenticate its drain requests.
+        if (!db.objectStoreNames.contains(STORE_SESSION)) {
+            db.createObjectStore(STORE_SESSION);
         }
     };
 });
@@ -136,6 +145,50 @@ self.StashDB = {
                 if (results !== undefined) resolve(results.map((r, i) => ({ key: keys[i], data: r })));
             };
             request.onerror = () => reject(request.error);
+        });
+    },
+
+    // Mirror the Supabase session so the Service Worker can authenticate.
+    // `expires_at` is always stored as epoch MILLISECONDS so it compares
+    // directly against Date.now(); supabase-js and the /auth/v1/token endpoint
+    // both hand back seconds, so anything that looks like seconds is scaled up
+    // here rather than at every call site.
+    async saveSession(session) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_SESSION], 'readwrite');
+        const store = transaction.objectStore(STORE_SESSION);
+        const expiresAt = Number(session.expires_at) || 0;
+        store.put({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+            expires_at: expiresAt < 1e12 ? expiresAt * 1000 : expiresAt,
+            user_id: session.user_id || (session.user && session.user.id) || null
+        }, SESSION_KEY);
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
+    async getSession() {
+        const db = await dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_SESSION], 'readonly');
+            const store = transaction.objectStore(STORE_SESSION);
+            const request = store.get(SESSION_KEY);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async clearSession() {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_SESSION], 'readwrite');
+        const store = transaction.objectStore(STORE_SESSION);
+        store.delete(SESSION_KEY);
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
         });
     },
 
