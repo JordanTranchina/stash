@@ -26,6 +26,12 @@ let supabase = null;
 // way out of this state.
 const SIGN_IN_MESSAGE = 'Sign in to Stash to save';
 
+// Shown when the page can't be read client-side: chrome:// / about: pages, the
+// Web Store, the PDF viewer, or a tab where the content script can't be reached
+// (no scripting API on this browser, injection blocked). Expected, not a bug —
+// like SIGN_IN_MESSAGE it's kept out of Sentry.
+const UNREADABLE_PAGE_MESSAGE = "Can't save this page — open the article in a tab and try again";
+
 // Clicking the toolbar icon saves immediately, so the badge is the only
 // feedback the user is guaranteed to see. Keep the text to 1-2 characters,
 // which is all that fits.
@@ -42,6 +48,13 @@ chrome.runtime.onStartup.addListener(async () => {
   await initSupabase();
   await updateActionForSession();
 });
+
+// MV3 tears the service worker down when idle and revives it on the next
+// event (including the toolbar click itself). onInstalled/onStartup don't fire
+// on a bare wake, so reconcile the toolbar action here too: if the stored
+// session has gone away since the last check, this flips the icon back to
+// opening the sign-in popup instead of firing an unauthenticated save.
+updateActionForSession().catch(() => {});
 
 async function initSupabase() {
   supabase = new SupabaseClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
@@ -190,6 +203,9 @@ async function saveHighlight(tab, selectionText) {
       SentryLite.captureException(err, { tags: { action: 'saveHighlight' } });
     }
     showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
+    // The session went away — restore the sign-in popup so the next toolbar
+    // click has somewhere to go instead of erroring again.
+    if (needsAuth) await updateActionForSession();
     return { success: false, error: err.message, needsAuth };
   }
 }
@@ -214,15 +230,26 @@ async function savePage(tab) {
     try {
       article = await chrome.tabs.sendMessage(tab.id, { action: 'extractArticle' });
     } catch (e) {
-      // Content script not loaded, inject it first
+      // Content script not loaded, inject it first. This whole path fails on
+      // pages that can't run a content script (chrome://, Web Store, PDF
+      // viewer) or on a browser with no scripting API — surface that as an
+      // expected "can't read this page" rather than a crash.
       console.log('Content script not loaded, injecting...');
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['Readability.js', 'content.js']
-      });
-      // Wait a moment for script to initialize
-      await new Promise(r => setTimeout(r, 100));
-      article = await chrome.tabs.sendMessage(tab.id, { action: 'extractArticle' });
+      if (!chrome.scripting?.executeScript) {
+        throw new Error(UNREADABLE_PAGE_MESSAGE);
+      }
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['Readability.js', 'content.js']
+        });
+        // Wait a moment for script to initialize
+        await new Promise(r => setTimeout(r, 100));
+        article = await chrome.tabs.sendMessage(tab.id, { action: 'extractArticle' });
+      } catch (injectErr) {
+        console.log('Could not read page:', injectErr);
+        throw new Error(UNREADABLE_PAGE_MESSAGE);
+      }
     }
 
     if (!article) {
@@ -270,12 +297,18 @@ async function savePage(tab) {
   } catch (err) {
     console.error('Save page failed:', err);
     const needsAuth = err.message === SIGN_IN_MESSAGE;
-    if (!needsAuth && typeof SentryLite !== 'undefined') {
+    // Signed-out and can't-read-this-page are both expected states, not bugs;
+    // only real failures are worth a Sentry event.
+    const expected = needsAuth || err.message === UNREADABLE_PAGE_MESSAGE;
+    if (!expected && typeof SentryLite !== 'undefined') {
       SentryLite.captureException(err, { tags: { action: 'savePage' } });
     }
-    showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
+    showToast(tab.id, expected ? err.message : 'Failed to save: ' + err.message, true);
     setBadge('!', '#dc2626');
     clearBadgeSoon();
+    // The session went away — restore the sign-in popup so the next toolbar
+    // click opens the form instead of firing another failing save.
+    if (needsAuth) await updateActionForSession();
     return { success: false, error: err.message, needsAuth };
   }
 }

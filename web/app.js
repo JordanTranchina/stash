@@ -487,6 +487,11 @@ class StashApp {
   showMainScreen() {
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
+    // Deep link: the browser extension's settings cog opens the app at
+    // #settings and expects to land on the Settings view.
+    if (window.location.hash === '#settings') {
+      this.setView('settings');
+    }
   }
 
   async signIn() {
@@ -1407,23 +1412,31 @@ class StashApp {
     document.getElementById('audio-speed').value = '1';
     this.updatePlayButton();
 
-    // Set up event listeners
-    this.audio.addEventListener('loadedmetadata', () => {
-      document.getElementById('audio-duration').textContent = this.formatTime(this.audio.duration);
+    // Set up event listeners. Bind them to this element via a local, not
+    // this.audio: stopAudio() nulls this.audio (and playAudio() replaces it),
+    // but the old element can still fire a trailing timeupdate/loadedmetadata
+    // afterwards, which used to throw "Cannot read properties of null".
+    const audio = this.audio;
+
+    audio.addEventListener('loadedmetadata', () => {
+      if (this.audio !== audio) return;
+      document.getElementById('audio-duration').textContent = this.formatTime(audio.duration);
     });
 
-    this.audio.addEventListener('timeupdate', () => {
-      const progress = (this.audio.currentTime / this.audio.duration) * 100;
+    audio.addEventListener('timeupdate', () => {
+      if (this.audio !== audio || !audio.duration) return;
+      const progress = (audio.currentTime / audio.duration) * 100;
       document.getElementById('audio-progress').style.width = `${progress}%`;
-      document.getElementById('audio-current').textContent = this.formatTime(this.audio.currentTime);
+      document.getElementById('audio-current').textContent = this.formatTime(audio.currentTime);
     });
 
-    this.audio.addEventListener('ended', () => {
+    audio.addEventListener('ended', () => {
+      if (this.audio !== audio) return;
       this.isPlaying = false;
       this.updatePlayButton();
     });
 
-    this.audio.addEventListener('error', (e) => {
+    audio.addEventListener('error', (e) => {
       console.error('Audio error:', e);
     });
   }
@@ -1757,7 +1770,10 @@ class StashApp {
     } catch (error) {
       console.error('Error saving URL:', error);
       this.addUrlRunning = false;
-      status.textContent = "Couldn't save this URL. Please try again.";
+      // A rejected/absent session is a sign-in problem, not a retry-later one.
+      status.textContent = error && error.noSession
+        ? 'Your session expired. Sign in again, then retry.'
+        : "Couldn't save this URL. Please try again.";
       status.className = 'digest-status error';
       status.classList.remove('hidden');
       saveBtn.disabled = false;

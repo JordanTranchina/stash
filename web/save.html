@@ -531,8 +531,12 @@
         savedOnline = await window.StashSave.saveViaScrape(data, session.access_token);
       } catch (err) {
         // saveViaScrape also throws when the session vanished between our check
-        // and the request; that isn't something a retry fixes.
+        // and the request (or the Edge Function rejected the token); that isn't
+        // something a retry fixes. Hold the save so the auth listener finishes
+        // it automatically once the user signs back in, same as the pre-flight
+        // "no session" path above.
         if (err.noSession) {
+          blockedSave = { data: data, isAuto: isAuto };
           showSignInRequired(isAuto);
           return false;
         }
