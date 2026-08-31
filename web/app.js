@@ -1065,31 +1065,43 @@ class StashApp {
     loading.classList.remove('hidden');
     container.innerHTML = '';
 
-    const { data, error } = await this.supabase
-      .from('podcast_episodes')
-      .select('id, title, description, audio_url, duration_seconds, created_at, artwork_url')
-      .order('created_at', { ascending: false });
+    const [{ data, error }, { data: feed }] = await Promise.all([
+      this.supabase
+        .from('podcast_episodes')
+        .select('id, title, description, audio_url, duration_seconds, created_at, artwork_url')
+        .order('created_at', { ascending: false }),
+      this.supabase
+        .from('podcast_feeds')
+        .select('token, subscribed')
+        .eq('user_id', this.user.id)
+        .single(),
+    ]);
 
     loading.classList.add('hidden');
 
     const episodes = (!error && data) ? data : [];
-    const generateBtn = `
+    const isOwner = this.user && this.user.id === CONFIG.OWNER_USER_ID;
+    const generateBtn = isOwner ? `
       <a class="btn primary podcast-generate-btn" href="${CONFIG.PODCAST_WORKFLOW_URL}" target="_blank" rel="noopener"
          title="Opens the GitHub Actions workflow — click 'Run workflow' to generate a new episode now.">
         🎙️ Generate Podcast Now
-      </a>`;
+      </a>` : '';
+    const subscribeBlock = this.buildPodcastSubscribeBlock(feed);
 
     if (episodes.length === 0) {
       container.innerHTML = `
         <div class="podcasts-view">
           <div class="podcasts-header">
-            <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast. Subscribe with the RSS feed in any podcast app, or generate a new episode on demand.</p>
+            <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast.</p>
+            ${subscribeBlock}
             ${generateBtn}
           </div>
           <div class="podcasts-empty">
             <div class="empty-icon">🎧</div>
             <h3>No episodes yet</h3>
-            <p>Generate your first episode, or wait for the daily "Morning Brief" to run.</p>
+            <p>${feed && feed.subscribed
+              ? 'Your first episode arrives tomorrow morning, once you’ve saved a few things.'
+              : 'Turn on your podcast above to get a daily episode from what you save.'}</p>
           </div>
         </div>`;
       return;
@@ -1119,11 +1131,83 @@ class StashApp {
     container.innerHTML = `
       <div class="podcasts-view">
         <div class="podcasts-header">
-          <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast. Subscribe with the RSS feed in any podcast app, or generate a new episode on demand.</p>
+          <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast.</p>
+          ${subscribeBlock}
           ${generateBtn}
         </div>
         <div class="podcasts-list">${cards}</div>
       </div>`;
+  }
+
+  /**
+   * Builds the subscribe/manage block shown at the top of the Podcasts tab.
+   *
+   * Not subscribed: a single opt-in button (podcast_feeds.subscribed
+   * defaults false — a friend who never turns this on costs no Gemini quota
+   * or storage). Subscribed: an "Add to Apple Podcasts" link using the
+   * podcast:// URL scheme (opens Podcasts and subscribes in one tap on
+   * Apple platforms) plus a manual copy-link fallback for every other app.
+   *
+   * `feed` may be null if the podcast_feeds row genuinely doesn't exist yet
+   * (it should — a trigger creates one at sign-up — but this must not throw
+   * if that ever isn't true).
+   */
+  buildPodcastSubscribeBlock(feed) {
+    if (!feed || !feed.token) {
+      return '<p class="podcasts-feed-error">Couldn’t load your podcast feed. Try reloading.</p>';
+    }
+
+    const feedUrl = `${CONFIG.SUPABASE_URL}/functions/v1/podcast-rss?token=${feed.token}`;
+
+    if (!feed.subscribed) {
+      return `
+        <div class="podcast-subscribe">
+          <button type="button" class="btn primary" onclick="window.stashApp.subscribeToPodcast()">
+            🎙️ Make me a daily podcast
+          </button>
+        </div>`;
+    }
+
+    // podcast:// is long-standing but undocumented Apple behavior for
+    // one-tap-subscribe; the copy-link button is the guaranteed fallback for
+    // every other app (Overcast, Pocket Casts, Spotify, etc.).
+    const appleUrl = `podcast://${feedUrl.replace(/^https?:\/\//, '')}`;
+    return `
+      <div class="podcast-subscribe podcast-subscribe-active">
+        <a class="btn primary" href="${this.escapeHtml(appleUrl)}">🎧 Add to Apple Podcasts</a>
+        <button type="button" class="btn secondary" onclick="window.stashApp.copyFeedLink('${feedUrl}')">
+          🔗 Copy feed link
+        </button>
+      </div>`;
+  }
+
+  async subscribeToPodcast() {
+    const { error } = await this.supabase
+      .from('podcast_feeds')
+      .update({ subscribed: true })
+      .eq('user_id', this.user.id);
+
+    if (error) {
+      console.error('Failed to subscribe to podcast:', error);
+      this.showToast("Couldn't turn on your podcast. Try again?");
+      return;
+    }
+
+    this.showToast('Podcast turned on! Your first episode arrives tomorrow morning.');
+    this.loadPodcasts();
+  }
+
+  async copyFeedLink(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      this.showToast('Feed link copied!');
+    } catch (e) {
+      // iOS/Safari clipboard writes can be blocked outside a direct user
+      // gesture; this button click is one, but fail safe either way rather
+      // than leaving the tap silently do nothing.
+      console.error('Could not copy feed link:', e);
+      this.showToast("Couldn't copy — long-press the link above to copy it manually.");
+    }
   }
 
   async search(query) {

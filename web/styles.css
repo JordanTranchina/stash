@@ -2080,6 +2080,21 @@ select {
   align-self: flex-start;
 }
 
+.podcast-subscribe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.podcast-subscribe .btn {
+  align-self: flex-start;
+}
+
+.podcasts-feed-error {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
 .podcasts-list {
   display: flex;
   flex-direction: column;
