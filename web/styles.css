@@ -2090,9 +2090,10 @@ select {
   align-self: flex-start;
 }
 
-.podcasts-feed-error {
+.podcasts-feed-error,
+.podcasts-feed-note {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .podcasts-list {

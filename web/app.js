@@ -1144,9 +1144,15 @@ class StashApp {
    *
    * Not subscribed: a single opt-in button (podcast_feeds.subscribed
    * defaults false — a friend who never turns this on costs no Gemini quota
-   * or storage). Subscribed: an "Add to Apple Podcasts" link using the
-   * podcast:// URL scheme (opens Podcasts and subscribes in one tap on
-   * Apple platforms) plus a manual copy-link fallback for every other app.
+   * or storage). Subscribed: one-tap links for the two apps with a
+   * documented "subscribe to this feed URL" scheme, plus a manual copy-link
+   * fallback for every other app.
+   *
+   * Spotify is deliberately not offered here: unlike Apple Podcasts and
+   * Pocket Casts, it has no way to subscribe to an arbitrary/private RSS
+   * feed at all — not a missing deep link, a platform limitation (confirmed
+   * against Spotify's own support docs and community threads, Aug 2026). A
+   * link promising "Add to Spotify" would just fail.
    *
    * `feed` may be null if the podcast_feeds row genuinely doesn't exist yet
    * (it should — a trigger creates one at sign-up — but this must not throw
@@ -1168,17 +1174,21 @@ class StashApp {
         </div>`;
     }
 
-    // podcast:// is long-standing but undocumented Apple behavior for
-    // one-tap-subscribe; the copy-link button is the guaranteed fallback for
-    // every other app (Overcast, Pocket Casts, Spotify, etc.).
-    const appleUrl = `podcast://${feedUrl.replace(/^https?:\/\//, '')}`;
+    // podcast:// (Apple Podcasts) and pktc://subscribe/ (Pocket Casts) are
+    // both documented "open this app and subscribe to this feed" schemes;
+    // the copy-link button is the fallback for every other app.
+    const bareUrl = feedUrl.replace(/^https?:\/\//, '');
+    const appleUrl = `podcast://${bareUrl}`;
+    const pocketCastsUrl = `pktc://subscribe/${bareUrl}`;
     return `
       <div class="podcast-subscribe podcast-subscribe-active">
         <a class="btn primary" href="${this.escapeHtml(appleUrl)}">🎧 Add to Apple Podcasts</a>
+        <a class="btn primary" href="${this.escapeHtml(pocketCastsUrl)}">🎧 Add to Pocket Casts</a>
         <button type="button" class="btn secondary" onclick="window.stashApp.copyFeedLink('${feedUrl}')">
           🔗 Copy feed link
         </button>
-      </div>`;
+      </div>
+      <p class="podcasts-feed-note">Using Spotify? It can't subscribe to a private feed like this one — copy the link above and use a different podcast app.</p>`;
   }
 
   async subscribeToPodcast() {
