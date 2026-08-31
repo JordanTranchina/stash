@@ -222,10 +222,21 @@ def test_podcast_feed_isolation(user_a_id, user_b_id, token_a, token_b):
     create_episode(user_a_id, "User A's private episode")
     create_episode(user_b_id, "User B's private episode")
 
+    # Debug aid: confirm the row is genuinely visible via the same REST API
+    # the edge function itself queries through, independent of podcast-rss,
+    # so a failure below can be split into "data problem" vs "function problem".
+    resp = requests.get(
+        f"{REST_URL}/podcast_episodes", headers=service_headers(),
+        params={"select": "id,user_id,title,audio_url", "user_id": f"eq.{user_a_id}"},
+        timeout=TIMEOUT,
+    )
+    print(f"[debug] podcast_episodes for user A via service-role REST: {resp.status_code} {resp.text}")
+
     def fetch_feed(token):
         return requests.get(f"{FUNCTIONS_URL}/podcast-rss", params={"token": token}, timeout=TIMEOUT)
 
     resp_a = fetch_feed(token_feed_a)
+    print(f"[debug] podcast-rss response for user A's token:\n{resp_a.text}")
     check(resp_a.status_code == 200, "user A's feed returns 200")
     check("User A's private episode" in resp_a.text, "user A's feed contains their own episode")
     check("User B's private episode" not in resp_a.text, "user A's feed does not contain user B's episode")
