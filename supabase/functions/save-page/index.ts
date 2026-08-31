@@ -300,9 +300,16 @@ serve(async (req) => {
       );
     }
 
+    // Use the caller's own apikey (every client sends its public, RLS-bound
+    // publishable/anon key) for the auth lookup, falling back to the injected
+    // env key. This keeps working if the project disables the legacy anon JWT
+    // after migrating to sb_publishable_/sb_secret_ keys — otherwise the
+    // injected SUPABASE_ANON_KEY would be an invalid apikey and every save
+    // would 401. User identity still comes from getUser() verifying the JWT.
+    const callerApiKey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY")!;
     const authClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      callerApiKey,
       { global: { headers: { Authorization: authHeader } } }
     );
 
@@ -445,7 +452,7 @@ serve(async (req) => {
     if (!data) {
       // Look up the save this one collapsed into so the caller can link to it.
       const { data: existing } = await supabase.rpc("stash_find_save_by_url", {
-        p_user_id: user_id,
+        p_user_id: userId,
         p_url: resolvedUrl,
       });
       const existingSave = Array.isArray(existing) ? existing[0] : existing;

@@ -63,6 +63,17 @@
       body: JSON.stringify(request),
     });
 
+    // The token was sent but the function rejected it (expired between our
+    // check and the request, revoked, or signed out in another tab). That is a
+    // sign-in problem, not a retry-later one — flag it the same way a missing
+    // token is so callers prompt for sign-in instead of showing a generic
+    // "try again" (and can auto-resume once a session reappears).
+    if (res.status === 401 || res.status === 403) {
+      const err = new Error('Session rejected by save-page: sign-in required');
+      err.noSession = true;
+      throw err;
+    }
+
     if (!res.ok) return { ok: false, duplicate: false };
 
     // A save that succeeded but returned an unreadable body is still a save;
