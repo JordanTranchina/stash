@@ -119,19 +119,22 @@ def create_episode(user_id, title):
     return resp.json()[0]["id"]
 
 
-def test_article_storage_isolation(token_a, token_b):
+def test_article_storage_isolation(user_a_id, token_a, token_b):
     print("\n--- Article storage isolation (saves RLS) ---")
 
+    # user_id must be set explicitly — the insert RLS policy checks the
+    # *provided* value against auth.uid(), it doesn't fill it in, and the
+    # column is NOT NULL, so omitting it fails before RLS is even relevant.
     resp = requests.post(
         f"{REST_URL}/saves",
         headers={**user_headers(token_a), "Prefer": "return=representation"},
-        json={"url": "https://example.com/a", "title": "User A's private article"},
+        json={"user_id": user_a_id, "url": "https://example.com/a", "title": "User A's private article"},
         timeout=TIMEOUT,
     )
     check(resp.status_code == 201, "user A can create their own save")
     save_a_id = resp.json()[0]["id"] if resp.status_code == 201 else None
     if not save_a_id:
-        sys.exit("FATAL: could not create user A's save; cannot continue this section.")
+        sys.exit(f"FATAL: could not create user A's save: {resp.status_code} {resp.text}")
 
     # B must not see A's save in a list at all.
     resp = requests.get(
@@ -253,7 +256,7 @@ def main():
     token_a = sign_in(email_a, password)
     token_b = sign_in(email_b, password)
 
-    test_article_storage_isolation(token_a, token_b)
+    test_article_storage_isolation(user_a_id, token_a, token_b)
     test_podcast_feed_isolation(user_a_id, user_b_id, token_a, token_b)
 
     failed = [desc for passed, desc in results if not passed]
