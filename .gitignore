@@ -32,6 +32,8 @@ __pycache__/
 
 # Podcast
 podcast/temp_audio/
+podcast/temp_welcome_audio/
+podcast/output/
 podcast/script.json
 .venv/
 .env
