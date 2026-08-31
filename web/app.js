@@ -487,6 +487,11 @@ class StashApp {
   showMainScreen() {
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
+    // Deep link: the browser extension's settings cog opens the app at
+    // #settings and expects to land on the Settings view.
+    if (window.location.hash === '#settings') {
+      this.setView('settings');
+    }
   }
 
   async signIn() {
@@ -1757,7 +1762,10 @@ class StashApp {
     } catch (error) {
       console.error('Error saving URL:', error);
       this.addUrlRunning = false;
-      status.textContent = "Couldn't save this URL. Please try again.";
+      // A rejected/absent session is a sign-in problem, not a retry-later one.
+      status.textContent = error && error.noSession
+        ? 'Your session expired. Sign in again, then retry.'
+        : "Couldn't save this URL. Please try again.";
       status.className = 'digest-status error';
       status.classList.remove('hidden');
       saveBtn.disabled = false;

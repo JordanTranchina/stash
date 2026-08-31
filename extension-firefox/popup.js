@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const signinBtn = document.getElementById('signin-btn');
   const signupBtn = document.getElementById('signup-btn');
   const signoutBtn = document.getElementById('signout-btn');
+  const settingsBtn = document.getElementById('settings-btn');
   const savesList = document.getElementById('saves-list');
   const openAppLink = document.getElementById('open-app-link');
 
@@ -132,6 +133,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   openAppLink.addEventListener('click', (e) => {
     e.preventDefault();
     chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
+  });
+
+  // Settings — the web app owns every setting (theme, default font size,
+  // podcast hosts, import, sign-out), so the cog deep-links straight to its
+  // Settings view via the #settings hash.
+  settingsBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: `${CONFIG.WEB_APP_URL}/#settings` });
   });
 
   // Helper

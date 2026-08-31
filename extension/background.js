@@ -43,6 +43,13 @@ chrome.runtime.onStartup.addListener(async () => {
   await updateActionForSession();
 });
 
+// MV3 tears the service worker down when idle and revives it on the next
+// event (including the toolbar click itself). onInstalled/onStartup don't fire
+// on a bare wake, so reconcile the toolbar action here too: if the stored
+// session has gone away since the last check, this flips the icon back to
+// opening the sign-in popup instead of firing an unauthenticated save.
+updateActionForSession().catch(() => {});
+
 async function initSupabase() {
   supabase = new SupabaseClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
   // Load whatever session the popup's sign-in stored. Every save runs as the
@@ -190,6 +197,9 @@ async function saveHighlight(tab, selectionText) {
       SentryLite.captureException(err, { tags: { action: 'saveHighlight' } });
     }
     showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
+    // The session went away — restore the sign-in popup so the next toolbar
+    // click has somewhere to go instead of erroring again.
+    if (needsAuth) await updateActionForSession();
     return { success: false, error: err.message, needsAuth };
   }
 }
@@ -276,6 +286,9 @@ async function savePage(tab) {
     showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
     setBadge('!', '#dc2626');
     clearBadgeSoon();
+    // The session went away — restore the sign-in popup so the next toolbar
+    // click opens the form instead of firing another failing save.
+    if (needsAuth) await updateActionForSession();
     return { success: false, error: err.message, needsAuth };
   }
 }

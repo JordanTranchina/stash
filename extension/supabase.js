@@ -87,11 +87,15 @@ class SupabaseClient {
   }
 
   // Returns { token, userId } or throws the "sign in" error every caller
-  // wants to surface verbatim.
+  // wants to surface verbatim. The message has to match background.js's
+  // SIGN_IN_MESSAGE exactly: that string is how savePage/saveHighlight tell a
+  // signed-out state (show the sign-in form) apart from a real failure (show
+  // an error, report to Sentry). A DB call that expires mid-save surfaces the
+  // signed-out state from here rather than from requireUserId().
   async requireSession() {
     const token = await this.getAccessToken();
     if (!token || !this.userId) {
-      throw new Error('Sign in to Stash');
+      throw new Error('Sign in to Stash to save');
     }
     return { token, userId: this.userId };
   }
