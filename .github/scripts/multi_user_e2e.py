@@ -219,32 +219,23 @@ def test_podcast_feed_isolation(user_a_id, user_b_id, token_a, token_b):
     if not (token_feed_a and token_feed_b):
         sys.exit("FATAL: could not obtain both feed tokens; cannot continue this section.")
 
-    create_episode(user_a_id, "User A's private episode")
-    create_episode(user_b_id, "User B's private episode")
-
-    # Debug aid: confirm the row is genuinely visible via the same REST API
-    # the edge function itself queries through, independent of podcast-rss,
-    # so a failure below can be split into "data problem" vs "function problem".
-    resp = requests.get(
-        f"{REST_URL}/podcast_episodes", headers=service_headers(),
-        params={"select": "id,user_id,title,audio_url", "user_id": f"eq.{user_a_id}"},
-        timeout=TIMEOUT,
-    )
-    print(f"[debug] podcast_episodes for user A via service-role REST: {resp.status_code} {resp.text}")
+    # No apostrophes in these titles — podcast-rss XML-escapes them (' ->
+    # &apos;), which would otherwise break a plain substring check below.
+    create_episode(user_a_id, "User A private episode")
+    create_episode(user_b_id, "User B private episode")
 
     def fetch_feed(token):
         return requests.get(f"{FUNCTIONS_URL}/podcast-rss", params={"token": token}, timeout=TIMEOUT)
 
     resp_a = fetch_feed(token_feed_a)
-    print(f"[debug] podcast-rss response for user A's token:\n{resp_a.text}")
     check(resp_a.status_code == 200, "user A's feed returns 200")
-    check("User A's private episode" in resp_a.text, "user A's feed contains their own episode")
-    check("User B's private episode" not in resp_a.text, "user A's feed does not contain user B's episode")
+    check("User A private episode" in resp_a.text, "user A's feed contains their own episode")
+    check("User B private episode" not in resp_a.text, "user A's feed does not contain user B's episode")
 
     resp_b = fetch_feed(token_feed_b)
     check(resp_b.status_code == 200, "user B's feed returns 200")
-    check("User B's private episode" in resp_b.text, "user B's feed contains their own episode")
-    check("User A's private episode" not in resp_b.text, "user B's feed does not contain user A's episode")
+    check("User B private episode" in resp_b.text, "user B's feed contains their own episode")
+    check("User A private episode" not in resp_b.text, "user B's feed does not contain user A's episode")
 
     resp_unknown = fetch_feed("not-a-real-token-" + uuid.uuid4().hex)
     check(
