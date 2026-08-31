@@ -32,6 +32,41 @@ is a stopgap in the podcast job alone.
 
 I have provided a workflow file in `.github/workflows/podcast.yml`. It is set to run daily at 8:00 AM UTC. You can adjust this in the workflow file.
 
+### Automated Supabase deploys (`.github/workflows/deploy-supabase.yml`)
+
+Merging to `main` deploys the Edge Functions and/or database migrations
+automatically — there's no `supabase functions deploy` / `supabase db push`
+to run by hand afterward. Each half only runs when its own files changed
+(a migration-only PR doesn't redeploy functions and vice versa). It can
+also be run on demand: open the workflow's page under the Actions tab and
+click **Run workflow** to force a full redeploy of both.
+
+This needs two secrets that aren't set by default — **add these yourself**,
+Claude (or any automated tool) should never be asked to enter a token like
+this on your behalf:
+
+1. Go to [GitHub Actions Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions)
+   → **New repository secret**:
+   - `SUPABASE_ACCESS_TOKEN` — a personal access token from
+     [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
+     (Generate new token → give it any name → copy it — it's shown once).
+   - `SUPABASE_DB_PASSWORD` — the project's Postgres password, from
+     [Project Settings → Database](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/database).
+     If you don't know it, reset it there (this rotates it — nothing else in
+     Stash uses the direct DB password, so that's safe).
+
+   Or from your own terminal, once you have each value:
+   ```bash
+   gh secret set SUPABASE_ACCESS_TOKEN -R JordanTranchina/stash
+   gh secret set SUPABASE_DB_PASSWORD -R JordanTranchina/stash
+   ```
+   (`gh secret set NAME` with no `--body` prompts you to paste the value —
+   it never appears in your shell history that way.)
+
+The project ref (`SUPABASE_PROJECT_ID`) is already set as a repo *variable*
+(not a secret — it's not sensitive, it's the same ref that's already public
+in `web/config.js` and every Edge Function URL in this repo).
+
 ## 2. Vercel (For the Web App)
 
 If you have deployed the `web` folder to Vercel, you should also add environment variables there for consistency.
