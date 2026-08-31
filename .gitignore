@@ -40,6 +40,10 @@ podcast/script.json
 **/.env*
 .vercel/
 
+# Personal database backups — never commit real article/user content
+/db-backup/
+/full-backup.sql
+
 # Playwright
 test-results/
 playwright-report/
