@@ -1,6 +1,6 @@
 # Cloud Deployment Guide
 
-To run Stash and the Podcast generator in the cloud, you need to set up your secrets on the platforms you are using (GitHub and Vercel).
+To run Stash and the Podcast generator in the cloud, you need to set up secrets on GitHub. Vercel needs none (see below).
 
 ## 1. GitHub Actions (For Podcast Automation)
 
@@ -75,12 +75,19 @@ in `web/config.js` and every Edge Function URL in this repo).
 
 ## 2. Vercel (For the Web App)
 
-If you have deployed the `web` folder to Vercel, you should also add environment variables there for consistency.
+**You don't need to add any environment variables here.** This is a static,
+no-build deploy of the `web/` folder (confirmed on the project itself:
+framework is `null`) — Vercel serves the files as-is and never executes any
+server-side code, so there's nothing on the Vercel side that could read an
+env var in the first place. Everything the web app needs (the Supabase URL,
+the public anon key, the Sentry DSN, the PostHog key) is already hardcoded
+in `web/config.js`, committed to the repo, and safe to be public — see the
+comments in that file for why each one is fine to commit.
 
-### Setting up Environment Variables
-
-1. Go to your [Vercel Project Settings](https://vercel.com/jordantranchinas-projects/stash/settings/environment-variables).
-2. Add the same secrets as above.
+If you ever see something already set at
+[Vercel Project Settings → Environment Variables](https://vercel.com/jordantranchinas-projects/stash/settings/environment-variables)
+beyond Vercel's own auto-managed system vars, it isn't being read by
+anything in this app.
 
 ## 3. Supabase (For Edge Functions)
 
