@@ -50,6 +50,25 @@ If you use Supabase Edge Functions (like `save-page`), secrets are managed via t
 1. Go to your [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions).
 2. Add or update your secrets there.
 
+### `report-bug` function (in-app "Report a Bug")
+
+The `report-bug` Edge Function files an in-app bug report as a GitHub issue and
+stores its screenshot/video attachments in Storage. It needs two extra secrets:
+
+- `GITHUB_TOKEN` — a **fine-grained** personal access token scoped to **only the
+  `stash` repo**, with **Issues: Read and write**. Nothing else. This is the
+  account the issues are created as; the end user never signs in to GitHub.
+- `GITHUB_REPO` — `JordanTranchina/stash` (the `owner/repo` issues are filed in).
+
+It also expects the `bug-attachments` Storage bucket to exist — apply
+`supabase/migrations/20260831_bug_attachments_bucket.sql` (`supabase db push`, or
+run it in the SQL editor). That bucket is **public-read** so images render inline
+in the issue body; object paths include a random UUID so the URLs are
+unguessable. If that tradeoff is unacceptable, make the bucket private and switch
+the function to signed URLs.
+
+Deploy: `supabase functions deploy report-bug`.
+
 ## 4. Summary of Key Locations
 
 | Secret | Rotation/Redo Link | Cloud Deployment Link (to set) |
@@ -57,6 +76,7 @@ If you use Supabase Edge Functions (like `save-page`), secrets are managed via t
 | **Gemini API Key** | [AI Studio](https://aistudio.google.com/app/apikey) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **Supabase Key** | [Supabase API Settings](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/api) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **Vercel Token** | [Vercel Personal Access Tokens](https://vercel.com/account/tokens) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
+| **`GITHUB_TOKEN` (report-bug)** | [Fine-grained PATs](https://github.com/settings/personal-access-tokens) — `stash` repo, Issues: R/W | [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions) |
 
 ### Note on `VERCEL_OIDC_TOKEN`
 

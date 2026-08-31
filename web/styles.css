@@ -1585,6 +1585,105 @@ select {
   color: var(--danger);
 }
 
+/* Report a Bug modal */
+.bug-report-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+
+.bug-report-shot img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.bug-report-shot-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.bug-report-shot-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.bug-report-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bug-report-attachments:empty {
+  display: none;
+}
+
+.bug-report-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.bug-report-chip img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.bug-report-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.bug-report-chip button {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.bug-report-detail > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--primary);
+  list-style: none;
+}
+
+.bug-report-detail > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bug-report-detail[open] > summary {
+  margin-bottom: 16px;
+}
+
+.bug-report-detail .form-group + .form-group {
+  margin-top: 16px;
+}
+
 /* Import Articles Modal */
 .import-file-input {
   padding: 10px 12px;

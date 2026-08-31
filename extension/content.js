@@ -318,19 +318,22 @@ function extractMainImage() {
          null;
 }
 
-// Show save confirmation toast
-function showToast(message, isError = false) {
+// Show save confirmation toast. When `withReport` is set (a real save failure,
+// not a sign-in prompt) it grows a "Report" button that opens the bug reporter.
+function showToast(message, isError = false, withReport = false) {
   const existing = document.getElementById('stash-toast');
   if (existing) existing.remove();
 
   const toast = document.createElement('div');
   toast.id = 'stash-toast';
-  toast.textContent = message;
   toast.style.cssText = `
     position: fixed;
     bottom: 20px;
     right: 20px;
-    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 20px;
     background: ${isError ? '#ef4444' : '#10b981'};
     color: white;
     border-radius: 8px;
@@ -341,6 +344,35 @@ function showToast(message, isError = false) {
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     animation: stashSlideIn 0.3s ease;
   `;
+
+  const label = document.createElement('span');
+  label.textContent = message;
+  toast.appendChild(label);
+
+  let dismissMs = 2000;
+  if (withReport) {
+    dismissMs = 6000;
+    const btn = document.createElement('button');
+    btn.textContent = 'Report';
+    btn.style.cssText = `
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    `;
+    btn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'reportBug' });
+      toast.remove();
+    });
+    toast.appendChild(btn);
+  }
 
   const style = document.createElement('style');
   style.textContent = `
@@ -355,12 +387,12 @@ function showToast(message, isError = false) {
   setTimeout(() => {
     toast.style.animation = 'stashSlideIn 0.3s ease reverse';
     setTimeout(() => toast.remove(), 300);
-  }, 2000);
+  }, dismissMs);
 }
 
 // Listen for save confirmations
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'showToast') {
-    showToast(request.message, request.isError);
+    showToast(request.message, request.isError, request.withReport);
   }
 });
