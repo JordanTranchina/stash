@@ -14,7 +14,13 @@ To run `podcast/script.py` on a schedule (e.g., every morning), use GitHub Actio
    - `SUPABASE_SERVICE_ROLE_KEY`: Your service role key (the one we rotated)
    - `USER_ID`: `6c7a3a96-16cd-4702-ac7b-0c7a4a81346d` — **legacy, single-user only** (see below)
    - `GEMINI_API_KEY`: Your Google AI API key
-   - `VERCEL_OIDC_TOKEN`: Your Vercel OIDC token
+
+   You do **not** need a `VERCEL_OIDC_TOKEN` secret here — nothing in any
+   `.github/workflows/*.yml` file reads it. The only place it exists is as a
+   local dev artifact in `podcast/.env` (written there by the Vercel CLI,
+   short-lived, already expired). Vercel deploys the web app itself via its
+   own native GitHub integration (see the "Vercel" checks on any PR) — that
+   needs no GitHub secret at all.
 
 ### Note on `USER_ID` (legacy)
 
@@ -91,7 +97,9 @@ If you use Supabase Edge Functions (like `save-page`), secrets are managed via t
 | :-- | :-- | :-- |
 | **Gemini API Key** | [AI Studio](https://aistudio.google.com/app/apikey) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **Supabase Key** | [Supabase API Settings](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/api) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
-| **Vercel Token** | [Vercel Personal Access Tokens](https://vercel.com/account/tokens) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
+| **Supabase Access Token** (for automated deploys) | [Supabase Access Tokens](https://supabase.com/dashboard/account/tokens) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
+| **Supabase DB Password** (for automated deploys) | [Project Settings → Database](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/database) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
+| **Vercel Personal Access Token** (only if you ever script Vercel from CI) | [Vercel Personal Access Tokens](https://vercel.com/account/tokens) | Not needed today — Vercel deploys via its own GitHub integration, no GitHub secret required |
 
 ### Note on `VERCEL_OIDC_TOKEN`
 
