@@ -1412,23 +1412,31 @@ class StashApp {
     document.getElementById('audio-speed').value = '1';
     this.updatePlayButton();
 
-    // Set up event listeners
-    this.audio.addEventListener('loadedmetadata', () => {
-      document.getElementById('audio-duration').textContent = this.formatTime(this.audio.duration);
+    // Set up event listeners. Bind them to this element via a local, not
+    // this.audio: stopAudio() nulls this.audio (and playAudio() replaces it),
+    // but the old element can still fire a trailing timeupdate/loadedmetadata
+    // afterwards, which used to throw "Cannot read properties of null".
+    const audio = this.audio;
+
+    audio.addEventListener('loadedmetadata', () => {
+      if (this.audio !== audio) return;
+      document.getElementById('audio-duration').textContent = this.formatTime(audio.duration);
     });
 
-    this.audio.addEventListener('timeupdate', () => {
-      const progress = (this.audio.currentTime / this.audio.duration) * 100;
+    audio.addEventListener('timeupdate', () => {
+      if (this.audio !== audio || !audio.duration) return;
+      const progress = (audio.currentTime / audio.duration) * 100;
       document.getElementById('audio-progress').style.width = `${progress}%`;
-      document.getElementById('audio-current').textContent = this.formatTime(this.audio.currentTime);
+      document.getElementById('audio-current').textContent = this.formatTime(audio.currentTime);
     });
 
-    this.audio.addEventListener('ended', () => {
+    audio.addEventListener('ended', () => {
+      if (this.audio !== audio) return;
       this.isPlaying = false;
       this.updatePlayButton();
     });
 
-    this.audio.addEventListener('error', (e) => {
+    audio.addEventListener('error', (e) => {
       console.error('Audio error:', e);
     });
   }
