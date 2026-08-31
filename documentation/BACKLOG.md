@@ -28,3 +28,4 @@
 - [x] **Newest-First Selection**: Select saves most-recently-saved first (reverted from an oldest-first FIFO experiment that let a backlog of very old saves dominate every episode ahead of anything recent). (`podcast/extract.py`)
 - [ ] **Extension E2E Tests**: Set up Playwright for extension testing. (Ref: Product Spec 6)
 - [ ] **Documentation Screenshots**: Add screenshots to `README.md`. (Ref: README)
+- [ ] **Publish Extension to Web Stores**: Apply for Chrome Web Store ($5 one-time, `<all_urls>` justification, likely manual review) and Firefox Add-ons (AMO) listings so non-technical users don't have to sideload unpacked, and extension fixes ship without a per-machine reload. Unlisted vs public TBD. ([#96](https://github.com/JordanTranchina/stash/issues/96); see `documentation/DISTRIBUTION_READINESS.md` B6)
