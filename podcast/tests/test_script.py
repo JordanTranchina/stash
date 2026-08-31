@@ -423,6 +423,47 @@ class TestPodcastPreferences:
         sent_config = mock_client.models.generate_content.call_args[1]["config"]
         assert "SAM:" in sent_config.system_instruction
 
+    def test_generate_script_includes_length_instructions(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = json.dumps(SAMPLE_SCRIPT)
+
+        with patch("script.genai.Client", return_value=mock_client):
+            script.generate_script(SAMPLE_ARTICLES, prefs=script.DEFAULT_PODCAST_PREFS)
+
+        sent_config = mock_client.models.generate_content.call_args[1]["config"]
+        assert "EPISODE LENGTH" in sent_config.system_instruction
+
+
+class TestBuildLengthInstructions:
+    """The show is always TARGET_EPISODE_MINUTES long; that fixed runtime is
+    divided evenly across however many articles are being discussed."""
+
+    def test_empty_when_no_articles(self):
+        assert script.build_length_instructions(0) == ""
+
+    def test_one_article_gets_the_full_runtime(self):
+        text = script.build_length_instructions(1, target_minutes=5, wpm=150)
+        assert "5 minutes" in text
+        # 5 min * 150 wpm * 0.9 (non-intro/outro share) == 675 words for the one article
+        assert "675 words" in text
+
+    def test_two_articles_split_the_runtime_evenly(self):
+        text = script.build_length_instructions(2, target_minutes=5, wpm=150)
+        assert "5 minutes" in text
+        # Same total budget, halved per article.
+        assert f"{round(675 / 2)} words" in text
+
+    def test_three_articles_split_the_runtime_evenly(self):
+        text = script.build_length_instructions(3, target_minutes=5, wpm=150)
+        assert f"{round(675 / 3)} words" in text
+
+    def test_total_runtime_stays_constant_regardless_of_article_count(self):
+        for n in (1, 2, 3, 5, 10):
+            text = script.build_length_instructions(n, target_minutes=5, wpm=150)
+            assert "5 minutes" in text
+
 
 # ---------------------------------------------------------------------------
 # generate_episode_title

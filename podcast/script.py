@@ -122,6 +122,47 @@ Do not include any other text, markdown, or explanations. Only return the raw JS
 # Backwards-compatible default prompt (Alex/Taylor) for callers/tests that import it.
 SYSTEM_PROMPT = build_system_prompt(DEFAULT_PODCAST_PREFS)
 
+# The show always runs to this length, no matter how many articles were saved
+# that day (override with PODCAST_TARGET_MINUTES). One article gets the full
+# runtime to itself; ten articles split the same runtime ten ways.
+TARGET_EPISODE_MINUTES = float(os.getenv("PODCAST_TARGET_MINUTES", "5"))
+
+# Rough conversational speaking pace, used to translate the target runtime
+# into a word-count budget Gemini can actually aim for.
+SPEAKING_RATE_WPM = float(os.getenv("PODCAST_SPEAKING_RATE_WPM", "150"))
+
+# Fraction of the total runtime reserved for the intro/outro/transitions
+# rather than article discussion.
+INTRO_OUTRO_FRACTION = 0.1
+
+
+def build_length_instructions(num_articles, target_minutes=None, wpm=None):
+    """Instructions telling Gemini how to divide the fixed episode runtime.
+
+    The episode is always ``target_minutes`` long in total; each article gets
+    an equal share of that time (so one article fills the whole runtime and N
+    articles split it N ways) with a small reserve for the intro/outro.
+    Returns "" when there are no articles to budget for.
+    """
+    if num_articles <= 0:
+        return ""
+
+    target_minutes = TARGET_EPISODE_MINUTES if target_minutes is None else target_minutes
+    wpm = SPEAKING_RATE_WPM if wpm is None else wpm
+
+    total_words = target_minutes * wpm
+    article_words = total_words * (1 - INTRO_OUTRO_FRACTION)
+    words_per_article = round(article_words / num_articles)
+    seconds_per_article = round((target_minutes * 60 * (1 - INTRO_OUTRO_FRACTION)) / num_articles)
+
+    return f"""
+EPISODE LENGTH:
+- The whole episode must run about {target_minutes:g} minutes when spoken aloud, total — this is fixed regardless of how many articles there are.
+- There {"is 1 article" if num_articles == 1 else f"are {num_articles} articles"} today, so give each one roughly equal airtime: about {words_per_article} words of dialogue (~{seconds_per_article} seconds) per article.
+- Keep the intro and outro short (a couple of lines each) so nearly all the runtime goes to the articles.
+"""
+
+
 def generate_script(articles, prefs=None):
     """Generate a conversational script based on the provided articles.
 
@@ -139,7 +180,7 @@ def generate_script(articles, prefs=None):
 
     if prefs is None:
         prefs = fetch_podcast_preferences()
-    system_prompt = build_system_prompt(prefs)
+    system_prompt = build_system_prompt(prefs) + build_length_instructions(len(articles))
 
     client = genai.Client(api_key=gemini_api_key)
 
