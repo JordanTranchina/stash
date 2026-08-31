@@ -2058,6 +2058,9 @@ select {
 
 /* Podcasts View (Listen Later, #12) */
 .podcasts-view {
+  /* Injected into #saves-container (display: grid), so span every column;
+     otherwise it sits in a single ~300px grid track and reads as left-aligned. */
+  grid-column: 1 / -1;
   max-width: 760px;
   margin: 0 auto;
 }
