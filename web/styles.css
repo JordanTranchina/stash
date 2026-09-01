@@ -53,7 +53,8 @@
 }
 
 [data-theme="dark"] .header-sort-btn,
-[data-theme="dark"] .header-add-btn {
+[data-theme="dark"] .header-add-btn,
+[data-theme="dark"] .header-bug-btn {
   background: var(--bg-secondary);
 }
 
@@ -496,8 +497,10 @@ select {
   appearance: none;
 }
 
-/* Add: opens the Add URL modal to save an article from the home page. */
-.header-add-btn {
+/* Add: opens the Add URL modal to save an article from the home page.
+   Bug: opens the Report a Bug modal; shares the same compact icon-button look. */
+.header-add-btn,
+.header-bug-btn {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
@@ -509,6 +512,11 @@ select {
   background: var(--bg);
   color: var(--text-secondary);
   cursor: pointer;
+}
+
+.header-bug-btn:hover {
+  color: var(--text);
+  border-color: var(--primary);
 }
 
 .search-container svg {

@@ -394,6 +394,11 @@ class StashApp {
     document.getElementById('header-add-btn').addEventListener('click', () => {
       this.showAddUrlModal();
     });
+
+    // Report a bug — always-visible header button, on every view.
+    document.getElementById('header-bug-btn').addEventListener('click', () => {
+      this.bugReporter.open();
+    });
     addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
       this.hideAddUrlModal();
     });
