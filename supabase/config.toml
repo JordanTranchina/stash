@@ -1,0 +1,47 @@
+# Local development config for `supabase start` (used by CI to run a real,
+# ephemeral local stack for tests/e2e/multi_user_e2e.py — see
+# .github/workflows/multi-user-e2e.yml). This project previously had no
+# config.toml at all; it isn't used for anything in production, where
+# function settings (verify_jwt below) were instead set once by hand in the
+# Supabase dashboard.
+#
+# verify_jwt = false is required on all three functions here and must match
+# production exactly: save-page, podcast-rss and podcast-chapters are all
+# called without a Kong-verifiable JWT (podcast apps can't send an
+# Authorization header at all; save-page validates the caller's JWT itself,
+# in code, rather than relying on the gateway). If this ever drifts from
+# production's actual per-function setting, running `supabase functions
+# deploy` with this config present would silently flip it back to the
+# default (verify_jwt = true) and break every podcast app's feed.
+
+project_id = "stash"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = false
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = []
+jwt_expiry = 3600
+enable_signup = true
+
+[functions.save-page]
+verify_jwt = false
+
+[functions.podcast-rss]
+verify_jwt = false
+
+[functions.podcast-chapters]
+verify_jwt = false

@@ -14,6 +14,14 @@ const CONFIG = {
   // your fork.
   PODCAST_WORKFLOW_URL: 'https://github.com/JordanTranchina/stash/actions/workflows/podcast.yml',
 
+  // The account this instance's owner signs in with. UI-only: it hides the
+  // "Generate Podcast Now" GitHub Actions link (which a friend can't use and
+  // shouldn't need to see) from everyone else. Not a security boundary —
+  // that's what RLS and the Edge Functions' JWT checks are for. A user id
+  // isn't a secret (it's already embedded in every JWT), so this is safe to
+  // commit like the anon key above.
+  OWNER_USER_ID: '6c7a3a96-16cd-4702-ac7b-0c7a4a81346d',
+
   // Sentry DSN for client-side error reporting. A Sentry DSN isn't a secret
   // (it's write-only, meant to be public), so it's safe to commit like the
   // Supabase anon key above. Leave blank to disable error reporting.

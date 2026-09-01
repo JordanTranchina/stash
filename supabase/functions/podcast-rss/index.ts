@@ -32,6 +32,37 @@ function cdata(str: string): string {
   return `<![CDATA[${str.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
 }
 
+// A shared, no-user-data recording served to every feed that has no real
+// episodes yet, so subscribing always shows a new listener *something*
+// instead of an empty show. `-v1` is part of the guid so a future
+// re-recording can bump it and force clients to treat it as a new item
+// rather than silently reusing a cached copy under the same guid.
+const WELCOME_GUID = "stash-welcome-v1";
+const WELCOME_DURATION_SECONDS = 30;
+const WELCOME_SIZE_BYTES = 179750;
+
+function renderWelcomeItem(supabaseUrl: string, feedCreatedAt: string): string {
+  const audioUrl = `${supabaseUrl}/storage/v1/object/public/podcasts/welcome.mp3`;
+  // pubDate is the subscriber's own signup time, not now() — a fixed date
+  // means the item never looks "new" on a re-poll (which would resurface it
+  // and re-notify the listener every few hours), and it still reads sensibly
+  // ("your show started when you signed up") however long ago that was.
+  const pubDate = formatRFC822(feedCreatedAt);
+  return `    <item>
+      <title>Welcome to your Stash podcast</title>
+      <description>${cdata(
+        "Your daily episode appears here once you've saved a few articles — " +
+          "turn on Podcasts in Stash settings if you haven't already, then " +
+          "save something to read later. Episodes land here each morning."
+      )}</description>
+      <pubDate>${pubDate}</pubDate>
+      <guid isPermaLink="false">${WELCOME_GUID}</guid>
+      <enclosure url="${escapeXml(audioUrl)}" length="${WELCOME_SIZE_BYTES}" type="audio/mpeg"/>
+      <itunes:duration>${formatDuration(WELCOME_DURATION_SECONDS)}</itunes:duration>
+      <itunes:explicit>false</itunes:explicit>
+    </item>`;
+}
+
 serve(async (req) => {
   try {
     // Podcast apps can't sign in, so the feed is scoped by an unguessable token
@@ -51,7 +82,7 @@ serve(async (req) => {
 
     const { data: feed } = await supabase
       .from("podcast_feeds")
-      .select("user_id")
+      .select("user_id, created_at")
       .eq("token", token)
       .maybeSingle();
 
@@ -68,6 +99,11 @@ serve(async (req) => {
       .from("podcast_episodes")
       .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters, artwork_url")
       .eq("user_id", feed.user_id)
+      // A run can die between inserting the episode row (script.py's
+      // save_to_supabase) and uploading its MP3 (upload_audio_to_supabase),
+      // leaving a row with no audio_url. Excluding those here means a
+      // mid-pipeline failure never surfaces as an unplayable "" enclosure.
+      .not("audio_url", "is", null)
       .order("created_at", { ascending: false })
       .limit(10);
 
@@ -111,6 +147,12 @@ serve(async (req) => {
       })
       .join("\n");
 
+    // No real episodes yet (new subscriber, or a quiet stretch before the
+    // first one lands) — show the welcome item instead of an empty feed.
+    const itemsXml = (episodes ?? []).length > 0
+      ? items
+      : renderWelcomeItem(Deno.env.get("SUPABASE_URL")!, feed.created_at);
+
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
@@ -127,7 +169,7 @@ serve(async (req) => {
     <itunes:category text="Technology"/>
     <itunes:explicit>false</itunes:explicit>
     <itunes:block>yes</itunes:block>
-${items}
+${itemsXml}
   </channel>
 </rss>`;
 
