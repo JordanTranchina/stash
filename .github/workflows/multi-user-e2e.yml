@@ -1,0 +1,84 @@
+name: Multi-user E2E
+
+# Exercises the multi-user isolation added by the auth lockdown (RLS on
+# saves/tags/folders/podcast_feeds) and the per-user podcast feed
+# (podcast_feeds + podcast-rss) against a real, ephemeral local Supabase
+# stack — not mocks, and never production. `supabase start` spins up
+# disposable local Postgres/Auth/Functions containers that are destroyed
+# when the job ends; nothing here can affect the real database.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  multi-user-e2e:
+    name: Multi-user isolation (RLS + podcast feeds)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - run: pip install requests
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # supabase/migrations/ holds only *incremental* changes — the base
+      # tables (saves, folders, tags, user_preferences, ...) live in
+      # supabase/schema.sql, a one-shot bootstrap applied once by hand to
+      # production and never captured as a migration (see CLAUDE.md).
+      # `supabase start` replays supabase/migrations/ against a fresh,
+      # empty database, so left in place it would fail immediately (e.g. an
+      # `ALTER TABLE saves` with no `saves` table yet) before schema.sql has
+      # ever run. Hide them until the base schema is in place.
+      - name: Hide migrations until schema.sql has bootstrapped the DB
+        run: mv supabase/migrations /tmp/migrations
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Install postgresql-client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Capture local stack connection info
+        id: stack
+        run: |
+          supabase status -o env > /tmp/supabase-status.env
+          cat /tmp/supabase-status.env
+          {
+            echo "api_url=$(grep '^API_URL=' /tmp/supabase-status.env | cut -d= -f2- | tr -d '"')"
+            echo "anon_key=$(grep '^ANON_KEY=' /tmp/supabase-status.env | cut -d= -f2- | tr -d '"')"
+            echo "service_role_key=$(grep '^SERVICE_ROLE_KEY=' /tmp/supabase-status.env | cut -d= -f2- | tr -d '"')"
+          } >> "$GITHUB_OUTPUT"
+          DB_URL=$(grep '^DB_URL=' /tmp/supabase-status.env | cut -d= -f2- | tr -d '"')
+          echo "db_url=$DB_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Apply schema.sql, then the migrations in order
+        run: |
+          set -e
+          psql "${{ steps.stack.outputs.db_url }}" -v ON_ERROR_STOP=1 -q -f supabase/schema.sql
+          mv /tmp/migrations supabase/migrations
+          for f in supabase/migrations/*.sql; do
+            echo "Applying $f"
+            psql "${{ steps.stack.outputs.db_url }}" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Run multi-user isolation tests
+        env:
+          SUPABASE_URL: ${{ steps.stack.outputs.api_url }}
+          SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.stack.outputs.service_role_key }}
+        run: python3 .github/scripts/multi_user_e2e.py
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup

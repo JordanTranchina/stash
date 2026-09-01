@@ -1,0 +1,126 @@
+name: Deploy to Supabase
+
+# Deploys the Edge Functions and/or database migrations automatically when
+# code touching them merges to main — so "merge the PR" is the whole deploy,
+# with no CLI commands to run by hand. Each half only runs when its own
+# files actually changed. workflow_dispatch is the manual "just deploy
+# everything right now" button (shows up as a "Run workflow" button on this
+# workflow's page in the Actions tab).
+#
+# Requires three repo secrets that are NOT set by default (see
+# documentation/SETUP.md):
+#   SUPABASE_ACCESS_TOKEN  - a personal access token
+#                            (https://supabase.com/dashboard/account/tokens)
+#   SUPABASE_DB_PASSWORD   - the project's Postgres password (Project
+#                            Settings > Database; reset it there if unknown)
+# SUPABASE_PROJECT_ID is a plain repo *variable*, not a secret — it's the
+# project ref, which already appears in public URLs throughout this repo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-supabase
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Which half changed? A manual run always deploys both; a push only
+  # deploys what it actually touched, so an unrelated migration doesn't
+  # redeploy functions and vice versa.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect what changed
+    runs-on: ubuntu-latest
+    outputs:
+      functions: ${{ steps.diff.outputs.functions }}
+      migrations: ${{ steps.diff.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "functions=true" >> "$GITHUB_OUTPUT"
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE="${{ github.event.before }}"
+          # A force-push (or a branch's very first push) can hand us an
+          # all-zero SHA that doesn't exist as a commit — fall back to the
+          # immediate parent rather than diffing against nothing.
+          if ! git cat-file -e "$BASE" 2>/dev/null; then
+            BASE="HEAD~1"
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" "${{ github.sha }}")
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -q '^supabase/functions/'; then
+            echo "functions=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "functions=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED" | grep -qE '^supabase/(migrations/|schema\.sql)'; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "migrations=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-functions:
+    name: Deploy Edge Functions
+    needs: [changes]
+    if: needs.changes.outputs.functions == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # Explicit list, not "deploy everything under supabase/functions/" —
+      # save-kindle is still deployed in production from before it was
+      # deleted from this repo; an unqualified deploy wouldn't touch it
+      # either way (deploy only pushes named/present functions), but naming
+      # the three that are actually meant to be live keeps that intentional.
+      - run: supabase functions deploy save-page podcast-rss podcast-chapters --project-ref ${{ vars.SUPABASE_PROJECT_ID }}
+
+  deploy-migrations:
+    name: Push database migrations
+    needs: [changes]
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase link --project-ref ${{ vars.SUPABASE_PROJECT_ID }}
+      # Every migration in this repo is written to be safe to re-run (see
+      # the "Idempotent" note at the top of each file), so a push that
+      # re-applies an already-applied migration is a no-op, not an error.
+      - run: supabase db push
+
+  summary:
+    needs: [changes, deploy-functions, deploy-migrations]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          {
+            echo "### Supabase deploy"
+            echo "- Functions changed: \`${{ needs.changes.outputs.functions }}\` — result: \`${{ needs.deploy-functions.result }}\`"
+            echo "- Migrations changed: \`${{ needs.changes.outputs.migrations }}\` — result: \`${{ needs.deploy-migrations.result }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

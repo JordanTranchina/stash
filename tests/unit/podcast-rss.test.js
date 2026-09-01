@@ -24,10 +24,34 @@ function cdata(str) {
   return `<![CDATA[${str.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
 }
 
+const WELCOME_GUID = "stash-welcome-v1";
+const WELCOME_DURATION_SECONDS = 30;
+const WELCOME_SIZE_BYTES = 179750;
+
+function renderWelcomeItem(supabaseUrl, feedCreatedAt) {
+  const audioUrl = `${supabaseUrl}/storage/v1/object/public/podcasts/welcome.mp3`;
+  const pubDate = formatRFC822(feedCreatedAt);
+  return `    <item>
+      <title>Welcome to your Stash podcast</title>
+      <description>${cdata(
+        "Your daily episode appears here once you've saved a few articles — " +
+          "turn on Podcasts in Stash settings if you haven't already, then " +
+          "save something to read later. Episodes land here each morning."
+      )}</description>
+      <pubDate>${pubDate}</pubDate>
+      <guid isPermaLink="false">${WELCOME_GUID}</guid>
+      <enclosure url="${escapeXml(audioUrl)}" length="${WELCOME_SIZE_BYTES}" type="audio/mpeg"/>
+      <itunes:duration>${formatDuration(WELCOME_DURATION_SECONDS)}</itunes:duration>
+      <itunes:explicit>false</itunes:explicit>
+    </item>`;
+}
+
 function buildRssXml(
   episodes,
   chaptersBase = "https://example.supabase.co/functions/v1/podcast-chapters",
-  token = "feedtoken"
+  token = "feedtoken",
+  feedCreatedAt = "2026-01-01T00:00:00.000Z",
+  supabaseUrl = "https://example.supabase.co"
 ) {
   const selfUrl = `https://example.supabase.co/functions/v1/podcast-rss?token=${token}`;
   const items = episodes
@@ -59,6 +83,9 @@ function buildRssXml(
     })
     .join("\n");
 
+  // No real episodes yet — show the welcome item instead of an empty feed.
+  const itemsXml = episodes.length > 0 ? items : renderWelcomeItem(supabaseUrl, feedCreatedAt);
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
@@ -75,7 +102,7 @@ function buildRssXml(
     <itunes:category text="Technology"/>
     <itunes:explicit>false</itunes:explicit>
     <itunes:block>yes</itunes:block>
-${items}
+${itemsXml}
   </channel>
 </rss>`;
 }
@@ -216,10 +243,12 @@ describe("buildRssXml", () => {
     expect(bareAmpersands).toBeNull();
   });
 
-  test("handles empty episode list", () => {
+  test("falls back to the welcome item for an empty episode list", () => {
     const emptyXml = buildRssXml([]);
     expect(emptyXml).toMatch(/<channel>/);
-    expect(emptyXml).not.toMatch(/<item>/);
+    const matches = emptyXml.match(/<item>/g);
+    expect(matches).toHaveLength(1);
+    expect(emptyXml).toContain(`<guid isPermaLink="false">${WELCOME_GUID}</guid>`);
   });
 
   test("includes the podcast namespace", () => {
@@ -374,5 +403,52 @@ describe("itunes:image (episode artwork)", () => {
       },
     ]);
     expect(xml).not.toMatch(/<itunes:image/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Welcome episode
+// ---------------------------------------------------------------------------
+// A new subscriber's feed has no episodes yet (the daily run hasn't fired, or
+// they just haven't saved anything). A shared, no-user-data welcome item
+// stands in so the feed is never empty, which some podcast apps refuse to add.
+
+describe("welcome episode", () => {
+  test("appears when there are no real episodes", () => {
+    const xml = buildRssXml([]);
+    expect(xml).toContain("<title>Welcome to your Stash podcast</title>");
+    expect(xml).toContain(`<guid isPermaLink="false">${WELCOME_GUID}</guid>`);
+  });
+
+  test("disappears the moment a real episode exists", () => {
+    const xml = buildRssXml([
+      {
+        id: "real-ep",
+        title: "A real episode",
+        audio_url: "https://example.com/a.mp3",
+        duration_seconds: 100,
+        size_bytes: 1,
+        created_at: "2026-01-15T08:00:00.000Z",
+      },
+    ]);
+    expect(xml).not.toContain(WELCOME_GUID);
+    expect(xml).not.toContain("Welcome to your Stash podcast");
+  });
+
+  test("uses the feed's own created_at as pubDate, not now", () => {
+    const xml = buildRssXml([], undefined, "feedtoken", "2026-03-01T00:00:00.000Z");
+    expect(xml).toContain(`<pubDate>${formatRFC822("2026-03-01T00:00:00.000Z")}</pubDate>`);
+  });
+
+  test("points the enclosure at the shared welcome.mp3 object, scoped to this project", () => {
+    const xml = buildRssXml([], undefined, "feedtoken", undefined, "https://myproj.supabase.co");
+    expect(xml).toContain(
+      '<enclosure url="https://myproj.supabase.co/storage/v1/object/public/podcasts/welcome.mp3"'
+    );
+  });
+
+  test("omits podcast:chapters (there is no podcast_episodes row to resolve)", () => {
+    const xml = buildRssXml([]);
+    expect(xml).not.toMatch(/<podcast:chapters/);
   });
 });

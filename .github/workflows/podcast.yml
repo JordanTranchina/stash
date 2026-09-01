@@ -3,47 +3,143 @@ name: Generate Podcast
 on:
   schedule:
     - cron: "0 8 * * *" # 8:00 AM UTC every day
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "Generate for only this user id (blank = every subscribed user)"
+        required: false
+      max_users:
+        description: "Override PODCAST_MAX_USERS for this run"
+        required: false
+
+# A slow multi-user run must not still be going when tomorrow's cron fires —
+# that would double up Gemini/edge-tts load across two overlapping runs.
+concurrency:
+  group: podcast
+  cancel-in-progress: false
 
 jobs:
-  build:
+  # ---------------------------------------------------------------------------
+  # Owner-only, deliberately not part of the per-user matrix below.
+  # youtube_sync.py stamps a single YOUTUBE_SYNC_PLAYLIST_ID secret's videos
+  # onto whatever USER_ID it's given — fanning this out per user would inject
+  # the owner's own YouTube playlist into every subscriber's library.
+  # Phase 3: move the playlist id into user_preferences and fan this out too.
+  # ---------------------------------------------------------------------------
+  youtube-sync:
+    name: YouTube sync (owner)
     runs-on: ubuntu-latest
-
+    if: vars.OWNER_USER_ID != ''
+    continue-on-error: true # a sync failure must not block anyone's episode
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          python -m pip install --upgrade pip
-          pip install -r podcast/requirements.txt
-
-      - name: Sync YouTube playlist
-        env:
+      - run: pip install requests python-dotenv
+      - env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          USER_ID: ${{ secrets.USER_ID }}
+          USER_ID: ${{ vars.OWNER_USER_ID }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_SYNC_PLAYLIST_ID: ${{ secrets.YOUTUBE_SYNC_PLAYLIST_ID }}
         run: python podcast/youtube_sync.py
 
-      - name: Generate Podcast Episode
+  # ---------------------------------------------------------------------------
+  # Stdlib-only (see podcast/discover.py) so no pip install can break the job
+  # every other job in this run depends on.
+  # ---------------------------------------------------------------------------
+  discover:
+    name: Discover subscribers
+    runs-on: ubuntu-latest
+    needs: [youtube-sync]
+    if: always() # run even when the sync above was skipped or failed
+    outputs:
+      users: ${{ steps.q.outputs.users }}
+      count: ${{ steps.q.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - id: q
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          USER_ID: ${{ secrets.USER_ID }}
+          PODCAST_MAX_USERS: ${{ inputs.max_users || vars.PODCAST_MAX_USERS || '25' }}
+          PODCAST_ONLY_USER: ${{ inputs.user_id }}
+        run: python podcast/discover.py >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # One job per subscribed user, not a loop inside script.py. Beyond failure
+  # isolation, this is load-bearing: script.py's temp_audio directory
+  # (generate_audio) is never cleared between runs, and assembly.py globs
+  # *everything* in it — a shared process looping over users would silently
+  # splice one user's leftover dialogue onto the end of another's episode. A
+  # process boundary per user makes that impossible by construction. Don't
+  # collapse this into an in-process loop without re-solving that.
+  # ---------------------------------------------------------------------------
+  generate:
+    name: Episode (${{ matrix.label }})
+    needs: [discover]
+    # A `matrix.include` built from an empty array raises a workflow-syntax
+    # error ("does not contain any values") instead of skipping cleanly.
+    if: needs.discover.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # one user's bad transcript must not red everyone else's
+      max-parallel: 2 # edge-tts / Gemini rate guard
+      matrix:
+        include: ${{ fromJSON(needs.discover.outputs.users) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: podcast/requirements.txt
+      - name: Ensure ffmpeg + ffprobe
+        run: |
+          command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null \
+            || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
+      - run: pip install -r podcast/requirements.txt
+      - name: Generate episode
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          USER_ID: ${{ matrix.user_id }}
         run: python podcast/script.py
 
-      - name: Upload Podcast Episode
-        uses: actions/upload-artifact@v4
+  retention:
+    name: Prune old episodes
+    needs: [generate]
+    if: always() # prune even when some users failed above, or nobody ran today
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          name: podcast-episode
-          path: podcast/output/episode.mp3
-          if-no-files-found: warn
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: podcast/requirements.txt
+      - run: pip install requests supabase python-dotenv
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PODCAST_RETENTION_KEEP: ${{ vars.PODCAST_RETENTION_KEEP || '10' }}
+        run: python podcast/retention.py
+
+  summary:
+    needs: [discover, generate, retention]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          {
+            echo "### Podcast run"
+            echo "- Subscribers processed: \`${{ needs.discover.outputs.count }}\`"
+            echo "- Generation: \`${{ needs.generate.result }}\`"
+            echo "- Retention: \`${{ needs.retention.result }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
