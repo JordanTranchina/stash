@@ -2302,6 +2302,38 @@ select {
   color: var(--text-muted);
 }
 
+.settings-checkbox {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.offline-storage-row #offline-storage-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.offline-clear-btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.offline-clear-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 /* Stats sub-panel back button aligns left, not spaced apart */
 #settings-stats .stats-container {
   padding: 0;
