@@ -10,6 +10,54 @@
   <!-- Error reporting (see sentry-init.js) -->
   <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
   <style>
+    :root {
+      --bg-primary: #f9fafb;
+      --bg-secondary: #ffffff;
+      --text-primary: #1f2937;
+      --text-secondary: #4b5563;
+      --text-tertiary: #6b7280;
+      --border-color: #e5e7eb;
+      --border-color-focus: #6366f1;
+      --btn-primary-bg: #6366f1;
+      --btn-primary-bg-active: #4f46e5;
+      --input-hover-bg: #f3f4f6;
+      --status-success-bg: #d1fae5;
+      --status-success-text: #065f46;
+      --status-error-bg: #fee2e2;
+      --status-error-text: #991b1b;
+      --status-warning-bg: #fef3c7;
+      --status-warning-text: #92400e;
+      --btn-success-bg: #10b981;
+      --btn-success-bg-active: #059669;
+      --spinner-border: #e5e7eb;
+      --spinner-border-top: #6366f1;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1f2937;
+        --bg-secondary: #111827;
+        --text-primary: #f3f4f6;
+        --text-secondary: #d1d5db;
+        --text-tertiary: #9ca3af;
+        --border-color: #374151;
+        --border-color-focus: #818cf8;
+        --btn-primary-bg: #6366f1;
+        --btn-primary-bg-active: #818cf8;
+        --input-hover-bg: #374151;
+        --status-success-bg: #064e3b;
+        --status-success-text: #a7f3d0;
+        --status-error-bg: #7f1d1d;
+        --status-error-text: #fecaca;
+        --status-warning-bg: #78350f;
+        --status-warning-text: #fcd34d;
+        --btn-success-bg: #10b981;
+        --btn-success-bg-active: #059669;
+        --spinner-border: #374151;
+        --spinner-border-top: #6366f1;
+      }
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -18,7 +66,8 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f9fafb;
+      background: var(--bg-primary);
+      color: var(--text-primary);
       min-height: 100vh;
       display: flex; /* Center for the spinner view */
       flex-direction: column;
@@ -45,17 +94,19 @@
     input,
     textarea {
       padding: 14px 16px;
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--border-color);
       border-radius: 10px;
       font-size: 16px;
       width: 100%;
       -webkit-appearance: none;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
     }
 
     input:focus,
     textarea:focus {
       outline: none;
-      border-color: #6366f1;
+      border-color: var(--border-color-focus);
     }
 
     textarea {
@@ -69,14 +120,14 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      background: #ffffff;
-      border: 1px solid #e5e7eb;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
       border-radius: 10px;
       padding: 4px 4px 4px 6px;
     }
 
     .pill:focus-within {
-      border-color: #6366f1;
+      border-color: var(--border-color-focus);
     }
 
     .pill input {
@@ -89,7 +140,7 @@
       flex-grow: 1;
       min-width: 0;
       background: transparent;
-      color: #1f2937;
+      color: var(--text-primary);
       -webkit-appearance: none;
     }
 
@@ -103,15 +154,15 @@
       background: none;
       border: none;
       border-radius: 8px;
-      color: #6b7280;
+      color: var(--text-tertiary);
       cursor: pointer;
       flex-shrink: 0;
       -webkit-appearance: none;
     }
 
     .input-action-btn:hover {
-      background: #f3f4f6;
-      color: #111827;
+      background: var(--input-hover-bg);
+      color: var(--text-primary);
     }
 
     .submit-btn {
@@ -120,7 +171,7 @@
       justify-content: center;
       width: 44px;
       height: 44px;
-      background: #6366f1;
+      background: var(--btn-primary-bg);
       color: #ffffff;
       border: none;
       border-radius: 8px;
@@ -130,7 +181,7 @@
     }
 
     .submit-btn:active {
-      background: #4f46e5;
+      background: var(--btn-primary-bg-active);
     }
 
     .submit-btn:disabled {
@@ -162,7 +213,7 @@
 
     .btn {
       padding: 16px;
-      background: #6366f1;
+      background: var(--btn-primary-bg);
       color: white;
       border: none;
       border-radius: 10px;
@@ -174,7 +225,7 @@
     }
 
     .btn:active {
-      background: #4f46e5;
+      background: var(--btn-primary-bg-active);
     }
 
     .btn:disabled {
@@ -191,14 +242,14 @@
 
     .status.success {
       display: block;
-      background: #d1fae5;
-      color: #065f46;
+      background: var(--status-success-bg);
+      color: var(--status-success-text);
     }
 
     .status.error {
       display: block;
-      background: #fee2e2;
-      color: #991b1b;
+      background: var(--status-error-bg);
+      color: var(--status-error-text);
     }
 
     /* Underlined text, not a second filled button — reporting a miss is a
@@ -210,7 +261,7 @@
       padding: 6px 8px;
       background: none;
       border: none;
-      color: #991b1b;
+      color: var(--status-error-text);
       font-size: 13px;
       font-weight: 600;
       text-decoration: underline;
@@ -221,7 +272,7 @@
 
     .hint {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--text-tertiary);
       text-align: center;
       margin-top: 16px;
     }
@@ -232,8 +283,8 @@
       margin-bottom: 12px;
       padding: 16px;
       border-radius: 10px;
-      background: #fef3c7;
-      color: #92400e;
+      background: var(--status-warning-bg);
+      color: var(--status-warning-text);
       text-align: center;
       font-size: 14px;
       line-height: 1.5;
@@ -256,7 +307,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: #f9fafb; /* Match body bg */
+      background: var(--bg-primary); /* Match body bg */
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -272,8 +323,8 @@
     .spinner {
       width: 50px;
       height: 50px;
-      border: 4px solid #e5e7eb;
-      border-top: 4px solid #6366f1;
+      border: 4px solid var(--spinner-border);
+      border-top: 4px solid var(--spinner-border-top);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin-bottom: 20px;
@@ -287,21 +338,21 @@
     .overlay-text {
       font-size: 18px;
       font-weight: 500;
-      color: #4b5563;
+      color: var(--text-secondary);
     }
 
     .view-in-stash {
       margin-top: 24px;
       width: auto;
       padding: 12px 28px;
-      background: #10b981; /* Green, matching the success checkmark */
+      background: var(--btn-success-bg); /* Green, matching the success checkmark */
       text-decoration: none;
       display: inline-block;
       text-align: center;
     }
 
     .view-in-stash:active {
-      background: #059669;
+      background: var(--btn-success-bg-active);
     }
 
     .checkmark {
@@ -310,10 +361,10 @@
       border-radius: 50%;
       display: block;
       stroke-width: 2;
-      stroke: #10b981; /* Green */
+      stroke: var(--btn-success-bg); /* Green */
       stroke-miterlimit: 10;
       margin-bottom: 20px;
-      box-shadow: inset 0px 0px 0px #10b981;
+      box-shadow: inset 0px 0px 0px var(--btn-success-bg);
       animation: fill .4s ease-in-out .4s forwards, scale .3s ease-in-out .9s both;
     }
 
@@ -322,7 +373,7 @@
       stroke-dashoffset: 166;
       stroke-width: 2;
       stroke-miterlimit: 10;
-      stroke: #10b981;
+      stroke: var(--btn-success-bg);
       fill: none;
       animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
     }
