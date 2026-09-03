@@ -219,6 +219,13 @@ refreshes its own token; the bookmarklet has no session of its own, so it hands
 the URL to the signed-in quick-save window instead of posting directly. The
 recommendation to hold the extension back stands, and the docs say so.
 
+**Future:** when there's demand for the extension beyond your own machine,
+publishing it to the Chrome Web Store and Firefox Add-ons is tracked in
+[#96](https://github.com/JordanTranchina/stash/issues/96) — Chrome is a $5
+one-time fee plus a review cycle (the `<all_urls>` permission likely triggers
+manual review); Firefox signing is near-instant. Also removes the per-machine
+"reload the unpacked extension" step every time extension code changes.
+
 ---
 
 ## Live bugs found while assessing
