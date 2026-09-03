@@ -77,6 +77,26 @@ yourself out of your own install. Then open the web app and sign in.
 3. Click "Load unpacked"
 4. Select the `extension` folder
 
+**Enable "Continue with Google" in the extension**
+
+The extension signs in with Google through `chrome.identity.launchWebAuthFlow`,
+which calls back to a URL that's specific to this extension install — Supabase
+has to be told to allow it, or the sign-in fails silently and lands back on
+the "Sign In" form.
+
+5. Open the extension's background page console (`chrome://extensions/` >
+   Stash > "service worker" under "Inspect views") and run:
+   ```js
+   chrome.identity.getRedirectURL()
+   ```
+6. Copy the URL it prints (something like
+   `https://<extension-id>.chromiumapp.org/`)
+7. In Supabase, go to **Authentication > URL Configuration** and add it under
+   **Redirect URLs**
+8. Repeat for Firefox if you use `extension-firefox/` too — its redirect URL
+   is different from Chrome's, so run the same command from its background
+   page console and add that URL as well
+
 ### 5. Deploy the Web App
 
 **Option A: Vercel (Recommended)**
