@@ -19,9 +19,13 @@ class BugReporter {
     this.submitting = false;
     this._html2canvas = null;
     this.MAX_ATTACHMENTS = 4;
+    this.SCREENSHOT_TIMEOUT_MS = 3000;
   }
 
   bindEvents() {
+    if (this._bound) return; // guard against double-binding if init() ever re-runs
+    this._bound = true;
+
     const modal = document.getElementById('bug-report-modal');
     if (!modal) return;
 
@@ -40,11 +44,15 @@ class BugReporter {
     window.addEventListener('online', () => this.flushQueue());
   }
 
+  // Screenshot capture (html2canvas walking the whole document) is heavy
+  // enough to block the main thread for seconds on a long saves list, so it
+  // must finish BEFORE the modal opens — never run it while the user can
+  // already be typing. autoShot=false (deep link / prefilled-error opens)
+  // skips it entirely rather than delaying the modal.
   async open({ prefillError = false, autoShot = true } = {}) {
     const modal = document.getElementById('bug-report-modal');
     if (!modal) return;
     this.reset();
-    modal.classList.remove('hidden');
 
     if (prefillError) {
       const le = window.StashLog?.getLastError?.();
@@ -53,7 +61,10 @@ class BugReporter {
         document.getElementById('bug-report-detail').open = true;
       }
     }
-    if (autoShot) this.captureScreenshot();
+
+    if (autoShot) await this.captureScreenshot();
+
+    modal.classList.remove('hidden');
     document.getElementById('bug-report-text').focus();
   }
 
@@ -106,21 +117,19 @@ class BugReporter {
     return this._html2canvas;
   }
 
+  // Captures just the visible viewport, not the whole scrollable page — a
+  // long saves list made a full-document capture (and the getComputedStyle
+  // walk html2canvas does per node) take seconds. This runs before the modal
+  // is shown (see open()), so there's no dialog to hide from the shot and no
+  // need to fight z-index/visibility around it.
   async captureScreenshot() {
     const shot = document.getElementById('bug-report-shot');
     if (!shot) return;
     shot.classList.remove('hidden');
     shot.innerHTML = '<span class="bug-report-shot-note">Capturing screenshot…</span>';
-    const modal = document.getElementById('bug-report-modal');
     try {
       const html2canvas = await this.loadHtml2canvas();
-      modal.style.visibility = 'hidden'; // don't shoot our own dialog
-      const canvas = await html2canvas(document.body, {
-        logging: false,
-        useCORS: true,
-        scale: Math.min(window.devicePixelRatio || 1, 2),
-      });
-      modal.style.visibility = '';
+      const canvas = await this._captureWithTimeout(html2canvas);
       this.screenshotBlob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
 
       shot.innerHTML = '';
@@ -138,10 +147,29 @@ class BugReporter {
       shot.appendChild(img);
       shot.appendChild(label);
     } catch (e) {
-      modal.style.visibility = '';
       this.screenshotBlob = null;
       shot.innerHTML = '<span class="bug-report-shot-note">Couldn’t auto-capture a screenshot — attach one below if it helps.</span>';
     }
+  }
+
+  // Viewport-only capture, with a hard time limit — a slow or hung capture
+  // (huge page, weird CSS) must never hold up opening the report form.
+  _captureWithTimeout(html2canvas) {
+    const capture = html2canvas(document.body, {
+      logging: false,
+      useCORS: true,
+      scale: 1,
+      x: window.scrollX,
+      y: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+    });
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('screenshot timed out')), this.SCREENSHOT_TIMEOUT_MS);
+    });
+    return Promise.race([capture, timeout]);
   }
 
   addFiles(fileList) {
