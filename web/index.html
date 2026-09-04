@@ -28,13 +28,6 @@
 
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css">
-
-  <!-- Supabase -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Markdown parser -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- Error reporting (see sentry-init.js) -->
-  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -616,6 +609,18 @@
     </div>
   </div>
 
+
+  <!-- Third-party libs. Moved here (from <head>) so they no longer block
+       parsing/painting the body above them — same reasoning as the app's own
+       scripts below, which have always lived at the bottom of <body>. Order
+       relative to those scripts is unchanged: these still run first, so
+       window.supabase / marked / Sentry are ready before config.js, db.js,
+       sentry-init.js, and app.js (which use them) run. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Error reporting (see sentry-init.js) -->
+  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
 
   <!-- Config -->
   <!-- logbuffer.js first: it wraps console.* so a bug report can carry the
