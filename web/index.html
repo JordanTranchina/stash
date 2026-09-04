@@ -122,7 +122,7 @@
         </header>
 
         <!-- Content Area -->
-        <div class="content">
+        <div class="content" id="content-scroll">
           <!-- Saves View -->
           <div id="saves-view">
             <div id="saves-container" class="saves-grid">
@@ -130,6 +130,12 @@
             </div>
 
             <div id="loading" class="loading hidden">
+              <div class="spinner"></div>
+            </div>
+
+            <!-- Shown while the next page of saves is loading, scrolled into
+                 view (see StashApp.bindEvents' #content-scroll listener). -->
+            <div id="loading-more" class="loading hidden">
               <div class="spinner"></div>
             </div>
 

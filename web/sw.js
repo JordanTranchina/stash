@@ -5,7 +5,7 @@
 // name shared with app.js's prefetcher.
 importScripts('/config.js', '/analytics.js', '/db.js', '/save-lib.js', '/offline-lib.js');
 
-const CACHE_NAME = 'stash-v8';
+const CACHE_NAME = 'stash-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
