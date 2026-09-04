@@ -1,6 +1,8 @@
 /* CSS Variables */
 :root {
-  --primary: #6366f1;
+  /* Darkened from #6366f1 (4.47:1 on white — just under WCAG AA) so text set
+     in --primary, like the active bottom-nav label, clears 4.5:1. */
+  --primary: #595bd8;
   --primary-dark: #4f46e5;
   --primary-light: #818cf8;
   --bg: #ffffff;
@@ -1599,38 +1601,6 @@ select {
 }
 
 /* Report a Bug modal */
-.bug-report-shot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-}
-
-.bug-report-shot img {
-  width: 100%;
-  max-height: 200px;
-  object-fit: contain;
-  border-radius: 6px;
-  background: var(--bg);
-}
-
-.bug-report-shot-note {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.bug-report-shot-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
 .bug-report-attachments {
   display: flex;
   flex-wrap: wrap;

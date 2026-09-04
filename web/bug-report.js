@@ -5,24 +5,23 @@
 //   - the "Report" action on a failure toast  → open({ prefillError: true })
 //   - ?report-bug=1 in the URL (also the podcast show-notes deep link)
 //
-// A report is a short description (+ optional repro / expected / observed), an
-// auto-captured screenshot, any files the user attaches, and the recent console
-// logs + last uncaught error + environment gathered by logbuffer.js. It POSTs a
-// multipart form to the `report-bug` Edge Function, which files a GitHub issue.
-// If that POST fails (offline, GitHub down) the report is queued in IndexedDB
-// and retried on the next app open / "online" event / Background Sync.
+// A report is a short description (+ optional repro / expected / observed),
+// any files the user attaches, and the recent console logs + last uncaught
+// error + environment gathered by logbuffer.js. It POSTs a multipart form to
+// the `report-bug` Edge Function, which files a GitHub issue. If that POST
+// fails (offline, GitHub down) the report is queued in IndexedDB and retried
+// on the next app open / "online" event / Background Sync.
+//
+// There used to be an automatic html2canvas() screenshot on every open —
+// removed because it walked the whole page's DOM/CSSOM on the main thread,
+// and screenshots aren't usually needed to understand a bug report anyway.
+// Users can still attach one manually via the file input below.
 class BugReporter {
   constructor(app) {
     this.app = app;
     this.attachments = []; // { blob, name, type, isVideo, previewUrl }
-    this.screenshotBlob = null;
     this.submitting = false;
-    this._html2canvas = null;
     this.MAX_ATTACHMENTS = 4;
-    this.SCREENSHOT_TIMEOUT_MS = 3000;
-    this._shotToken = 0; // bumped on every open()/reset() so a capture that's
-    // still running when the modal closes (or reopens) can tell its result is
-    // stale and must not overwrite the next report's state.
   }
 
   bindEvents() {
@@ -47,12 +46,7 @@ class BugReporter {
     window.addEventListener('online', () => this.flushQueue());
   }
 
-  // The modal opens immediately — never wait on the screenshot to show it or
-  // to let the user start typing. captureScreenshot() (viewport-only, capped
-  // at SCREENSHOT_TIMEOUT_MS) runs in the background and fills in the "shot"
-  // area — starting with a "Capturing screenshot…" placeholder — once it's
-  // ready, same as any other async widget on the page.
-  async open({ prefillError = false, autoShot = true } = {}) {
+  async open({ prefillError = false } = {}) {
     const modal = document.getElementById('bug-report-modal');
     if (!modal) return;
     this.reset();
@@ -67,8 +61,6 @@ class BugReporter {
 
     modal.classList.remove('hidden');
     document.getElementById('bug-report-text').focus();
-
-    if (autoShot) this.captureScreenshot();
   }
 
   close() {
@@ -78,10 +70,8 @@ class BugReporter {
   }
 
   reset() {
-    this._shotToken++;
     this.attachments.forEach((a) => a.previewUrl && URL.revokeObjectURL(a.previewUrl));
     this.attachments = [];
-    if (this.screenshotBlob) this.screenshotBlob = null;
     this.submitting = false;
 
     ['text', 'steps', 'expected', 'observed'].forEach((k) => {
@@ -97,98 +87,9 @@ class BugReporter {
     const filesInput = document.getElementById('bug-report-files');
     if (filesInput) filesInput.value = '';
 
-    const shot = document.getElementById('bug-report-shot');
-    if (shot) { shot.classList.add('hidden'); shot.innerHTML = ''; }
-
     this.renderAttachments();
     const btn = document.getElementById('bug-report-submit-btn');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
-  }
-
-  // Lazily pull in html2canvas from the CDN (same delivery model as the other
-  // web-app libraries). Screenshot capture is best-effort — if this fails
-  // (offline, blocked) the user can still attach one manually.
-  loadHtml2canvas() {
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (this._html2canvas) return this._html2canvas;
-    this._html2canvas = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-      s.onload = () => resolve(window.html2canvas);
-      s.onerror = () => reject(new Error('screenshot library failed to load'));
-      document.head.appendChild(s);
-    });
-    return this._html2canvas;
-  }
-
-  // Captures just the visible viewport, not the whole scrollable page — a
-  // long saves list made a full-document capture (and the getComputedStyle
-  // walk html2canvas does per node) take seconds. This runs before the modal
-  // is shown (see open()), so there's no dialog to hide from the shot and no
-  // need to fight z-index/visibility around it.
-  async captureScreenshot() {
-    const shot = document.getElementById('bug-report-shot');
-    if (!shot) return;
-    const token = this._shotToken;
-    shot.classList.remove('hidden');
-    shot.innerHTML = '<span class="bug-report-shot-note">Capturing screenshot…</span>';
-    let blob = null;
-    try {
-      blob = await this._captureWithTimeout();
-    } catch (e) {
-      blob = null;
-    }
-
-    // The modal was closed (or reopened) while the capture was running —
-    // this result belongs to a report that no longer exists, so drop it.
-    if (token !== this._shotToken) return;
-
-    this.screenshotBlob = blob;
-    if (blob) {
-      shot.innerHTML = '';
-      const img = document.createElement('img');
-      img.alt = 'Screenshot preview';
-      img.src = URL.createObjectURL(blob);
-      const label = document.createElement('label');
-      label.className = 'bug-report-shot-toggle';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = true;
-      cb.id = 'bug-report-shot-include';
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(' Attach this screenshot'));
-      shot.appendChild(img);
-      shot.appendChild(label);
-    } else {
-      shot.innerHTML = '<span class="bug-report-shot-note">Couldn’t auto-capture a screenshot — attach one below if it helps.</span>';
-    }
-  }
-
-  // Viewport-only capture, with a hard time limit on the WHOLE pipeline —
-  // loading html2canvas from the CDN AND running it. A slow/blocked/flaky
-  // network fetch of the library is just as capable of leaving "Capturing
-  // screenshot…" on screen indefinitely as a hung capture is, so both must
-  // share one budget rather than only the capture call being bounded.
-  _captureWithTimeout() {
-    const attempt = (async () => {
-      const html2canvas = await this.loadHtml2canvas();
-      const canvas = await html2canvas(document.body, {
-        logging: false,
-        useCORS: true,
-        scale: 1,
-        x: window.scrollX,
-        y: window.scrollY,
-        width: window.innerWidth,
-        height: window.innerHeight,
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight,
-      });
-      return new Promise((r) => canvas.toBlob(r, 'image/png'));
-    })();
-    const timeout = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('screenshot timed out')), this.SCREENSHOT_TIMEOUT_MS);
-    });
-    return Promise.race([attempt, timeout]);
   }
 
   addFiles(fileList) {
@@ -248,13 +149,7 @@ class BugReporter {
   }
 
   gatherFiles() {
-    const files = [];
-    const includeShot = document.getElementById('bug-report-shot-include');
-    if (this.screenshotBlob && (!includeShot || includeShot.checked)) {
-      files.push({ blob: this.screenshotBlob, name: 'screenshot.png' });
-    }
-    this.attachments.forEach((a) => files.push({ blob: a.blob, name: a.name }));
-    return files;
+    return this.attachments.map((a) => ({ blob: a.blob, name: a.name }));
   }
 
   buildFormData(fields, files) {

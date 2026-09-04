@@ -3,15 +3,13 @@
  *
  * Unit tests for web/bug-report.js — the "Report a Bug" modal.
  *
- * Covers the fixes for the freeze reported when typing in the bug report
- * box: the screenshot capture (html2canvas walking the whole document) used
- * to block the main thread for seconds, and the modal used to wait for that
- * capture to finish before it even opened. The capture is now viewport-only,
- * time-limited, and runs in the background AFTER the modal opens and the
- * text box is focused — the user can type immediately, and a stale capture
- * from a closed/reopened modal must not clobber the next report's state.
- * These tests also cover a hung capture timing out and bindEvents() not
- * stacking duplicate listeners.
+ * The reporter used to auto-capture a screenshot with html2canvas on every
+ * open, which walked the whole page's DOM/CSSOM on the main thread and used
+ * to freeze typing (see git history for that fix). Auto-capture has since
+ * been removed entirely — a report now carries only what the user types and
+ * whatever files they attach manually — so these tests cover open() opening
+ * immediately and focusing the textarea, reset() clearing attachment state,
+ * and gatherFiles()/submit() working from manual attachments only.
  *
  * Uses jsdom (via the docblock above) so BugReporter's real
  * document.getElementById calls resolve against actual DOM nodes, mirroring
@@ -35,7 +33,6 @@ const MODAL_HTML = `
       </div>
       <div class="modal-body">
         <textarea id="bug-report-text"></textarea>
-        <div id="bug-report-shot" class="bug-report-shot hidden"></div>
         <input type="file" id="bug-report-files" multiple>
         <div id="bug-report-attachments"></div>
         <details id="bug-report-detail">
@@ -99,108 +96,82 @@ describe('BugReporter', () => {
     winSpy.mockRestore();
   });
 
-  test('open() reveals the modal and focuses the textarea without waiting on the screenshot capture', async () => {
+  test('open() reveals the modal and focuses the textarea immediately', async () => {
     const reporter = new BugReporter(fakeApp());
-    let resolveCapture;
-    reporter.captureScreenshot = jest.fn(
-      () => new Promise((resolve) => { resolveCapture = resolve; })
-    );
-
     const modal = document.getElementById('bug-report-modal');
     const textarea = document.getElementById('bug-report-text');
     const focusSpy = jest.spyOn(textarea, 'focus');
 
-    await reporter.open({ autoShot: true });
+    await reporter.open();
 
-    // The capture is still pending, but the modal must already be open and
-    // focused — the user should be able to type right away.
     expect(modal.classList.contains('hidden')).toBe(false);
     expect(focusSpy).toHaveBeenCalledTimes(1);
-    expect(reporter.captureScreenshot).toHaveBeenCalledTimes(1);
-
-    resolveCapture();
   });
 
-  test('open({ autoShot: false }) skips the capture and opens immediately', async () => {
+  test('open({ prefillError: true }) prefills the observed field from the last error', async () => {
+    window.StashLog = { getLastError: () => ({ message: 'boom' }) };
     const reporter = new BugReporter(fakeApp());
-    reporter.captureScreenshot = jest.fn(() => Promise.resolve());
 
-    await reporter.open({ autoShot: false });
+    await reporter.open({ prefillError: true });
 
-    expect(reporter.captureScreenshot).not.toHaveBeenCalled();
-    expect(document.getElementById('bug-report-modal').classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('bug-report-observed').value).toBe('Error: boom');
+    expect(document.getElementById('bug-report-detail').open).toBe(true);
+
+    delete window.StashLog;
   });
 
-  test('a capture that resolves after the modal is reset (closed/reopened) does not overwrite the new report state', async () => {
+  test('reset() clears attachments and revokes their preview URLs', () => {
     const reporter = new BugReporter(fakeApp());
-    const fakeCanvas = { toBlob: (cb) => cb(new Blob(['x'], { type: 'image/png' })) };
-    let resolveCanvas;
-    const html2canvasMock = jest.fn(() => new Promise((resolve) => { resolveCanvas = resolve; }));
-    reporter.loadHtml2canvas = jest.fn(() => Promise.resolve(html2canvasMock));
+    global.URL.revokeObjectURL = jest.fn();
+    reporter.attachments = [
+      { blob: new Blob(['x']), name: 'a.png', type: 'image/png', previewUrl: 'blob:a' },
+    ];
+
+    reporter.reset();
+
+    expect(reporter.attachments).toEqual([]);
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:a');
+  });
+
+  test('addFiles() caps attachments at MAX_ATTACHMENTS', () => {
+    const reporter = new BugReporter(fakeApp());
     global.URL.createObjectURL = jest.fn(() => 'blob:fake');
+    const files = Array.from({ length: 6 }, (_, i) =>
+      new File(['x'], `f${i}.png`, { type: 'image/png' }));
 
-    const capturePromise = reporter.captureScreenshot();
-    reporter.reset(); // simulates closing (or reopening) the modal mid-capture
+    reporter.addFiles(files);
 
-    // Let the pending awaits inside captureScreenshot (loadHtml2canvas(),
-    // then the html2canvas() call itself) actually run before resolving —
-    // otherwise resolveCanvas is still undefined.
-    await Promise.resolve();
-    await Promise.resolve();
-    resolveCanvas(fakeCanvas);
-    await capturePromise;
-
-    expect(reporter.screenshotBlob).toBeNull();
-    expect(document.getElementById('bug-report-shot').innerHTML).toBe('');
+    expect(reporter.attachments).toHaveLength(reporter.MAX_ATTACHMENTS);
   });
 
-  test('a hung html2canvas capture times out instead of blocking the form', async () => {
+  test('gatherFiles() returns exactly the manually attached files', () => {
     const reporter = new BugReporter(fakeApp());
-    reporter.SCREENSHOT_TIMEOUT_MS = 10;
-    // Simulates html2canvas() never resolving (a huge/odd page).
-    reporter.loadHtml2canvas = jest.fn(() => Promise.resolve(() => new Promise(() => {})));
+    const blob = new Blob(['x'], { type: 'image/png' });
+    reporter.attachments = [{ blob, name: 'shot.png', type: 'image/png' }];
 
-    await reporter.captureScreenshot();
-
-    expect(reporter.screenshotBlob).toBeNull();
-    expect(document.getElementById('bug-report-shot').innerHTML).toMatch(/couldn.?t auto-capture/i);
+    expect(reporter.gatherFiles()).toEqual([{ blob, name: 'shot.png' }]);
   });
 
-  test('a hung/slow CDN fetch of html2canvas itself also times out, not just the capture', async () => {
-    // Caught in manual testing: the timeout used to wrap only the
-    // html2canvas() capture call, so a slow or flaky fetch of the library
-    // (a real-world proxy hiccup, a blocked CDN, a dead connection) could
-    // leave "Capturing screenshot…" on screen far past SCREENSHOT_TIMEOUT_MS,
-    // even though it never blocked typing. The timeout must cover loading
-    // the library too.
+  test('gatherFiles() returns nothing when the user attached nothing', () => {
     const reporter = new BugReporter(fakeApp());
-    reporter.SCREENSHOT_TIMEOUT_MS = 10;
-    // loadHtml2canvas() itself never resolves — simulates a hung/very slow
-    // <script> fetch, as opposed to the previous test's hung capture call.
-    reporter.loadHtml2canvas = jest.fn(() => new Promise(() => {}));
-
-    await reporter.captureScreenshot();
-
-    expect(reporter.screenshotBlob).toBeNull();
-    expect(document.getElementById('bug-report-shot').innerHTML).toMatch(/couldn.?t auto-capture/i);
+    expect(reporter.gatherFiles()).toEqual([]);
   });
 
-  test('captureScreenshot shoots only the viewport at scale 1, not the whole scrollable page', async () => {
+  test('submit() posts only the description and manual attachments, with no screenshot', async () => {
     const reporter = new BugReporter(fakeApp());
-    const fakeCanvas = { toBlob: (cb) => cb(new Blob(['x'], { type: 'image/png' })) };
-    const html2canvasMock = jest.fn(() => Promise.resolve(fakeCanvas));
-    reporter.loadHtml2canvas = jest.fn(() => Promise.resolve(html2canvasMock));
-    global.URL.createObjectURL = jest.fn(() => 'blob:fake');
+    document.getElementById('bug-report-text').value = 'Something broke';
+    const blob = new Blob(['x'], { type: 'image/png' });
+    reporter.attachments = [{ blob, name: 'shot.png', type: 'image/png' }];
 
-    await reporter.captureScreenshot();
+    let posted;
+    reporter.postReport = jest.fn(async (token, fields, files) => {
+      posted = { fields, files };
+      return { ok: true, json: async () => ({}) };
+    });
 
-    expect(html2canvasMock).toHaveBeenCalledWith(document.body, expect.objectContaining({
-      scale: 1,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      windowWidth: window.innerWidth,
-      windowHeight: window.innerHeight,
-    }));
-    expect(reporter.screenshotBlob).not.toBeNull();
+    await reporter.submit();
+
+    expect(posted.files).toEqual([{ blob, name: 'shot.png' }]);
+    expect(posted.fields.description).toBe('Something broke');
   });
 });

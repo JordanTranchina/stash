@@ -72,10 +72,10 @@ class StashApp {
     this.bugReporter.bindEvents();
     this.installErrorReporting();
 
-    // Deep link (also used by the podcast show notes): ?report-bug=1 opens the
-    // reporter straight away. No auto-screenshot — the app may still be loading.
+    // Deep link (also used by the podcast show notes): ?report-bug=1 opens
+    // the reporter straight away.
     if (new URLSearchParams(window.location.search).get('report-bug') === '1') {
-      this.bugReporter.open({ autoShot: false });
+      this.bugReporter.open();
     }
 
     // Everything that touches user data waits on a real session. getSession()
