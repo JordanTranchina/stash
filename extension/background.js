@@ -351,6 +351,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'signInWithGoogle') {
+    (async () => {
+      const client = await getClient();
+      try {
+        await client.signInWithGoogle();
+        const user = await client.getUser();
+        await updateActionForSession();
+        sendResponse({ success: true, user });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === 'signOut') {
     (async () => {
       const client = await getClient();
