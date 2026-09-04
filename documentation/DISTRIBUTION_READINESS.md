@@ -226,6 +226,13 @@ one-time fee plus a review cycle (the `<all_urls>` permission likely triggers
 manual review); Firefox signing is near-instant. Also removes the per-machine
 "reload the unpacked extension" step every time extension code changes.
 
+**Prep done:** the listing copy, privacy policy, permission justifications,
+and a `npm run package:extensions` release script all exist —
+`documentation/STORE_LISTING.md` and `documentation/PRIVACY_POLICY.md`. What's
+left is the manual part only a human can do: registering a Chrome developer
+account (paying the $5 fee) and a Firefox Add-on developer account, then
+uploading the built zips through each dashboard.
+
 ---
 
 ## Live bugs found while assessing
