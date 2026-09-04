@@ -34,7 +34,7 @@ describe('extension-firefox/manifest.json', () => {
   test('uses a background event page (scripts), not a service_worker', () => {
     expect(firefoxManifest.background.service_worker).toBeUndefined();
     expect(firefoxManifest.background.scripts).toEqual(
-      expect.arrayContaining(['config.js', 'supabase.js', 'sentry-lite.js', 'background.js'])
+      expect.arrayContaining(['logbuffer.js', 'config.js', 'supabase.js', 'sentry-lite.js', 'background.js'])
     );
   });
 
@@ -62,9 +62,13 @@ describe('shared files between extension/ and extension-firefox/', () => {
     'background.js',
     'content.js',
     'config.js',
+    'logbuffer.js',
     'popup.css',
     'popup.html',
     'popup.js',
+    'report.css',
+    'report.html',
+    'report.js',
     'sentry-lite.js',
     'supabase.js',
   ];

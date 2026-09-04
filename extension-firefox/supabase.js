@@ -198,6 +198,32 @@ class SupabaseClient {
     return await res.json();
   }
 
+  // Call a Supabase Edge Function. `body` may be a FormData (multipart, for the
+  // bug reporter's attachments) or a plain object (sent as JSON). Returns the
+  // parsed JSON response; throws on a non-2xx so callers can queue for retry.
+  async callFunction(name, body) {
+    await this.requireSession();
+    const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+    const headers = {
+      'apikey': this.anonKey,
+      'Authorization': `Bearer ${this.accessToken}`,
+    };
+    if (!isForm) headers['Content-Type'] = 'application/json';
+
+    const res = await fetch(`${this.url}/functions/v1/${name}`, {
+      method: 'POST',
+      headers,
+      body: isForm ? body : JSON.stringify(body || {}),
+    });
+
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.json()).error || ''; } catch (e) { /* ignore */ }
+      throw new Error(detail || `${name} failed (${res.status})`);
+    }
+    return res.json();
+  }
+
   // Database operations
   async insert(table, data) {
     await this.requireSession();

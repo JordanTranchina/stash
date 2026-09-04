@@ -7,7 +7,7 @@
 // sharing one global scope, so config.js/supabase.js are already defined by
 // the time this file runs and importScripts doesn't exist.
 if (typeof importScripts === 'function') {
-  importScripts('config.js', 'supabase.js', 'sentry-lite.js', 'analytics.js');
+  importScripts('logbuffer.js', 'config.js', 'supabase.js', 'sentry-lite.js', 'analytics.js');
 }
 
 if (typeof SentryLite !== 'undefined') {
@@ -103,10 +103,12 @@ function clearBadgeSoon() {
 // The content script can't run on chrome:// pages, the Web Store, or the PDF
 // viewer, so this call fails there. Use the callback form and read
 // runtime.lastError so the rejection can't escape and mask the save result.
-function showToast(tabId, message, isError) {
-  chrome.tabs.sendMessage(tabId, { action: 'showToast', message, isError }, () => {
-    void chrome.runtime.lastError;
-  });
+function showToast(tabId, message, isError, withReport) {
+  chrome.tabs.sendMessage(
+    tabId,
+    { action: 'showToast', message, isError, withReport: !!withReport },
+    () => { void chrome.runtime.lastError; },
+  );
 }
 
 // One-click save from the toolbar icon
@@ -147,6 +149,12 @@ function setupContextMenu() {
       title: 'Sign out',
       contexts: ['action'],
     });
+
+    chrome.contextMenus.create({
+      id: 'report-bug',
+      title: 'Report a bug to Stash',
+      contexts: ['action', 'page'],
+    });
   });
 }
 
@@ -165,8 +173,88 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } else if (info.menuItemId === 'sign-out') {
     await supabase.signOut();
     await updateActionForSession();
+  } else if (info.menuItemId === 'report-bug') {
+    await startBugReport(tab);
   }
 });
+
+// Gather everything a bug report needs (a screenshot of the current tab, the
+// recent log buffer, the environment) into chrome.storage.local, then open the
+// report page. The page reads `stash_pending_bug` on load and prefills.
+async function startBugReport(tab) {
+  let screenshot = null;
+  try {
+    const windowId = tab && tab.windowId;
+    screenshot = await chrome.tabs.captureVisibleTab(
+      windowId != null ? windowId : chrome.windows.WINDOW_ID_CURRENT,
+      { format: 'png' },
+    );
+  } catch (e) {
+    // chrome:// pages, the Web Store, PDF viewer, or no <all_urls> grant.
+    console.warn('Bug report screenshot unavailable:', e && e.message);
+  }
+
+  let snap = { logs: [], lastError: null };
+  try {
+    if (typeof StashLog !== 'undefined') snap = await StashLog.snapshot();
+  } catch (e) { /* keep the empty snapshot */ }
+
+  const context = {
+    screenshot,
+    logs: snap.logs,
+    lastError: snap.lastError,
+    env: {
+      version: { build: 'extension', commit: chrome.runtime.getManifest().version },
+      url: (tab && tab.url) || '',
+      pageTitle: (tab && tab.title) || '',
+      userAgent: navigator.userAgent,
+      view: 'extension',
+      online: navigator.onLine,
+      language: navigator.language,
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  await chrome.storage.local.set({ stash_pending_bug: context });
+  await chrome.tabs.create({ url: chrome.runtime.getURL('report.html') });
+}
+
+// Rebuild a Blob from a `data:` URL (report.js sends attachments this way so
+// they survive runtime messaging).
+function dataUrlToBlob(dataUrl) {
+  const [head, b64] = String(dataUrl).split(',');
+  const mime = (head.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+  const bin = atob(b64 || '');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function submitBugReport(payload) {
+  const client = await getClient();
+  const fd = new FormData();
+  fd.append('description', payload.description || '');
+  fd.append('steps', payload.steps || '');
+  fd.append('expected', payload.expected || '');
+  fd.append('observed', payload.observed || '');
+  fd.append('source', 'extension');
+  fd.append('email', payload.email || '');
+  fd.append('env', JSON.stringify(payload.env || {}));
+  fd.append('logs', JSON.stringify(payload.logs || []));
+  fd.append('lastError', JSON.stringify(payload.lastError || null));
+  for (const att of payload.attachments || []) {
+    try {
+      fd.append('attachments', dataUrlToBlob(att.dataUrl), att.name || 'attachment');
+    } catch (e) { /* skip an unreadable attachment rather than fail the report */ }
+  }
+
+  const result = await client.callFunction('report-bug', fd);
+  if (typeof StashAnalytics !== 'undefined') {
+    StashAnalytics.capture('bug_report_submitted', { source: 'extension', queued: false });
+  }
+  await chrome.storage.local.remove('stash_pending_bug');
+  return result;
+}
 
 // Save highlighted text
 async function saveHighlight(tab, selectionText) {
@@ -202,7 +290,7 @@ async function saveHighlight(tab, selectionText) {
     if (!needsAuth && typeof SentryLite !== 'undefined') {
       SentryLite.captureException(err, { tags: { action: 'saveHighlight' } });
     }
-    showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true);
+    showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true, !needsAuth);
     // The session went away — restore the sign-in popup so the next toolbar
     // click has somewhere to go instead of erroring again.
     if (needsAuth) await updateActionForSession();
@@ -303,7 +391,7 @@ async function savePage(tab) {
     if (!expected && typeof SentryLite !== 'undefined') {
       SentryLite.captureException(err, { tags: { action: 'savePage' } });
     }
-    showToast(tab.id, expected ? err.message : 'Failed to save: ' + err.message, true);
+    showToast(tab.id, expected ? err.message : 'Failed to save: ' + err.message, true, !expected);
     setBadge('!', '#dc2626');
     clearBadgeSoon();
     // The session went away — restore the sign-in popup so the next toolbar
@@ -372,6 +460,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await client.signOut();
       await updateActionForSession();
       sendResponse({ success: true });
+    })();
+    return true;
+  }
+
+  if (request.action === 'reportBug') {
+    (async () => {
+      let tab = sender && sender.tab;
+      if (!tab) {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        tab = tabs[0];
+      }
+      await startBugReport(tab);
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+
+  if (request.action === 'submitBugReport') {
+    (async () => {
+      try {
+        const result = await submitBugReport(request.payload || {});
+        sendResponse({ success: true, url: result && result.url });
+      } catch (err) {
+        console.error('Bug report submit failed:', err);
+        if (typeof SentryLite !== 'undefined') {
+          SentryLite.captureException(err, { tags: { action: 'submitBugReport' } });
+        }
+        sendResponse({ success: false, error: err.message });
+      }
     })();
     return true;
   }

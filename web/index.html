@@ -111,6 +111,14 @@
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
+          <!-- Report a bug: always visible (setView() never hides it) so it's
+               reachable from every view. Opens the same modal as Settings. -->
+          <button type="button" class="header-bug-btn" id="header-bug-btn" aria-label="Report a bug" title="Report a bug">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="8" y="6" width="8" height="14" rx="4"></rect>
+              <path d="M19 7l-3 2M5 7l3 2M12 20v-6M12 6V4M4 13H2M22 13h-2M19 19l-3-2M5 19l3-2"></path>
+            </svg>
+          </button>
         </header>
 
         <!-- Content Area -->
@@ -220,6 +228,16 @@
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                   </svg>
                   <span>Stats</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+                <button class="settings-row" id="bug-report-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="8" y="6" width="8" height="14" rx="4"></rect>
+                    <path d="M19 7l-3 2M5 7l3 2M12 2v4M4 13H2M22 13h-2M19 19l-3-2M5 19l3-2"></path>
+                  </svg>
+                  <span>Report a Bug</span>
                   <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="9 18 15 12 9 6"></polyline>
                   </svg>
@@ -498,13 +516,73 @@
       </div>
     </div>
 
+    <!-- Report a Bug Modal -->
+    <div id="bug-report-modal" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-content digest-modal-content">
+        <div class="modal-header">
+          <h2>Report a Bug</h2>
+          <button class="btn icon modal-close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="digest-description">Tell us what went wrong. A screenshot, your recent activity log, and the app version are attached automatically so we can track it down.</p>
+
+          <div class="digest-form">
+            <div class="form-group">
+              <label for="bug-report-text">What happened?</label>
+              <textarea id="bug-report-text" rows="3" placeholder="Describe the bug"></textarea>
+            </div>
+
+            <div id="bug-report-shot" class="bug-report-shot hidden"></div>
+
+            <div class="form-group">
+              <label for="bug-report-files">Add screenshots or a video (optional)</label>
+              <input type="file" id="bug-report-files" accept="image/*,video/*" multiple class="import-file-input">
+              <div id="bug-report-attachments" class="bug-report-attachments"></div>
+            </div>
+
+            <details id="bug-report-detail" class="bug-report-detail">
+              <summary>Add more detail</summary>
+              <div class="form-group">
+                <label for="bug-report-steps">Steps to reproduce</label>
+                <textarea id="bug-report-steps" rows="3" placeholder="1. …&#10;2. …"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="bug-report-expected">What did you expect?</label>
+                <textarea id="bug-report-expected" rows="2"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="bug-report-observed">What did you see instead?</label>
+                <textarea id="bug-report-observed" rows="2"></textarea>
+              </div>
+            </details>
+
+            <div id="bug-report-status" class="digest-status hidden"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn secondary" id="bug-report-cancel-btn">Cancel</button>
+          <button class="btn primary" id="bug-report-submit-btn">Submit</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast / Notification -->
     <div id="toast" class="toast hidden">
       <span id="toast-message"></span>
     </div>
   </div>
 
+
   <!-- Config -->
+  <!-- logbuffer.js first: it wraps console.* so a bug report can carry the
+       earliest output. Runs alongside (not instead of) Sentry. -->
+  <script src="logbuffer.js"></script>
   <script src="version.js"></script>
   <script src="config.js"></script>
   <script src="sentry-init.js"></script>
@@ -512,6 +590,7 @@
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
   <script src="import-lib.js"></script>
+  <script src="bug-report.js"></script>
   <script src="app.js"></script>
 
   <!-- Register Service Worker -->
