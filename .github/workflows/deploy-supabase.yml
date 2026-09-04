@@ -91,8 +91,7 @@ jobs:
       # save-kindle is still deployed in production from before it was
       # deleted from this repo; an unqualified deploy wouldn't touch it
       # either way (deploy only pushes named/present functions), but naming
-      # the three that are actually meant to be live keeps that intentional.
-      - run: supabase functions deploy save-page podcast-rss podcast-chapters --project-ref ${{ vars.SUPABASE_PROJECT_ID }}
+      - run: supabase functions deploy save-page podcast-rss podcast-chapters report-bug --project-ref ${{ vars.SUPABASE_PROJECT_ID }}
 
   deploy-migrations:
     name: Push database migrations
