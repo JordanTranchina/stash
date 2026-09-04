@@ -20,6 +20,9 @@ class BugReporter {
     this._html2canvas = null;
     this.MAX_ATTACHMENTS = 4;
     this.SCREENSHOT_TIMEOUT_MS = 3000;
+    this._shotToken = 0; // bumped on every open()/reset() so a capture that's
+    // still running when the modal closes (or reopens) can tell its result is
+    // stale and must not overwrite the next report's state.
   }
 
   bindEvents() {
@@ -44,11 +47,11 @@ class BugReporter {
     window.addEventListener('online', () => this.flushQueue());
   }
 
-  // Screenshot capture (html2canvas walking the whole document) is heavy
-  // enough to block the main thread for seconds on a long saves list, so it
-  // must finish BEFORE the modal opens — never run it while the user can
-  // already be typing. autoShot=false (deep link / prefilled-error opens)
-  // skips it entirely rather than delaying the modal.
+  // The modal opens immediately — never wait on the screenshot to show it or
+  // to let the user start typing. captureScreenshot() (viewport-only, capped
+  // at SCREENSHOT_TIMEOUT_MS) runs in the background and fills in the "shot"
+  // area — starting with a "Capturing screenshot…" placeholder — once it's
+  // ready, same as any other async widget on the page.
   async open({ prefillError = false, autoShot = true } = {}) {
     const modal = document.getElementById('bug-report-modal');
     if (!modal) return;
@@ -62,10 +65,10 @@ class BugReporter {
       }
     }
 
-    if (autoShot) await this.captureScreenshot();
-
     modal.classList.remove('hidden');
     document.getElementById('bug-report-text').focus();
+
+    if (autoShot) this.captureScreenshot();
   }
 
   close() {
@@ -75,6 +78,7 @@ class BugReporter {
   }
 
   reset() {
+    this._shotToken++;
     this.attachments.forEach((a) => a.previewUrl && URL.revokeObjectURL(a.previewUrl));
     this.attachments = [];
     if (this.screenshotBlob) this.screenshotBlob = null;
@@ -125,17 +129,26 @@ class BugReporter {
   async captureScreenshot() {
     const shot = document.getElementById('bug-report-shot');
     if (!shot) return;
+    const token = this._shotToken;
     shot.classList.remove('hidden');
     shot.innerHTML = '<span class="bug-report-shot-note">Capturing screenshot…</span>';
+    let blob = null;
     try {
-      const html2canvas = await this.loadHtml2canvas();
-      const canvas = await this._captureWithTimeout(html2canvas);
-      this.screenshotBlob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      blob = await this._captureWithTimeout();
+    } catch (e) {
+      blob = null;
+    }
 
+    // The modal was closed (or reopened) while the capture was running —
+    // this result belongs to a report that no longer exists, so drop it.
+    if (token !== this._shotToken) return;
+
+    this.screenshotBlob = blob;
+    if (blob) {
       shot.innerHTML = '';
       const img = document.createElement('img');
       img.alt = 'Screenshot preview';
-      img.src = URL.createObjectURL(this.screenshotBlob);
+      img.src = URL.createObjectURL(blob);
       const label = document.createElement('label');
       label.className = 'bug-report-shot-toggle';
       const cb = document.createElement('input');
@@ -146,30 +159,36 @@ class BugReporter {
       label.appendChild(document.createTextNode(' Attach this screenshot'));
       shot.appendChild(img);
       shot.appendChild(label);
-    } catch (e) {
-      this.screenshotBlob = null;
+    } else {
       shot.innerHTML = '<span class="bug-report-shot-note">Couldn’t auto-capture a screenshot — attach one below if it helps.</span>';
     }
   }
 
-  // Viewport-only capture, with a hard time limit — a slow or hung capture
-  // (huge page, weird CSS) must never hold up opening the report form.
-  _captureWithTimeout(html2canvas) {
-    const capture = html2canvas(document.body, {
-      logging: false,
-      useCORS: true,
-      scale: 1,
-      x: window.scrollX,
-      y: window.scrollY,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      windowWidth: window.innerWidth,
-      windowHeight: window.innerHeight,
-    });
+  // Viewport-only capture, with a hard time limit on the WHOLE pipeline —
+  // loading html2canvas from the CDN AND running it. A slow/blocked/flaky
+  // network fetch of the library is just as capable of leaving "Capturing
+  // screenshot…" on screen indefinitely as a hung capture is, so both must
+  // share one budget rather than only the capture call being bounded.
+  _captureWithTimeout() {
+    const attempt = (async () => {
+      const html2canvas = await this.loadHtml2canvas();
+      const canvas = await html2canvas(document.body, {
+        logging: false,
+        useCORS: true,
+        scale: 1,
+        x: window.scrollX,
+        y: window.scrollY,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+      });
+      return new Promise((r) => canvas.toBlob(r, 'image/png'));
+    })();
     const timeout = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('screenshot timed out')), this.SCREENSHOT_TIMEOUT_MS);
     });
-    return Promise.race([capture, timeout]);
+    return Promise.race([attempt, timeout]);
   }
 
   addFiles(fileList) {

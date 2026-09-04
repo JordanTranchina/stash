@@ -5,12 +5,13 @@
  *
  * Covers the fixes for the freeze reported when typing in the bug report
  * box: the screenshot capture (html2canvas walking the whole document) used
- * to run AFTER the modal opened and the text box was focused, so the user
- * could start typing into a main thread that was still busy rasterizing the
- * page. These tests pin down that capture now finishes before the modal (and
- * the text box) become interactive, that a hung capture can't block the
- * modal forever, and that re-binding events doesn't stack duplicate
- * listeners.
+ * to block the main thread for seconds, and the modal used to wait for that
+ * capture to finish before it even opened. The capture is now viewport-only,
+ * time-limited, and runs in the background AFTER the modal opens and the
+ * text box is focused — the user can type immediately, and a stale capture
+ * from a closed/reopened modal must not clobber the next report's state.
+ * These tests also cover a hung capture timing out and bindEvents() not
+ * stacking duplicate listeners.
  *
  * Uses jsdom (via the docblock above) so BugReporter's real
  * document.getElementById calls resolve against actual DOM nodes, mirroring
@@ -98,7 +99,7 @@ describe('BugReporter', () => {
     winSpy.mockRestore();
   });
 
-  test('open() does not reveal the modal or focus the textarea until the screenshot capture settles', async () => {
+  test('open() reveals the modal and focuses the textarea without waiting on the screenshot capture', async () => {
     const reporter = new BugReporter(fakeApp());
     let resolveCapture;
     reporter.captureScreenshot = jest.fn(
@@ -109,18 +110,15 @@ describe('BugReporter', () => {
     const textarea = document.getElementById('bug-report-text');
     const focusSpy = jest.spyOn(textarea, 'focus');
 
-    const openPromise = reporter.open({ autoShot: true });
+    await reporter.open({ autoShot: true });
 
-    // Capture is still pending: the user must not be able to type into a
-    // modal that isn't shown, or have focus land while the page is busy.
-    expect(modal.classList.contains('hidden')).toBe(true);
-    expect(focusSpy).not.toHaveBeenCalled();
-
-    resolveCapture();
-    await openPromise;
-
+    // The capture is still pending, but the modal must already be open and
+    // focused — the user should be able to type right away.
     expect(modal.classList.contains('hidden')).toBe(false);
     expect(focusSpy).toHaveBeenCalledTimes(1);
+    expect(reporter.captureScreenshot).toHaveBeenCalledTimes(1);
+
+    resolveCapture();
   });
 
   test('open({ autoShot: false }) skips the capture and opens immediately', async () => {
@@ -133,11 +131,53 @@ describe('BugReporter', () => {
     expect(document.getElementById('bug-report-modal').classList.contains('hidden')).toBe(false);
   });
 
+  test('a capture that resolves after the modal is reset (closed/reopened) does not overwrite the new report state', async () => {
+    const reporter = new BugReporter(fakeApp());
+    const fakeCanvas = { toBlob: (cb) => cb(new Blob(['x'], { type: 'image/png' })) };
+    let resolveCanvas;
+    const html2canvasMock = jest.fn(() => new Promise((resolve) => { resolveCanvas = resolve; }));
+    reporter.loadHtml2canvas = jest.fn(() => Promise.resolve(html2canvasMock));
+    global.URL.createObjectURL = jest.fn(() => 'blob:fake');
+
+    const capturePromise = reporter.captureScreenshot();
+    reporter.reset(); // simulates closing (or reopening) the modal mid-capture
+
+    // Let the pending awaits inside captureScreenshot (loadHtml2canvas(),
+    // then the html2canvas() call itself) actually run before resolving —
+    // otherwise resolveCanvas is still undefined.
+    await Promise.resolve();
+    await Promise.resolve();
+    resolveCanvas(fakeCanvas);
+    await capturePromise;
+
+    expect(reporter.screenshotBlob).toBeNull();
+    expect(document.getElementById('bug-report-shot').innerHTML).toBe('');
+  });
+
   test('a hung html2canvas capture times out instead of blocking the form', async () => {
     const reporter = new BugReporter(fakeApp());
     reporter.SCREENSHOT_TIMEOUT_MS = 10;
     // Simulates html2canvas() never resolving (a huge/odd page).
     reporter.loadHtml2canvas = jest.fn(() => Promise.resolve(() => new Promise(() => {})));
+
+    await reporter.captureScreenshot();
+
+    expect(reporter.screenshotBlob).toBeNull();
+    expect(document.getElementById('bug-report-shot').innerHTML).toMatch(/couldn.?t auto-capture/i);
+  });
+
+  test('a hung/slow CDN fetch of html2canvas itself also times out, not just the capture', async () => {
+    // Caught in manual testing: the timeout used to wrap only the
+    // html2canvas() capture call, so a slow or flaky fetch of the library
+    // (a real-world proxy hiccup, a blocked CDN, a dead connection) could
+    // leave "Capturing screenshot…" on screen far past SCREENSHOT_TIMEOUT_MS,
+    // even though it never blocked typing. The timeout must cover loading
+    // the library too.
+    const reporter = new BugReporter(fakeApp());
+    reporter.SCREENSHOT_TIMEOUT_MS = 10;
+    // loadHtml2canvas() itself never resolves — simulates a hung/very slow
+    // <script> fetch, as opposed to the previous test's hung capture call.
+    reporter.loadHtml2canvas = jest.fn(() => new Promise(() => {}));
 
     await reporter.captureScreenshot();
 
