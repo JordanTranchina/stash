@@ -12,6 +12,7 @@
   "permissions": [
     "activeTab",
     "contextMenus",
+    "identity",
     "scripting",
     "storage"
   ],
@@ -27,7 +28,7 @@
     }
   },
   "background": {
-    "scripts": ["config.js", "supabase.js", "sentry-lite.js", "analytics.js", "background.js"]
+    "scripts": ["logbuffer.js", "config.js", "supabase.js", "sentry-lite.js", "analytics.js", "background.js"]
   },
   "content_scripts": [
     {

@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const authError = document.getElementById('auth-error');
   const signinBtn = document.getElementById('signin-btn');
   const signupBtn = document.getElementById('signup-btn');
+  const googleSigninBtn = document.getElementById('google-signin-btn');
   const signoutBtn = document.getElementById('signout-btn');
   const settingsBtn = document.getElementById('settings-btn');
   const savesList = document.getElementById('saves-list');
@@ -60,6 +61,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     signinBtn.textContent = 'Sign In';
   });
 
+  // Sign in with Google
+  googleSigninBtn.addEventListener('click', async () => {
+    googleSigninBtn.disabled = true;
+    authError.textContent = '';
+
+    const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
+
+    if (response.success) {
+      // Same handoff as the password sign-in: get out of the way so the next
+      // toolbar click saves instead of reopening this popup.
+      window.close();
+      return;
+    }
+
+    authError.textContent = response.error;
+    googleSigninBtn.disabled = false;
+  });
+
   // Sign up
   signupBtn.addEventListener('click', async () => {
     const email = document.getElementById('email').value;
@@ -74,8 +93,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     signupBtn.textContent = 'Signing up...';
     authError.textContent = '';
 
-    // Sign-up happens in the web app: it's invite-only (the address has to be
-    // in allowed_emails) and it's the only place that can run Google OAuth.
+    // Password sign-up happens in the web app: it's invite-only (the address
+    // has to be in allowed_emails), and there's no room in this popup for a
+    // full sign-up form. Google sign-in above doesn't need this — it goes
+    // through the same invite check as part of the OAuth flow.
     chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
 
     signupBtn.disabled = false;

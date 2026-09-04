@@ -9,13 +9,17 @@ const CACHE_NAME = 'stash-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/save.html',
   '/styles.css',
   '/version.js',
   '/app.js',
   '/db.js',
   '/save-lib.js',
   '/offline-lib.js',
+  '/logbuffer.js',
+  '/bug-report.js',
   '/config.js',
+  '/analytics.js',
   '/manifest.json',
   '/icons/icon192.png',
   '/icons/icon512.png'
@@ -177,8 +181,60 @@ async function drainPendingSaves() {
   }
 }
 
+// Background Sync: retry bug reports whose submit failed (offline / GitHub
+// down). Mirrors drainPendingSaves — rebuild the multipart form from the
+// IndexedDB record and POST it to the report-bug Edge Function.
+async function drainBugReports() {
+  let queued;
+  try {
+    queued = await self.StashDB.getBugReports();
+  } catch (e) {
+    return;
+  }
+  if (!queued || !queued.length) return;
+
+  let session;
+  try {
+    session = await getFreshSession();
+  } catch (e) {
+    return;
+  }
+  if (!session) return;
+
+  let failed = 0;
+  for (const { key, data } of queued) {
+    try {
+      const fd = new FormData();
+      Object.keys(data.fields || {}).forEach((k) => fd.append(k, data.fields[k]));
+      (data.files || []).forEach((f) => fd.append('attachments', f.blob, f.name));
+      const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/report-bug`, {
+        method: 'POST',
+        headers: {
+          'apikey': CONFIG.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: fd,
+      });
+      if (res.ok) {
+        await self.StashDB.deleteBugReport(key);
+      } else {
+        failed++;
+      }
+    } catch (e) {
+      failed++;
+    }
+  }
+
+  if (failed > 0) {
+    throw new Error(`${failed} bug report(s) failed to sync; will retry`);
+  }
+}
+
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-pending-saves') {
     event.waitUntil(drainPendingSaves());
+  }
+  if (event.tag === 'sync-bug-reports') {
+    event.waitUntil(drainBugReports());
   }
 });

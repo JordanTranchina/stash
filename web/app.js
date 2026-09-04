@@ -23,6 +23,9 @@ class StashApp {
     this.FONT_SIZE_STEP = 1;
     this.FONT_SIZE_DEFAULT = 16;
 
+    // In-app bug reporter (Settings entry point + "Report" on failure toasts).
+    this.bugReporter = new BugReporter(this);
+
     this.init();
   }
 
@@ -40,6 +43,14 @@ class StashApp {
     this.loadFontSize();
 
     this.bindEvents();
+    this.bugReporter.bindEvents();
+    this.installErrorReporting();
+
+    // Deep link (also used by the podcast show notes): ?report-bug=1 opens the
+    // reporter straight away. No auto-screenshot — the app may still be loading.
+    if (new URLSearchParams(window.location.search).get('report-bug') === '1') {
+      this.bugReporter.open({ autoShot: false });
+    }
 
     // Everything that touches user data waits on a real session. getSession()
     // resolves from the persisted token before the listener fires, so a
@@ -89,6 +100,7 @@ class StashApp {
       this.showMainScreen();
       this.loadData();
       this.syncPendingShares();
+      this.bugReporter.flushQueue();
       this.setupRealtime();
     } else {
       this.user = null;
@@ -109,6 +121,24 @@ class StashApp {
     if (v.date) parts.push(`updated ${v.date}`);
     el.textContent = parts.join(' · ');
     if (v.commit) el.title = `commit ${v.commit}`;
+  }
+
+  // Surface uncaught errors with a one-tap path into the bug reporter. This is
+  // additive to Sentry (sentry-init.js) and logbuffer.js — it just gives the
+  // user the "this isn't my fault" button the moment something breaks. Throttled
+  // so an error loop shows one toast, not a stack of them.
+  installErrorReporting() {
+    const offer = () => {
+      const now = Date.now();
+      if (this._lastErrorToast && now - this._lastErrorToast < 15000) return;
+      this._lastErrorToast = now;
+      this.showToast('Something went wrong', {
+        label: 'Report',
+        onClick: () => this.bugReporter.open({ prefillError: true }),
+      });
+    };
+    window.addEventListener('error', offer);
+    window.addEventListener('unhandledrejection', offer);
   }
 
   // Theme Management
@@ -389,6 +419,11 @@ class StashApp {
 
     document.getElementById('header-add-btn').addEventListener('click', () => {
       this.showAddUrlModal();
+    });
+
+    // Report a bug — always-visible header button, on every view.
+    document.getElementById('header-bug-btn').addEventListener('click', () => {
+      this.bugReporter.open();
     });
     addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
       this.hideAddUrlModal();
@@ -909,7 +944,11 @@ class StashApp {
 
     if (error) {
       console.error('Error archiving save:', error);
-      this.showToast('Could not archive — try again');
+      window.StashLog?.noteError('Archive failed: ' + (error.message || error), '', 'archiveSaveById');
+      this.showToast('Could not archive — try again', {
+        label: 'Report',
+        onClick: () => this.bugReporter.open({ prefillError: true }),
+      });
       this.loadSaves();
       return;
     }
@@ -945,7 +984,11 @@ class StashApp {
 
     if (error) {
       console.error('Error restoring save:', error);
-      this.showToast('Could not undo — try again');
+      window.StashLog?.noteError('Unarchive failed: ' + (error.message || error), '', 'unarchiveSaveById');
+      this.showToast('Could not undo — try again', {
+        label: 'Report',
+        onClick: () => this.bugReporter.open({ prefillError: true }),
+      });
       return;
     }
 

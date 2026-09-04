@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Report a Bug · Stash</title>
+  <link rel="stylesheet" href="report.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Report a Bug</h1>
+    <p class="lead">
+      Tell us what went wrong. A screenshot of the page you were on, the
+      extension's recent activity log, and the version are attached automatically.
+    </p>
+
+    <label class="field">
+      <span>What happened?</span>
+      <textarea id="description" rows="3" placeholder="Describe the bug"></textarea>
+    </label>
+
+    <div id="shot-wrap" class="shot hidden">
+      <img id="shot-img" alt="Screenshot of the page">
+      <label class="inline">
+        <input type="checkbox" id="shot-include" checked>
+        Attach this screenshot
+      </label>
+    </div>
+
+    <label class="field">
+      <span>Add screenshots or a video (optional)</span>
+      <input type="file" id="files" accept="image/*,video/*" multiple>
+    </label>
+    <div id="attachments" class="attachments"></div>
+
+    <details id="detail">
+      <summary>Add more detail</summary>
+      <label class="field">
+        <span>Steps to reproduce</span>
+        <textarea id="steps" rows="3" placeholder="1. …&#10;2. …"></textarea>
+      </label>
+      <label class="field">
+        <span>What did you expect?</span>
+        <textarea id="expected" rows="2"></textarea>
+      </label>
+      <label class="field">
+        <span>What did you see instead?</span>
+        <textarea id="observed" rows="2"></textarea>
+      </label>
+    </details>
+
+    <p id="status" class="status hidden"></p>
+
+    <div class="actions">
+      <button id="cancel-btn" class="btn secondary" type="button">Close</button>
+      <button id="submit-btn" class="btn primary" type="button">Submit</button>
+    </div>
+  </main>
+
+  <script src="logbuffer.js"></script>
+  <script src="config.js"></script>
+  <script src="report.js"></script>
+</body>
+</html>

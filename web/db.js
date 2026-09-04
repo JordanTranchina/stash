@@ -1,11 +1,12 @@
 // Stash IndexedDB Wrapper
 const DB_NAME = 'StashDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_ARTICLES = 'articles';
 const STORE_PENDING = 'pending_saves'; // For offline shares
 const STORE_SESSION = 'session'; // Auth tokens the Service Worker can read
 const STORE_OFFLINE_STATUS = 'offline_status'; // Per-article image prefetch bookkeeping
 const SESSION_KEY = 'current'; // Single-record store; one signed-in user per device
+const STORE_BUG_REPORTS = 'bug_reports'; // Bug reports queued when a submit fails
 
 const dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -16,7 +17,13 @@ const dbPromise = new Promise((resolve, reject) => {
     };
 
     request.onsuccess = (event) => {
-        resolve(event.target.result);
+        const db = event.target.result;
+        // If another context (a page tab, or the Service Worker) opens this DB
+        // with a newer DB_VERSION, close our connection so its upgrade isn't
+        // blocked. Without this, bumping DB_VERSION can deadlock the newer
+        // context against an older one that never lets go.
+        db.onversionchange = () => db.close();
+        resolve(db);
     };
 
     request.onupgradeneeded = (event) => {
@@ -46,6 +53,14 @@ const dbPromise = new Promise((resolve, reject) => {
         // on every server refresh, which would otherwise wipe this bookkeeping.
         if (!db.objectStoreNames.contains(STORE_OFFLINE_STATUS)) {
             db.createObjectStore(STORE_OFFLINE_STATUS, { keyPath: 'id' });
+        }
+
+        // Store for bug reports whose submit failed (offline, or GitHub was
+        // down). bug-report.js drains this on startup / when back online. Values
+        // are { fields: {...}, files: [{ blob, name, type }] } — Blobs
+        // structured-clone fine; FormData does not, so it's rebuilt on retry.
+        if (!db.objectStoreNames.contains(STORE_BUG_REPORTS)) {
+            db.createObjectStore(STORE_BUG_REPORTS, { autoIncrement: true });
         }
     };
 });
@@ -252,6 +267,49 @@ self.StashDB = {
         const transaction = db.transaction([STORE_OFFLINE_STATUS], 'readwrite');
         const store = transaction.objectStore(STORE_OFFLINE_STATUS);
         store.delete(id);
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
+    // --- Bug report retry queue (mirrors the pending-shares helpers) ---
+    async saveBugReport(report) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_BUG_REPORTS], 'readwrite');
+        transaction.objectStore(STORE_BUG_REPORTS).add({
+            ...report,
+            queued_at: new Date().toISOString()
+        });
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
+    async getBugReports() {
+        const db = await dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_BUG_REPORTS], 'readonly');
+            const store = transaction.objectStore(STORE_BUG_REPORTS);
+            const request = store.getAll();
+            const keyRequest = store.getAllKeys();
+            let results, keys;
+            const settle = () => {
+                if (results !== undefined && keys !== undefined) {
+                    resolve(results.map((r, i) => ({ key: keys[i], data: r })));
+                }
+            };
+            request.onsuccess = () => { results = request.result; settle(); };
+            keyRequest.onsuccess = () => { keys = keyRequest.result; settle(); };
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async deleteBugReport(key) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_BUG_REPORTS], 'readwrite');
+        transaction.objectStore(STORE_BUG_REPORTS).delete(key);
         return new Promise((resolve, reject) => {
             transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
