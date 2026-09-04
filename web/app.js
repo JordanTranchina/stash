@@ -259,21 +259,24 @@ class StashApp {
   }
 
   bindEvents() {
+    // Every lookup below is optional-chained: a single renamed/missing element
+    // ID used to throw here and abort the rest of bindEvents (and init()
+    // itself, since it isn't wrapped in try/catch) — see STASH-2/STASH-7.
     // Auth form
-    document.getElementById('auth-form').addEventListener('submit', (e) => {
+    document.getElementById('auth-form')?.addEventListener('submit', (e) => {
       e.preventDefault();
       this.signIn();
     });
 
-    document.getElementById('signup-btn').addEventListener('click', () => {
+    document.getElementById('signup-btn')?.addEventListener('click', () => {
       this.signUp();
     });
 
-    document.getElementById('google-signin-btn').addEventListener('click', () => {
+    document.getElementById('google-signin-btn')?.addEventListener('click', () => {
       this.signInWithGoogle();
     });
 
-    document.getElementById('signout-btn').addEventListener('click', () => {
+    document.getElementById('signout-btn')?.addEventListener('click', () => {
       this.signOut();
     });
 
@@ -287,32 +290,36 @@ class StashApp {
     });
 
     // Stats (opened from within Settings)
-    document.getElementById('view-stats-btn').addEventListener('click', () => {
+    document.getElementById('view-stats-btn')?.addEventListener('click', () => {
       this.showStats();
     });
 
     // Offline image downloads (Settings → Offline Reading)
     const offlineImagesToggle = document.getElementById('offline-images-toggle');
-    offlineImagesToggle.checked = this.getOfflineImagesEnabled();
-    offlineImagesToggle.addEventListener('change', (e) => {
-      localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
-      if (e.target.checked) this.prefetchOfflineImages(this.saves);
-    });
+    if (offlineImagesToggle) {
+      offlineImagesToggle.checked = this.getOfflineImagesEnabled();
+      offlineImagesToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
+        if (e.target.checked) this.prefetchOfflineImages(this.saves);
+      });
+    }
 
     const offlineWifiOnlyToggle = document.getElementById('offline-wifi-only-toggle');
-    offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
-    offlineWifiOnlyToggle.addEventListener('change', (e) => {
-      localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
-    });
+    if (offlineWifiOnlyToggle) {
+      offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
+      offlineWifiOnlyToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
+      });
+    }
 
-    document.getElementById('offline-clear-btn').addEventListener('click', () => {
+    document.getElementById('offline-clear-btn')?.addEventListener('click', () => {
       this.clearOfflineImageCache();
     });
     this.updateOfflineStorageLabel();
 
     // Search
     let searchTimeout;
-    document.getElementById('search-input').addEventListener('input', (e) => {
+    document.getElementById('search-input')?.addEventListener('input', (e) => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
         this.search(e.target.value);
@@ -320,13 +327,13 @@ class StashApp {
     });
 
     // Sort
-    document.getElementById('sort-select').addEventListener('change', (e) => {
+    document.getElementById('sort-select')?.addEventListener('change', (e) => {
       window.StashAnalytics?.capture('sort_changed', { sort: e.target.value, view: this.currentView });
       this.loadSaves();
     });
 
     // Reading pane
-    document.getElementById('close-reading-btn').addEventListener('click', () => {
+    document.getElementById('close-reading-btn')?.addEventListener('click', () => {
       this.closeReadingPane();
     });
 
@@ -339,7 +346,7 @@ class StashApp {
       }
     });
 
-    document.getElementById('archive-btn').addEventListener('click', () => {
+    document.getElementById('archive-btn')?.addEventListener('click', () => {
       this.toggleArchive();
     });
 
@@ -351,19 +358,19 @@ class StashApp {
     });
 
     // Font size controls (reading pane footer + Settings default)
-    document.getElementById('reading-font-decrease-btn').addEventListener('click', () => {
+    document.getElementById('reading-font-decrease-btn')?.addEventListener('click', () => {
       this.adjustFontSize(-this.FONT_SIZE_STEP);
     });
-    document.getElementById('reading-font-increase-btn').addEventListener('click', () => {
+    document.getElementById('reading-font-increase-btn')?.addEventListener('click', () => {
       this.adjustFontSize(this.FONT_SIZE_STEP);
     });
-    document.getElementById('reading-font-reset-btn').addEventListener('click', () => {
+    document.getElementById('reading-font-reset-btn')?.addEventListener('click', () => {
       this.resetFontSize();
     });
-    document.getElementById('settings-font-decrease-btn').addEventListener('click', () => {
+    document.getElementById('settings-font-decrease-btn')?.addEventListener('click', () => {
       this.adjustDefaultFontSize(-this.FONT_SIZE_STEP);
     });
-    document.getElementById('settings-font-increase-btn').addEventListener('click', () => {
+    document.getElementById('settings-font-increase-btn')?.addEventListener('click', () => {
       this.adjustDefaultFontSize(this.FONT_SIZE_STEP);
     });
 
@@ -377,17 +384,17 @@ class StashApp {
     }
 
     // Audio player controls
-    document.getElementById('audio-play-btn').addEventListener('click', () => {
+    document.getElementById('audio-play-btn')?.addEventListener('click', () => {
       this.toggleAudioPlayback();
     });
 
-    document.getElementById('audio-speed').addEventListener('change', (e) => {
+    document.getElementById('audio-speed')?.addEventListener('change', (e) => {
       if (this.audio) {
         this.audio.playbackRate = parseFloat(e.target.value);
       }
     });
 
-    document.getElementById('audio-progress-bar').addEventListener('click', (e) => {
+    document.getElementById('audio-progress-bar')?.addEventListener('click', (e) => {
       if (this.audio && this.audio.duration) {
         const rect = e.target.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
@@ -398,52 +405,52 @@ class StashApp {
     // Podcast Settings Modal (host personalities)
     const podcastModal = document.getElementById('podcast-modal');
 
-    document.getElementById('podcast-settings-btn').addEventListener('click', () => {
+    document.getElementById('podcast-settings-btn')?.addEventListener('click', () => {
       this.showPodcastModal();
     });
-    podcastModal.querySelector('.modal-overlay').addEventListener('click', () => {
+    podcastModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
       this.hidePodcastModal();
     });
-    podcastModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+    podcastModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
       this.hidePodcastModal();
     });
-    document.getElementById('podcast-cancel-btn').addEventListener('click', () => {
+    document.getElementById('podcast-cancel-btn')?.addEventListener('click', () => {
       this.hidePodcastModal();
     });
-    document.getElementById('podcast-save-btn').addEventListener('click', () => {
+    document.getElementById('podcast-save-btn')?.addEventListener('click', () => {
       this.savePodcastPreferences();
     });
 
     // Add URL Modal (manually ingest a single link)
     const addUrlModal = document.getElementById('add-url-modal');
 
-    document.getElementById('header-add-btn').addEventListener('click', () => {
+    document.getElementById('header-add-btn')?.addEventListener('click', () => {
       this.showAddUrlModal();
     });
 
     // Report a bug — always-visible header button, on every view.
-    document.getElementById('header-bug-btn').addEventListener('click', () => {
+    document.getElementById('header-bug-btn')?.addEventListener('click', () => {
       this.bugReporter.open();
     });
-    addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
+    addUrlModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
       this.hideAddUrlModal();
     });
-    addUrlModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+    addUrlModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
       this.hideAddUrlModal();
     });
-    document.getElementById('add-url-cancel-btn').addEventListener('click', () => {
+    document.getElementById('add-url-cancel-btn')?.addEventListener('click', () => {
       this.hideAddUrlModal();
     });
-    document.getElementById('add-url-save-btn').addEventListener('click', () => {
+    document.getElementById('add-url-save-btn')?.addEventListener('click', () => {
       this.saveUrlManually();
     });
-    document.getElementById('add-url-paste-btn').addEventListener('click', () => {
+    document.getElementById('add-url-paste-btn')?.addEventListener('click', () => {
       this.pasteUrlFromClipboard();
     });
     // Native paste (long-press / Ctrl+V) doesn't go through the button above,
     // but people often paste a whole forwarded message rather than a bare
     // link — detect the URL inside it the same way.
-    document.getElementById('add-url-url').addEventListener('paste', (e) => {
+    document.getElementById('add-url-url')?.addEventListener('paste', (e) => {
       const pasted = (e.clipboardData || window.clipboardData).getData('text');
       const detected = window.StashSave.extractUrlFromText(pasted);
       if (detected && detected !== pasted.trim()) {
@@ -455,38 +462,38 @@ class StashApp {
     // Import Articles Modal (CSV from other read-it-later services)
     const importModal = document.getElementById('import-modal');
 
-    document.getElementById('import-settings-btn').addEventListener('click', () => {
+    document.getElementById('import-settings-btn')?.addEventListener('click', () => {
       this.showImportModal();
     });
-    importModal.querySelector('.modal-overlay').addEventListener('click', () => {
+    importModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
       this.hideImportModal();
     });
-    importModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+    importModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
       this.hideImportModal();
     });
-    document.getElementById('import-cancel-btn').addEventListener('click', () => {
+    document.getElementById('import-cancel-btn')?.addEventListener('click', () => {
       this.handleImportCancel();
     });
-    document.getElementById('import-file').addEventListener('change', (e) => {
+    document.getElementById('import-file')?.addEventListener('change', (e) => {
       this.handleImportFile(e.target.files[0]);
     });
-    document.getElementById('import-start-btn').addEventListener('click', () => {
+    document.getElementById('import-start-btn')?.addEventListener('click', () => {
       this.runImport();
     });
 
     // PWA: Online/Offline Status
     window.addEventListener('online', () => this.updateOnlineStatus());
     window.addEventListener('offline', () => this.updateOnlineStatus());
-    
+
     // PWA: Install Prompt
     const installBtn = document.getElementById('install-app-settings-btn');
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
-      installBtn.classList.remove('hidden');
+      installBtn?.classList.remove('hidden');
     });
 
-    installBtn.addEventListener('click', () => {
+    installBtn?.addEventListener('click', () => {
       if (!this.deferredPrompt) return;
       this.deferredPrompt.prompt();
       this.deferredPrompt.userChoice.then((choiceResult) => {
@@ -498,7 +505,7 @@ class StashApp {
     });
 
     window.addEventListener('appinstalled', () => {
-      installBtn.classList.add('hidden');
+      installBtn?.classList.add('hidden');
       this.deferredPrompt = null;
     });
   }
@@ -1298,6 +1305,11 @@ class StashApp {
 
   // Podcasts view (Listen Later, #12)
   async loadPodcasts() {
+    // Guard against a call that lands before/after the signed-in user is set
+    // (STASH-D): the query below reads this.user.id, which threw "Cannot read
+    // properties of null (reading 'id')" when this ran without a session.
+    if (!this.user) return;
+
     const container = document.getElementById('saves-container');
     const loading = document.getElementById('loading');
     const empty = document.getElementById('empty-state');
