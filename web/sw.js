@@ -1,20 +1,25 @@
 // Stash Service Worker
-// Pull in config (CONFIG) and the IndexedDB wrapper (self.StashDB) so the
-// Background Sync handler can drain the offline "pending saves" queue.
-importScripts('/config.js', '/analytics.js', '/db.js', '/save-lib.js');
+// Pull in config (CONFIG), the IndexedDB wrapper (self.StashDB) so the
+// Background Sync handler can drain the offline "pending saves" queue, and
+// the offline-images helper (self.StashOffline) for the article-image cache
+// name shared with app.js's prefetcher.
+importScripts('/config.js', '/analytics.js', '/db.js', '/save-lib.js', '/offline-lib.js');
 
-const CACHE_NAME = 'stash-v7';
+const CACHE_NAME = 'stash-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/save.html',
   '/styles.css',
   '/version.js',
   '/app.js',
   '/db.js',
   '/save-lib.js',
+  '/offline-lib.js',
   '/logbuffer.js',
   '/bug-report.js',
   '/config.js',
+  '/analytics.js',
   '/manifest.json',
   '/icons/icon192.png',
   '/icons/icon512.png'
@@ -32,10 +37,13 @@ self.addEventListener('install', (event) => {
 
 // Activate
 self.addEventListener('activate', (event) => {
+  // Keep the article-image cache across app-shell cache version bumps —
+  // only stale app-shell caches from previous deploys get swept here.
+  const keepCaches = new Set([CACHE_NAME, self.StashOffline.IMAGE_CACHE_NAME]);
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.filter((key) => !keepCaches.has(key)).map((key) => caches.delete(key))
       );
     })
   );
@@ -62,11 +70,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Static Assets (JS/CSS/Images): Stale-While-Revalidate
+  // 3. Static Assets (JS/CSS/Images): Stale-While-Revalidate. Same-origin
+  // assets (app shell) go in CACHE_NAME; cross-origin requests are article
+  // images (the reading pane's <img src> tags point at the original site),
+  // which land in the dedicated image cache that app.js's Wi-Fi prefetcher
+  // also writes to — this is what makes an image opened once, or
+  // prefetched ahead of time, available offline afterward.
+  const cacheName = url.origin === self.location.origin
+    ? CACHE_NAME
+    : self.StashOffline.IMAGE_CACHE_NAME;
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       const fetchPromise = fetch(event.request).then((networkResponse) => {
-        caches.open(CACHE_NAME).then((cache) => {
+        caches.open(cacheName).then((cache) => {
           cache.put(event.request, networkResponse.clone());
         });
         return networkResponse;

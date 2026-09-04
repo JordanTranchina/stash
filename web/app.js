@@ -8,6 +8,7 @@ class StashApp {
     this.currentView = 'all';
     this.currentSave = null;
     this.saves = [];
+    this.offlinePrefetchInFlight = false;
 
     // Audio player state
     this.audio = null;
@@ -63,6 +64,12 @@ class StashApp {
 
     // Independent of auth: the build stamp shows regardless of who's signed in.
     this.renderVersion();
+
+    // Best-effort: reduces (does not guarantee) the odds the browser evicts
+    // the offline image cache under storage pressure. Safe to ignore failure.
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
   }
 
   // Single entry point for every auth transition (initial load, sign in,
@@ -283,6 +290,25 @@ class StashApp {
     document.getElementById('view-stats-btn').addEventListener('click', () => {
       this.showStats();
     });
+
+    // Offline image downloads (Settings → Offline Reading)
+    const offlineImagesToggle = document.getElementById('offline-images-toggle');
+    offlineImagesToggle.checked = this.getOfflineImagesEnabled();
+    offlineImagesToggle.addEventListener('change', (e) => {
+      localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
+      if (e.target.checked) this.prefetchOfflineImages(this.saves);
+    });
+
+    const offlineWifiOnlyToggle = document.getElementById('offline-wifi-only-toggle');
+    offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
+    offlineWifiOnlyToggle.addEventListener('change', (e) => {
+      localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
+    });
+
+    document.getElementById('offline-clear-btn').addEventListener('click', () => {
+      this.clearOfflineImageCache();
+    });
+    this.updateOfflineStorageLabel();
 
     // Search
     let searchTimeout;
@@ -703,6 +729,14 @@ class StashApp {
         window.StashDB.saveArticles(this.saves);
     }
 
+    // Prefetch article images for offline reading. Only the unarchived
+    // ("all") view is used as the source of truth for "every unarchived
+    // save" — the archived view's saves are excluded from offline caching
+    // by design (see prefetchOfflineImages). Fire-and-forget.
+    if (this.currentView !== 'archived') {
+      this.prefetchOfflineImages(this.saves);
+    }
+
     if (this.saves.length === 0) {
       this.renderEmptyState();
       empty.classList.remove('hidden');
@@ -923,6 +957,8 @@ class StashApp {
     // Keep the cached copy's archived flag in sync so it doesn't flash back
     // into the "all" list on the next offline-first render.
     window.StashDB.setArchived(id, true);
+    // Only unarchived saves stay offline-ready — drop this save's cached images.
+    this.evictOfflineImages(id);
     window.StashAnalytics?.capture('save_archived', { via: 'swipe' });
     this.showToast('Archived', {
       label: 'Undo',
@@ -1058,6 +1094,163 @@ class StashApp {
         msg.textContent = "You are offline. Showing cached content.";
         toast.classList.remove('hidden');
         setTimeout(() => toast.classList.add('hidden'), 5000);
+    }
+  }
+
+  // --- Offline image downloads -------------------------------------------
+  // Proactively caches every unarchived save's article images (into
+  // stash-images-v1 via the Cache API) so the reading pane still renders
+  // them with no network, not just the article text that STORE_ARTICLES
+  // already caches. Only unarchived saves stay offline-ready — archiving a
+  // save evicts its images (see evictOfflineImages, called from
+  // archiveSaveById).
+
+  getOfflineImagesEnabled() {
+    return localStorage.getItem('stash-offline-images-enabled') !== '0'; // on by default
+  }
+
+  getOfflineWifiOnly() {
+    return localStorage.getItem('stash-offline-wifi-only') !== '0'; // on by default
+  }
+
+  // Best-effort Wi-Fi check. The Network Information API (navigator.connection)
+  // isn't available on iOS Safari at all — the platform "at least on mobile"
+  // most needs this for — so when it's undetectable we proceed rather than
+  // silently never prefetching there; the Wi-Fi-only toggle only takes effect
+  // where the browser can actually report the connection type.
+  shouldPrefetchOfflineImagesNow() {
+    if (!this.getOfflineImagesEnabled()) return false;
+    if (!navigator.onLine) return false;
+    if (this.getOfflineWifiOnly()) {
+      const conn = navigator.connection || navigator.webkitConnection || navigator.mozConnection;
+      if (conn && conn.type && conn.type !== 'wifi' && conn.type !== 'ethernet') return false;
+    }
+    return true;
+  }
+
+  async hasOfflineStorageHeadroom() {
+    if (!navigator.storage || !navigator.storage.estimate) return true;
+    try {
+      const { usage, quota } = await navigator.storage.estimate();
+      if (!quota) return true;
+      return (usage / quota) < 0.8;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  // Downloads article images for every save in `saves` that isn't already
+  // fully cached, honoring the enabled/Wi-Fi-only settings and a storage
+  // headroom check. Fire-and-forget: callers don't await this.
+  async prefetchOfflineImages(saves) {
+    if (this.offlinePrefetchInFlight) return;
+    if (!('caches' in window) || !window.StashOffline || !window.StashDB) return;
+    if (!this.shouldPrefetchOfflineImagesNow()) return;
+    if (!saves || !saves.length) return;
+
+    this.offlinePrefetchInFlight = true;
+    try {
+      if (!(await this.hasOfflineStorageHeadroom())) return;
+
+      const cache = await caches.open(window.StashOffline.IMAGE_CACHE_NAME);
+      for (const save of saves) {
+        if (save.is_archived) continue; // only unarchived saves stay offline-ready
+        if (!this.shouldPrefetchOfflineImagesNow()) break; // network/setting changed mid-pass
+
+        const urls = window.StashOffline.extractImageUrls(save);
+        const existing = await window.StashDB.getOfflineStatus(save.id);
+        if (existing && existing.allCached && JSON.stringify(existing.imageUrls) === JSON.stringify(urls)) {
+          continue; // already fully cached for this exact set of image URLs
+        }
+
+        let failures = 0;
+        for (const url of urls) {
+          try {
+            if (await cache.match(url)) continue;
+            // Cross-origin article images rarely send CORS headers for plain
+            // <img> use, so request them the same way the browser's own
+            // <img> tag would (no-cors, opaque response) — that's still
+            // cacheable and renders fine as an <img src>, just unreadable
+            // from script, which is all we need here.
+            const res = await fetch(url, { mode: 'no-cors' });
+            await cache.put(url, res);
+          } catch (e) {
+            failures++;
+          }
+        }
+
+        await window.StashDB.setOfflineStatus(save.id, {
+          imageUrls: urls,
+          allCached: failures === 0,
+          cachedAt: Date.now(),
+        });
+      }
+      this.updateOfflineStorageLabel();
+    } finally {
+      this.offlinePrefetchInFlight = false;
+    }
+  }
+
+  // Drops a save's cached images and bookkeeping — called when a save is
+  // archived, since only unarchived saves are meant to stay offline-ready.
+  async evictOfflineImages(id) {
+    if (!('caches' in window) || !window.StashOffline || !window.StashDB) return;
+    try {
+      const status = await window.StashDB.getOfflineStatus(id);
+      if (status && status.imageUrls && status.imageUrls.length) {
+        const cache = await caches.open(window.StashOffline.IMAGE_CACHE_NAME);
+        for (const url of status.imageUrls) {
+          await cache.delete(url);
+        }
+      }
+      await window.StashDB.deleteOfflineStatus(id);
+      this.updateOfflineStorageLabel();
+    } catch (e) {
+      // Best-effort; a leftover cached image just ages out under quota pressure.
+    }
+  }
+
+  async clearOfflineImageCache() {
+    try {
+      if ('caches' in window && window.StashOffline) {
+        await caches.delete(window.StashOffline.IMAGE_CACHE_NAME);
+      }
+      if (window.StashDB) {
+        const statuses = await window.StashDB.getAllOfflineStatuses();
+        for (const s of statuses) await window.StashDB.deleteOfflineStatus(s.id);
+      }
+      this.showToast('Offline images cleared');
+    } catch (e) {
+      this.showToast('Could not clear offline images');
+    }
+    this.updateOfflineStorageLabel();
+  }
+
+  formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let i = 0;
+    while (value >= 1024 && i < units.length - 1) {
+      value /= 1024;
+      i++;
+    }
+    return `${value.toFixed(1)} ${units[i]}`;
+  }
+
+  async updateOfflineStorageLabel() {
+    const el = document.getElementById('offline-storage-label');
+    if (!el) return;
+    if (!navigator.storage || !navigator.storage.estimate) {
+      el.textContent = 'Offline storage: unavailable';
+      return;
+    }
+    try {
+      const { usage } = await navigator.storage.estimate();
+      el.textContent = `Offline storage used: ${this.formatBytes(usage)}`;
+    } catch (e) {
+      el.textContent = 'Offline storage: unavailable';
     }
   }
 
@@ -1340,6 +1533,17 @@ class StashApp {
     }
 
     document.getElementById('open-original-btn').href = save.url || '#';
+
+    // If we're offline and this article's images weren't fully downloaded
+    // ahead of time, say so rather than letting broken image icons be the
+    // only signal something's missing.
+    if (!navigator.onLine && window.StashDB) {
+      window.StashDB.getOfflineStatus(save.id).then(status => {
+        if (!status || !status.allCached) {
+          this.showToast("Some images may not be available offline");
+        }
+      }).catch(() => {});
+    }
 
     // Update button states
     document.getElementById('archive-btn').classList.toggle('active', save.is_archived);

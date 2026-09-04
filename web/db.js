@@ -1,9 +1,10 @@
 // Stash IndexedDB Wrapper
 const DB_NAME = 'StashDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_ARTICLES = 'articles';
 const STORE_PENDING = 'pending_saves'; // For offline shares
 const STORE_SESSION = 'session'; // Auth tokens the Service Worker can read
+const STORE_OFFLINE_STATUS = 'offline_status'; // Per-article image prefetch bookkeeping
 const SESSION_KEY = 'current'; // Single-record store; one signed-in user per device
 const STORE_BUG_REPORTS = 'bug_reports'; // Bug reports queued when a submit fails
 
@@ -43,6 +44,15 @@ const dbPromise = new Promise((resolve, reject) => {
         // it here for Background Sync to authenticate its drain requests.
         if (!db.objectStoreNames.contains(STORE_SESSION)) {
             db.createObjectStore(STORE_SESSION);
+        }
+
+        // Tracks, per article, which image URLs have been downloaded into the
+        // stash-images-v1 Cache Storage bucket for offline reading. Kept
+        // separate from STORE_ARTICLES (rather than a field on the article
+        // record) because saveArticles() overwrites article records wholesale
+        // on every server refresh, which would otherwise wipe this bookkeeping.
+        if (!db.objectStoreNames.contains(STORE_OFFLINE_STATUS)) {
+            db.createObjectStore(STORE_OFFLINE_STATUS, { keyPath: 'id' });
         }
 
         // Store for bug reports whose submit failed (offline, or GitHub was
@@ -212,6 +222,51 @@ self.StashDB = {
         const transaction = db.transaction([STORE_PENDING], 'readwrite');
         const store = transaction.objectStore(STORE_PENDING);
         store.delete(key);
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
+    // Offline image prefetch bookkeeping (see STORE_OFFLINE_STATUS above).
+    async getOfflineStatus(id) {
+        const db = await dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_OFFLINE_STATUS], 'readonly');
+            const store = transaction.objectStore(STORE_OFFLINE_STATUS);
+            const request = store.get(id);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async getAllOfflineStatuses() {
+        const db = await dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_OFFLINE_STATUS], 'readonly');
+            const store = transaction.objectStore(STORE_OFFLINE_STATUS);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async setOfflineStatus(id, status) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_OFFLINE_STATUS], 'readwrite');
+        const store = transaction.objectStore(STORE_OFFLINE_STATUS);
+        store.put({ ...status, id });
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
+    async deleteOfflineStatus(id) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_OFFLINE_STATUS], 'readwrite');
+        const store = transaction.objectStore(STORE_OFFLINE_STATUS);
+        store.delete(id);
         return new Promise((resolve, reject) => {
             transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
