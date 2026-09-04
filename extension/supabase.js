@@ -118,6 +118,51 @@ class SupabaseClient {
     return await this.storeSession(await res.json());
   }
 
+  // Runs the Google OAuth flow in a browser-native tab (chrome.identity),
+  // since the extension has no page of its own to redirect back to. Supabase
+  // returns the tokens directly in the callback URL's fragment (implicit
+  // grant) because this request has no PKCE code_challenge attached — there's
+  // nowhere in the extension to persist a code verifier between the redirect
+  // out and the redirect back.
+  async signInWithGoogle() {
+    const redirectUrl = chrome.identity.getRedirectURL();
+    const authUrl = `${this.url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+
+    const callbackUrl = await new Promise((resolve, reject) => {
+      chrome.identity.launchWebAuthFlow(
+        { url: authUrl, interactive: true },
+        (result) => {
+          if (chrome.runtime.lastError || !result) {
+            reject(new Error(chrome.runtime.lastError?.message || 'Google sign-in was cancelled'));
+            return;
+          }
+          resolve(result);
+        }
+      );
+    });
+
+    // Tokens (or an error) come back after the # or ?, depending on which
+    // leg of the redirect failed.
+    const params = new URLSearchParams(callbackUrl.split(/[#?]/).slice(1).join('&'));
+
+    if (params.get('error')) {
+      throw new Error(params.get('error_description') || params.get('error'));
+    }
+
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) {
+      throw new Error('Google sign-in did not return a session');
+    }
+
+    return await this.storeSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: params.get('expires_in') ? Number(params.get('expires_in')) : undefined,
+      token_type: params.get('token_type') || 'bearer',
+    });
+  }
+
   async signUp(email, password) {
     const res = await fetch(`${this.url}/auth/v1/signup`, {
       method: 'POST',

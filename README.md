@@ -48,11 +48,14 @@ is invite-only: a trigger on `auth.users` checks the address against the
 ### A note on the extension
 
 The Chrome and Firefox extensions are not part of sharing Stash with other
-people. Neither is published to a store, so installing one means Developer Mode
-and "Load unpacked" — fine for you, a non-starter for anyone non-technical. The
-PWA share target (add the web app to your home screen) and the bookmarklet
-cover saving on every platform. The extension stays a power tool until a Web
-Store listing is worth the review cycle.
+people. Neither is published to a store yet, so installing one means Developer
+Mode and "Load unpacked" — fine for you, a non-starter for anyone
+non-technical. The PWA share target (add the web app to your home screen) and
+the bookmarklet cover saving on every platform. Publishing both extensions is
+tracked in [#96](https://github.com/JordanTranchina/stash/issues/96); the
+listing copy, privacy policy, and release packaging are ready in
+[STORE_LISTING.md](documentation/STORE_LISTING.md) — what remains is a human
+completing the store submissions.
 
 ## Project Structure
 

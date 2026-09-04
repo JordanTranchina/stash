@@ -81,6 +81,51 @@ class TestGenerateScript:
             with pytest.raises(RuntimeError, match="Gemini script generation failed"):
                 script.generate_script(SAMPLE_ARTICLES)
 
+    def test_retries_on_transient_503_then_succeeds(self, monkeypatch):
+        """A momentary 'high demand' 503 must not cost the day's episode."""
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        success_response = MagicMock()
+        success_response.text = json.dumps(SAMPLE_SCRIPT)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [
+            Exception("503 UNAVAILABLE. High demand"),
+            success_response,
+        ]
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep") as mock_sleep:
+            result = script.generate_script(SAMPLE_ARTICLES)
+
+        assert result == SAMPLE_SCRIPT
+        assert mock_client.models.generate_content.call_count == 2
+        mock_sleep.assert_called_once()
+
+    def test_gives_up_after_max_retries_on_persistent_503(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("503 UNAVAILABLE. High demand")
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep"):
+            with pytest.raises(RuntimeError, match="Gemini script generation failed"):
+                script.generate_script(SAMPLE_ARTICLES)
+
+        assert mock_client.models.generate_content.call_count == script.GEMINI_MAX_RETRIES
+
+    def test_does_not_retry_on_quota_exhaustion(self, monkeypatch):
+        """429 quota errors surface immediately — a short retry can't fix them."""
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED")
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep") as mock_sleep:
+            with pytest.raises(RuntimeError, match="Gemini script generation failed"):
+                script.generate_script(SAMPLE_ARTICLES)
+
+        assert mock_client.models.generate_content.call_count == 1
+        mock_sleep.assert_not_called()
+
     def test_uses_flash_lite_model_by_default(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
         mock_client = MagicMock()

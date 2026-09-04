@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import subprocess
+import time
 import requests
 from google import genai
 from google.genai import types
@@ -31,6 +32,37 @@ if SUPABASE_URL and SUPABASE_KEY:
 # most generous free tier (15 RPM / 1,000 requests per day). gemini-2.0-flash had
 # its free tier zeroed out. Override with the GEMINI_MODEL env var if needed.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+
+# The pipeline runs once a day via cron, so a single transient Gemini error
+# (the API returning 503 "high demand" or 500 during a momentary overload)
+# used to cost the user that entire day's episode. Retry those with backoff
+# before giving up. 429 (quota exhausted) is deliberately excluded — a quota
+# reset takes longer than a short retry window can cover.
+GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
+GEMINI_RETRY_BASE_DELAY_SECONDS = float(os.getenv("GEMINI_RETRY_BASE_DELAY_SECONDS", "15"))
+RETRYABLE_GEMINI_ERROR_MARKERS = ("503", "UNAVAILABLE", "500", "INTERNAL")
+
+
+def _is_retryable_gemini_error(error):
+    text = str(error)
+    return any(marker in text for marker in RETRYABLE_GEMINI_ERROR_MARKERS)
+
+
+def _call_gemini_with_retry(fn, *args, **kwargs):
+    """Call a Gemini API function, retrying transient errors with backoff."""
+    last_error = None
+    for attempt in range(GEMINI_MAX_RETRIES):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            last_error = e
+            if attempt == GEMINI_MAX_RETRIES - 1 or not _is_retryable_gemini_error(e):
+                raise
+            delay = GEMINI_RETRY_BASE_DELAY_SECONDS * (2 ** attempt)
+            print(f"Gemini call failed ({e}); retrying in {delay:.0f}s "
+                  f"(attempt {attempt + 2}/{GEMINI_MAX_RETRIES})...")
+            time.sleep(delay)
+    raise last_error
 
 # Default host personalities (used when the user has not customized them, issue #13).
 DEFAULT_PODCAST_PREFS = {
@@ -197,7 +229,8 @@ def generate_script(articles, prefs=None):
     prompt = f"Here are the articles to discuss today:\n\n{json.dumps(articles_payload, indent=2)}"
 
     try:
-        response = client.models.generate_content(
+        response = _call_gemini_with_retry(
+            client.models.generate_content,
             model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -249,7 +282,9 @@ def generate_episode_title(articles, prefs=None):
 
     try:
         client = genai.Client(api_key=gemini_api_key)
-        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        response = _call_gemini_with_retry(
+            client.models.generate_content, model=GEMINI_MODEL, contents=prompt
+        )
         title = response.text.strip().strip('"').strip()
         return title or FALLBACK_EPISODE_TITLE
     except Exception as e:

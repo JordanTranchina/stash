@@ -19,6 +19,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function extractArticle() {
+  // X (Twitter) has to be handled before Readability — see extractXPost() for
+  // why Readability actively picks the wrong content there.
+  if (isXHost(window.location.hostname)) {
+    const xPost = extractXPost();
+    if (xPost) return xPost;
+  }
+
   try {
     // Clone the document for Readability (it modifies the DOM)
     const documentClone = document.cloneNode(true);
@@ -58,6 +65,183 @@ async function extractArticle() {
     publishedTime: extractPublishedTime(),
     imageUrl: extractMainImage(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// X (Twitter) extraction
+//
+// X's web client is a React SPA whose post text lives in <div data-testid=
+// "tweetText"> wrappers built out of <span>s — a whole x.com document contains
+// roughly one <p> tag. Readability scores candidates by paragraph density, so
+// on x.com it reliably scores the "Log in or sign up for X" wall and the
+// "Relevant people" sidebar above the actual post, clears the 200-char bar with
+// them, and the save lands full of chrome with none of the article in it. The
+// generic fallback path fares no better: its selector list hits
+// `article[data-testid="tweet"]` but then looks for p/h1-h6/li/blockquote
+// children, of which a tweet has none.
+//
+// So on X we read X's own DOM directly. These `data-testid` hooks are the ones
+// X's client has used consistently and are what every X scraper keys on, but
+// they are X's internals, not a contract — extractXPost() returns null on
+// anything unexpected so the save falls through to the normal Readability path
+// rather than failing.
+// ---------------------------------------------------------------------------
+
+const X_HOSTS = ['x.com', 'twitter.com'];
+
+function isXHost(hostname) {
+  const host = (hostname || '').toLowerCase().replace(/^(www|mobile|m)\./, '');
+  return X_HOSTS.includes(host);
+}
+
+// Chrome that lives inside X's primary column and is never article content.
+const X_CHROME_SELECTORS = [
+  'nav',
+  '[role="navigation"]',
+  'header[role="banner"]',
+  '[data-testid="sidebarColumn"]',
+  '[data-testid="BottomBar"]',
+  '[data-testid="loginButton"]',
+  '[data-testid="signupButton"]',
+  '[data-testid="app-bar-back"]',
+  '[data-testid="caret"]',
+  '[data-testid="inline_reply_offscreen"]',
+  '[role="group"]', // the like / repost / share action bar under each post
+].join(',');
+
+function xPrimaryColumn() {
+  return document.querySelector('[data-testid="primaryColumn"]') ||
+         document.querySelector('main[role="main"]') ||
+         document.querySelector('main');
+}
+
+// The @handle whose post this is, from /<handle>/status/<id> or
+// /<handle>/article/<id>. Used to keep other people's replies out of the save.
+function xHandleFromUrl() {
+  const match = window.location.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/(?:status|article)\//);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function xHandleOfPost(post) {
+  const nameEl = post.querySelector('[data-testid="User-Name"]');
+  const match = (nameEl?.innerText || '').match(/@([A-Za-z0-9_]{1,15})/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+// X renders the byline as one block: "Jane Dev @janedev · Aug 1" (sometimes on
+// separate lines, sometimes run together). Everything before the @handle is the
+// display name.
+function xDisplayName() {
+  const raw = document.querySelector('[data-testid="User-Name"]')?.innerText?.trim() || '';
+  if (!raw) return null;
+  return raw.split('@')[0].replace(/[\s·|-]+$/, '').trim() || null;
+}
+
+// Collect the thread author's posts in document order. A "post" on X is often
+// really a thread, so saving only the focal tweet loses most of the article.
+// Replies from other accounts are skipped — they aren't the piece being saved.
+function extractXThread() {
+  const posts = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+  if (!posts.length) return null;
+
+  // Some post URLs carry no handle (/i/web/status/<id>), so fall back to the
+  // author of the first post on the page — the root of the thread.
+  const author = xHandleFromUrl() || posts.map(xHandleOfPost).find(Boolean) || null;
+  const blocks = [];
+  const seen = new Set();
+
+  for (const post of posts) {
+    const handle = xHandleOfPost(post);
+    if (author && handle && handle !== author) continue;
+
+    const textEl = post.querySelector('[data-testid="tweetText"]');
+    const text = textEl?.innerText?.trim() || '';
+    const images = Array.from(post.querySelectorAll('[data-testid="tweetPhoto"] img[src]'))
+      .map(img => resolveImageUrl(img.getAttribute('src')))
+      .filter(Boolean)
+      .map(src => `![](${src})`);
+
+    if (!text && !images.length) continue;
+
+    // X virtualises the timeline and re-renders the focal post, so the same
+    // post can appear twice in the DOM.
+    const key = text || images.join('');
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    blocks.push([text, ...images].filter(Boolean).join('\n\n'));
+  }
+
+  return blocks.length ? blocks.join('\n\n---\n\n') : null;
+}
+
+// Long-form X Articles render as a normal rich-text document inside the primary
+// column, so once the surrounding chrome is stripped the generic HTML-to-
+// Markdown walker handles them.
+function extractXArticleBody() {
+  const column = xPrimaryColumn();
+  if (!column) return null;
+
+  const clone = column.cloneNode(true);
+  clone.querySelectorAll(X_CHROME_SELECTORS).forEach(el => el.remove());
+  // The byline is captured as the `author` field, so keep it out of the body.
+  clone.querySelectorAll('[data-testid="User-Name"]').forEach(el => el.remove());
+
+  const text = htmlToText(clone.innerHTML);
+  return text.length > 200 ? text : null;
+}
+
+// First real image inside the article body, used as the save's cover when the
+// post isn't a photo tweet. Skips X's own avatar/emoji assets.
+function xLeadImage() {
+  const photo = document.querySelector('[data-testid="tweetPhoto"] img[src]');
+  if (photo) return resolveImageUrl(photo.getAttribute('src'));
+
+  const column = xPrimaryColumn();
+  const inBody = Array.from(column?.querySelectorAll('img[src]') || [])
+    .map(img => resolveImageUrl(img.getAttribute('src')))
+    .find(src => src && /\/media\//.test(src));
+
+  return inBody || extractMainImage();
+}
+
+// X's og:title is only ever "Name (@handle) on X", which reads as a useless
+// title in the library. The opening line of the post is the real headline — for
+// an X Article that is literally the article title.
+function xTitle(content) {
+  const firstLine = content.split('\n').map(s => s.trim()).find(Boolean) || '';
+  if (firstLine) {
+    return firstLine.length > 100 ? firstLine.slice(0, 97).trimEnd() + '…' : firstLine;
+  }
+  return document.querySelector('meta[property="og:title"]')?.content?.trim() || document.title;
+}
+
+function extractXPost() {
+  try {
+    const isArticle = /\/article\//.test(window.location.pathname);
+    const content = isArticle
+      ? (extractXArticleBody() || extractXThread())
+      : (extractXThread() || extractXArticleBody());
+
+    if (!content) return null;
+
+    const handle = xHandleFromUrl();
+    const flat = content.replace(/\s+/g, ' ').trim();
+
+    return {
+      success: true,
+      title: xTitle(content),
+      content,
+      excerpt: flat.length > 300 ? flat.slice(0, 300) + '...' : flat,
+      siteName: 'X',
+      author: xDisplayName() || (handle ? '@' + handle : null),
+      publishedTime: extractPublishedTime(),
+      imageUrl: xLeadImage(),
+    };
+  } catch (e) {
+    console.error('X extraction failed:', e);
+    return null;
+  }
 }
 
 function extractFallbackContent() {
