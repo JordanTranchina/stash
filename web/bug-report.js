@@ -5,23 +5,29 @@
 //   - the "Report" action on a failure toast  → open({ prefillError: true })
 //   - ?report-bug=1 in the URL (also the podcast show-notes deep link)
 //
-// A report is a short description (+ optional repro / expected / observed), an
-// auto-captured screenshot, any files the user attaches, and the recent console
-// logs + last uncaught error + environment gathered by logbuffer.js. It POSTs a
-// multipart form to the `report-bug` Edge Function, which files a GitHub issue.
-// If that POST fails (offline, GitHub down) the report is queued in IndexedDB
-// and retried on the next app open / "online" event / Background Sync.
+// A report is a short description (+ optional repro / expected / observed),
+// any files the user attaches, and the recent console logs + last uncaught
+// error + environment gathered by logbuffer.js. It POSTs a multipart form to
+// the `report-bug` Edge Function, which files a GitHub issue. If that POST
+// fails (offline, GitHub down) the report is queued in IndexedDB and retried
+// on the next app open / "online" event / Background Sync.
+//
+// There used to be an automatic html2canvas() screenshot on every open —
+// removed because it walked the whole page's DOM/CSSOM on the main thread,
+// and screenshots aren't usually needed to understand a bug report anyway.
+// Users can still attach one manually via the file input below.
 class BugReporter {
   constructor(app) {
     this.app = app;
     this.attachments = []; // { blob, name, type, isVideo, previewUrl }
-    this.screenshotBlob = null;
     this.submitting = false;
-    this._html2canvas = null;
     this.MAX_ATTACHMENTS = 4;
   }
 
   bindEvents() {
+    if (this._bound) return; // guard against double-binding if init() ever re-runs
+    this._bound = true;
+
     const modal = document.getElementById('bug-report-modal');
     if (!modal) return;
 
@@ -40,11 +46,10 @@ class BugReporter {
     window.addEventListener('online', () => this.flushQueue());
   }
 
-  async open({ prefillError = false, autoShot = true } = {}) {
+  async open({ prefillError = false } = {}) {
     const modal = document.getElementById('bug-report-modal');
     if (!modal) return;
     this.reset();
-    modal.classList.remove('hidden');
 
     if (prefillError) {
       const le = window.StashLog?.getLastError?.();
@@ -53,7 +58,8 @@ class BugReporter {
         document.getElementById('bug-report-detail').open = true;
       }
     }
-    if (autoShot) this.captureScreenshot();
+
+    modal.classList.remove('hidden');
     document.getElementById('bug-report-text').focus();
   }
 
@@ -66,7 +72,6 @@ class BugReporter {
   reset() {
     this.attachments.forEach((a) => a.previewUrl && URL.revokeObjectURL(a.previewUrl));
     this.attachments = [];
-    if (this.screenshotBlob) this.screenshotBlob = null;
     this.submitting = false;
 
     ['text', 'steps', 'expected', 'observed'].forEach((k) => {
@@ -82,66 +87,9 @@ class BugReporter {
     const filesInput = document.getElementById('bug-report-files');
     if (filesInput) filesInput.value = '';
 
-    const shot = document.getElementById('bug-report-shot');
-    if (shot) { shot.classList.add('hidden'); shot.innerHTML = ''; }
-
     this.renderAttachments();
     const btn = document.getElementById('bug-report-submit-btn');
     if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
-  }
-
-  // Lazily pull in html2canvas from the CDN (same delivery model as the other
-  // web-app libraries). Screenshot capture is best-effort — if this fails
-  // (offline, blocked) the user can still attach one manually.
-  loadHtml2canvas() {
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (this._html2canvas) return this._html2canvas;
-    this._html2canvas = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-      s.onload = () => resolve(window.html2canvas);
-      s.onerror = () => reject(new Error('screenshot library failed to load'));
-      document.head.appendChild(s);
-    });
-    return this._html2canvas;
-  }
-
-  async captureScreenshot() {
-    const shot = document.getElementById('bug-report-shot');
-    if (!shot) return;
-    shot.classList.remove('hidden');
-    shot.innerHTML = '<span class="bug-report-shot-note">Capturing screenshot…</span>';
-    const modal = document.getElementById('bug-report-modal');
-    try {
-      const html2canvas = await this.loadHtml2canvas();
-      modal.style.visibility = 'hidden'; // don't shoot our own dialog
-      const canvas = await html2canvas(document.body, {
-        logging: false,
-        useCORS: true,
-        scale: Math.min(window.devicePixelRatio || 1, 2),
-      });
-      modal.style.visibility = '';
-      this.screenshotBlob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
-
-      shot.innerHTML = '';
-      const img = document.createElement('img');
-      img.alt = 'Screenshot preview';
-      img.src = URL.createObjectURL(this.screenshotBlob);
-      const label = document.createElement('label');
-      label.className = 'bug-report-shot-toggle';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = true;
-      cb.id = 'bug-report-shot-include';
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(' Attach this screenshot'));
-      shot.appendChild(img);
-      shot.appendChild(label);
-    } catch (e) {
-      modal.style.visibility = '';
-      this.screenshotBlob = null;
-      shot.innerHTML = '<span class="bug-report-shot-note">Couldn’t auto-capture a screenshot — attach one below if it helps.</span>';
-    }
   }
 
   addFiles(fileList) {
@@ -201,13 +149,7 @@ class BugReporter {
   }
 
   gatherFiles() {
-    const files = [];
-    const includeShot = document.getElementById('bug-report-shot-include');
-    if (this.screenshotBlob && (!includeShot || includeShot.checked)) {
-      files.push({ blob: this.screenshotBlob, name: 'screenshot.png' });
-    }
-    this.attachments.forEach((a) => files.push({ blob: a.blob, name: a.name }));
-    return files;
+    return this.attachments.map((a) => ({ blob: a.blob, name: a.name }));
   }
 
   buildFormData(fields, files) {
