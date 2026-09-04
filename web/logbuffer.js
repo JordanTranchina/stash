@@ -49,6 +49,22 @@
     if (msg.length > MAX_MSG) msg = msg.slice(0, MAX_MSG) + "…";
     logs.push({ t: new Date().toISOString(), level: level, msg: msg });
     if (logs.length > MAX_LOGS) logs.shift();
+
+    // Every console.error() doubles as "last error" capture, not just the
+    // handful of call sites that remember to call StashLog.noteError()
+    // explicitly. Most of this app's failures are handled Supabase/fetch
+    // rejections (an awaited { error } result, not a thrown exception), so
+    // they never reach the window 'error'/'unhandledrejection' listeners
+    // below — console.error was the only place they were ever reported, and
+    // a bug filed right after one previously showed "Last error: (none
+    // captured)" because nothing had wired it through (issue #107).
+    if (level === "error") {
+      var errArg;
+      for (var i = 0; i < args.length; i++) {
+        if (args[i] instanceof Error) { errArg = args[i]; break; }
+      }
+      noteError(msg, errArg ? errArg.stack || "" : "", "console.error");
+    }
   }
 
   ["log", "info", "warn", "error"].forEach(function (level) {

@@ -69,6 +69,20 @@
     if (msg.length > MAX_MSG) msg = msg.slice(0, MAX_MSG) + '…';
     logs.push({ t: new Date().toISOString(), level: level, msg: msg });
     if (logs.length > MAX_LOGS) logs.shift();
+
+    // Every console.error() doubles as "last error" capture, not just the
+    // call sites that remember to call noteError() explicitly — most
+    // failures here are handled promise rejections (an awaited storage/fetch
+    // error, not a thrown exception), which never reach the addEventListener
+    // hooks below (see web/logbuffer.js for the same fix, issue #107).
+    if (level === 'error') {
+      var errArg;
+      for (var i = 0; i < args.length; i++) {
+        if (args[i] instanceof Error) { errArg = args[i]; break; }
+      }
+      noteError(msg, errArg ? errArg.stack || '' : '', 'console.error');
+    }
+
     persist();
   }
 
