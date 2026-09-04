@@ -7,8 +7,12 @@
   --bg-secondary: #f9fafb;
   --bg-tertiary: #f3f4f6;
   --text: #1f2937;
-  --text-secondary: #6b7280;
-  --text-muted: #9ca3af;
+  /* Both of these must stay >= 4.5:1 against --bg (#ffffff) so small metadata
+     text (12px site names, read times, dates) passes WCAG AA. The previous
+     --text-muted (#9ca3af) was only 2.53:1. #666e7a also clears 4.5:1 on the
+     --bg-secondary and --bg-tertiary surfaces it is used on. */
+  --text-secondary: #4b5563;
+  --text-muted: #666e7a;
   --border: #e5e7eb;
   --success: #10b981;
   --warning: #f59e0b;
@@ -32,7 +36,8 @@
   --bg-tertiary: #374151;
   --text: #f9fafb;
   --text-secondary: #d1d5db;
-  --text-muted: #9ca3af;
+  /* Lightened from #9ca3af, which was only 4.06:1 on --bg-tertiary (#374151). */
+  --text-muted: #a8b0ba;
   --border: #374151;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.4);

@@ -1616,7 +1616,7 @@ class StashApp {
       return `
         <div class="podcast-episode" data-id="${ep.id}">
           <div class="podcast-episode-header">
-            ${ep.artwork_url ? `<img class="podcast-episode-artwork" src="${this.escapeHtml(ep.artwork_url)}" alt="">` : ''}
+            ${ep.artwork_url ? `<img class="podcast-episode-artwork" src="${this.safeImageUrl(ep.artwork_url)}" alt="" loading="lazy" decoding="async">` : ''}
             <div class="podcast-episode-header-text">
               <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
               <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
@@ -1867,15 +1867,16 @@ class StashApp {
         <blockquote style="font-style: italic; background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
           "${this.escapeHtml(save.highlight)}"
         </blockquote>
-        <p><a href="${save.url}" target="_blank" style="color: var(--primary);">View original →</a></p>
+        <p><a href="${this.escapeHtml(save.url)}" target="_blank" rel="noopener" style="color: var(--primary);">View original →</a></p>
       `;
     } else if (content || save.excerpt) {
       body.innerHTML = this.renderMarkdown(content || save.excerpt);
+      this.prepareArticleImages(body);
     } else {
       body.innerHTML = `
         <div class="reading-empty">
           <p>We couldn't fetch this article's content.</p>
-          <a href="${save.url || '#'}" target="_blank" class="btn primary">View Original</a>
+          <a href="${this.escapeHtml(save.url) || '#'}" target="_blank" rel="noopener" class="btn primary">View Original</a>
         </div>
       `;
     }
@@ -2280,11 +2281,18 @@ class StashApp {
     });
   }
 
+  // Escapes for both text and attribute contexts. The old implementation set
+  // .textContent and read back .innerHTML, which leaves quotes untouched — a
+  // title or image URL containing a double quote could then break out of an
+  // attribute and inject markup.
   escapeHtml(text) {
     if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // Human-friendly host (e.g. "theverge.com") used as the publication source
@@ -2327,14 +2335,48 @@ class StashApp {
     return `linear-gradient(135deg, hsl(${hue} 62% 68%) 0%, hsl(${(hue + 40) % 360} 58% 52%) 100%)`;
   }
 
+  // Article bodies carry the original page's <img> tags. Deferring the ones
+  // below the fold keeps opening a long article cheap, and upgrading http://
+  // sources avoids mixed content the browser would otherwise block.
+  prepareArticleImages(root) {
+    root.querySelectorAll('img').forEach((img) => {
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      const src = img.getAttribute('src') || '';
+      if (/^http:\/\//i.test(src)) {
+        img.setAttribute('src', src.replace(/^http:\/\//i, 'https://'));
+      }
+    });
+  }
+
+  // Image URLs come from third-party page metadata, so they are neither
+  // trusted markup nor guaranteed to be https. Anything that is not http(s) is
+  // dropped (the caller then draws a monogram tile), http:// is upgraded so the
+  // https-served app does not request mixed content, and the result is escaped
+  // for use inside a src attribute.
+  safeImageUrl(url) {
+    if (!url) return '';
+    const trimmed = String(url).trim();
+    // Protocol-relative URLs are common in scraped metadata and are https here.
+    const absolute = trimmed.startsWith('//') ? `https:${trimmed}` : trimmed;
+    if (!/^https?:\/\//i.test(absolute)) return '';
+    return this.escapeHtml(absolute.replace(/^http:\/\//i, 'https://'));
+  }
+
   // Thumbnail markup for an article card: the real og:image when present,
   // otherwise a colored monogram tile using the source's first letter.
   cardThumb(save) {
-    if (save.image_url) {
+    const src = this.safeImageUrl(save.image_url);
+    if (src) {
       const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
       const seed = this.escapeHtml(save.site_name || save.title || save.url || '');
       const initial = this.escapeHtml((save.site_name || save.title || '?').trim().charAt(0) || '?');
-      return `<img src="${save.image_url}" alt="" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
+      // loading/decoding keep a long list from fetching every og:image at once:
+      // these are full-size article images rendered into a 96x96 tile, so an
+      // eager list of a few hundred saves pulled down tens of megabytes and
+      // pushed Largest Contentful Paint far out. width/height match the CSS box
+      // so the browser can reserve the space before the image arrives.
+      return `<img src="${src}" alt="" width="96" height="96" loading="lazy" decoding="async" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
     }
     return this.fallbackTile(save.site_name || save.title || save.url || '', (save.site_name || save.title || '?').trim().charAt(0) || '?');
   }
