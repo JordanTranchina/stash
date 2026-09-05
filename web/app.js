@@ -123,6 +123,7 @@ class StashApp {
 
     if (session) {
       this.user = session.user;
+      window.StashAnalytics?.capture('signed_in');
       this.showMainScreen();
       this.loadData();
       this.syncPendingShares();
@@ -130,6 +131,7 @@ class StashApp {
       this.setupRealtime();
     } else {
       this.user = null;
+      window.StashAnalytics?.capture('signed_out');
       this.teardownRealtime();
       this.saves = [];
       this.showAuthScreen();
@@ -806,6 +808,7 @@ class StashApp {
     this.hasMoreSaves = page.length === this.PAGE_SIZE;
     this.savesOffset += page.length;
     this.saves = reset ? page : this.saves.concat(page);
+    window.StashAnalytics?.capture('saves_loaded', { view: this.currentView, page_count: page.length, total: this.saves.length });
 
     // UPDATE CACHE: merge this page's metadata into IndexedDB.
     if (page.length > 0) {
