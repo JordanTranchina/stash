@@ -1877,7 +1877,7 @@ class StashApp {
     }
 
     // Update button states
-    document.getElementById('archive-btn').classList.toggle('active', save.is_archived);
+    this.updateArchiveButton(save.is_archived);
 
     // Show the percent already read from a previous session.
     const initialPercent = Math.min(Math.max(save.read_percent || 0, 0), 100);
@@ -2285,6 +2285,27 @@ class StashApp {
     return data.signedUrl;
   }
 
+  // Reflect archived state on the reading-pane archive button. When already
+  // archived the button un-archives, so it shows an "item lifting out of the
+  // box" icon and reads as Unarchive.
+  updateArchiveButton(isArchived) {
+    const btn = document.getElementById('archive-btn');
+    if (!btn) return;
+    btn.classList.toggle('active', isArchived);
+    btn.title = isArchived ? 'Unarchive' : 'Archive';
+    btn.setAttribute('aria-label', isArchived ? 'Unarchive' : 'Archive');
+    btn.innerHTML = isArchived
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8"></path>
+          <polyline points="8 6 12 2 16 6"></polyline>
+          <line x1="12" y1="2" x2="12" y2="14"></line>
+        </svg>`
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="21 8 21 21 3 21 3 8"></polyline>
+          <rect x="1" y="3" width="22" height="5"></rect>
+        </svg>`;
+  }
+
   async toggleArchive() {
     if (!this.currentSave) return;
 
@@ -2295,6 +2316,7 @@ class StashApp {
       .eq('id', this.currentSave.id);
 
     this.currentSave.is_archived = newValue;
+    this.updateArchiveButton(newValue);
     // Keep the offline cache in sync so the next render files this item correctly.
     window.StashDB.setArchived(this.currentSave.id, newValue);
     window.StashAnalytics?.capture(newValue ? 'save_archived' : 'save_unarchived', { via: 'reading_pane' });
