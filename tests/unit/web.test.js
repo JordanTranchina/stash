@@ -169,3 +169,50 @@ describe('buildSearchFilter', () => {
     expect(articles.filter(filter)).toHaveLength(0);
   });
 });
+
+describe('wordCount / readingTime', () => {
+  /**
+   * Mirrors StashApp.wordCount (web/app.js). The saves list query no longer
+   * fetches `content` (see SAVES_LIST_COLUMNS) — reading time has to come
+   * from the stored `word_count` column (20260904_saves_word_count.sql)
+   * instead of re-splitting the full article body on every render.
+   */
+  function wordCount(save) {
+    if (!save) return null;
+    if (Number.isFinite(save.word_count)) return save.word_count || null;
+    const text = save.content || '';
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    return words || null;
+  }
+
+  // Mirrors StashApp.readingTime.
+  function readingTime(save) {
+    const words = wordCount(save);
+    if (!words) return null;
+    return Math.max(1, Math.round(words / 220));
+  }
+
+  test('uses the stored word_count without touching content', () => {
+    const save = { word_count: 440, content: undefined };
+    expect(wordCount(save)).toBe(440);
+    expect(readingTime(save)).toBe(2);
+  });
+
+  test('falls back to splitting content when word_count is absent', () => {
+    const save = { content: 'one two three four five' };
+    expect(wordCount(save)).toBe(5);
+  });
+
+  test('a stored word_count of 0 is treated as "no content", not 0 words', () => {
+    // 0 is falsy-but-Number.isFinite, so this exercises the `|| null` guard
+    // rather than accidentally falling through to the content split.
+    const save = { word_count: 0, content: 'ignored because word_count is present' };
+    expect(wordCount(save)).toBeNull();
+    expect(readingTime(save)).toBeNull();
+  });
+
+  test('returns null for a save with neither word_count nor content', () => {
+    expect(wordCount({})).toBeNull();
+    expect(readingTime({})).toBeNull();
+  });
+});

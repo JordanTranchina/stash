@@ -99,6 +99,30 @@ describe('StashLog.noteError / getEnv', () => {
     expect(le.stack).toContain('app.js:1');
   });
 
+  test('every console.error() call also populates getLastError(), not just explicit noteError() call sites', () => {
+    const { StashLog, sandbox } = loadStashLog();
+    expect(StashLog.getLastError()).toBeNull();
+
+    // The common shape in app.js: a handled Supabase { error } result logged
+    // via console.error, with no throw and so no window 'error'/
+    // 'unhandledrejection' event to catch it (issue #107).
+    sandbox.console.error('Error loading saves:', { message: 'column word_count does not exist' });
+
+    const le = StashLog.getLastError();
+    expect(le.source).toBe('console.error');
+    expect(le.message).toContain('Error loading saves:');
+  });
+
+  test('console.error with an Error object captures its stack', () => {
+    const { StashLog, sandbox } = loadStashLog();
+    // Built inside the sandbox's own realm so `instanceof Error` (checked in
+    // logbuffer.js against that realm's Error) actually matches — a host
+    // Error wouldn't.
+    vm.runInContext('console.error("Unhandled:", new Error("boom"))', sandbox);
+    const le = StashLog.getLastError();
+    expect(le.stack).toContain('Error: boom');
+  });
+
   test('getEnv snapshots version, url, UA and the passed view', () => {
     const { StashLog } = loadStashLog();
     const env = StashLog.getEnv('podcasts');

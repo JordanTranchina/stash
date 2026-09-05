@@ -7,8 +7,6 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Quick Save - Stash</title>
-  <!-- Error reporting (see sentry-init.js) -->
-  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
   <style>
     :root {
       --primary: #6366f1;
@@ -429,6 +427,10 @@
     <p class="hint">Text before/after the link? Don't worry, we'll filter it out.</p>
   </div>
 
+  <!-- Error reporting (see sentry-init.js). Moved here from <head> so it no
+       longer blocks parsing/painting the page above it — order relative to
+       the other scripts below is unchanged (still runs first). -->
+  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="logbuffer.js"></script>
   <script src="config.js"></script>

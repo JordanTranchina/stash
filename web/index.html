@@ -28,13 +28,6 @@
 
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css">
-
-  <!-- Supabase -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Markdown parser -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- Error reporting (see sentry-init.js) -->
-  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -115,14 +108,16 @@
                reachable from every view. Opens the same modal as Settings. -->
           <button type="button" class="header-bug-btn" id="header-bug-btn" aria-label="Report a bug" title="Report a bug">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="8" y="6" width="8" height="14" rx="4"></rect>
-              <path d="M19 7l-3 2M5 7l3 2M12 20v-6M12 6V4M4 13H2M22 13h-2M19 19l-3-2M5 19l3-2"></path>
+              <circle cx="12" cy="6" r="2"></circle>
+              <path d="M10.6 4.3L9 2M13.4 4.3L15 2"></path>
+              <rect x="7" y="8.5" width="10" height="11.5" rx="5"></rect>
+              <path d="M12 8.5v11.5M7 11l-4-2M17 11l4-2M6 14H2M18 14h4M7 17l-4 2M17 17l4 2"></path>
             </svg>
           </button>
         </header>
 
         <!-- Content Area -->
-        <div class="content">
+        <div class="content" id="content-scroll">
           <!-- Saves View -->
           <div id="saves-view">
             <div id="saves-container" class="saves-grid">
@@ -133,10 +128,28 @@
               <div class="spinner"></div>
             </div>
 
+            <!-- Shown while the next page of saves is loading, scrolled into
+                 view (see StashApp.bindEvents' #content-scroll listener). -->
+            <div id="loading-more" class="loading hidden">
+              <div class="spinner"></div>
+            </div>
+
             <div id="empty-state" class="empty-state hidden">
               <div class="empty-icon">📚</div>
               <h3>Your stash is empty</h3>
               <p>Save your first article: tap <strong>Settings &rarr; Add URL</strong> and paste a link. On your phone you can also use the Share button in any browser and pick Stash.</p>
+            </div>
+
+            <!-- Shown instead of empty-state when loadSaves() couldn't reach
+                 the server AND there's no cached data to fall back to — see
+                 StashApp.loadSaves. Without this, a failed fetch left a
+                 totally blank screen indistinguishable from "still loading"
+                 or "no saves yet" (issue #107). -->
+            <div id="load-error-state" class="empty-state hidden">
+              <div class="empty-icon">⚠️</div>
+              <h3>Couldn't load your saves</h3>
+              <p>Check your connection and try again.</p>
+              <button type="button" class="btn primary" id="load-error-retry-btn">Retry</button>
             </div>
           </div>
 
@@ -266,8 +279,10 @@
                 </button>
                 <button class="settings-row" id="bug-report-settings-btn">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="8" y="6" width="8" height="14" rx="4"></rect>
-                    <path d="M19 7l-3 2M5 7l3 2M12 2v4M4 13H2M22 13h-2M19 19l-3-2M5 19l3-2"></path>
+                    <circle cx="12" cy="6" r="2"></circle>
+                    <path d="M10.6 4.3L9 2M13.4 4.3L15 2"></path>
+                    <rect x="7" y="8.5" width="10" height="11.5" rx="5"></rect>
+                    <path d="M12 8.5v11.5M7 11l-4-2M17 11l4-2M6 14H2M18 14h4M7 17l-4 2M17 17l4 2"></path>
                   </svg>
                   <span>Report a Bug</span>
                   <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -288,6 +303,11 @@
                 Made by <a href="https://www.jordantranchina.com" target="_blank">Jordan Tranchina</a><br>
                 Forked from <a href="https://kevinroose.com" target="_blank">Kevin Roose</a><br>
                 Built with <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a>, <a href="https://vercel.com" target="_blank">Vercel</a>, and <a href="https://supabase.com" target="_blank">Supabase</a>
+                <div class="legal-links">
+                  <a href="/privacy.html" target="_blank">Privacy Policy</a>
+                  <span aria-hidden="true">&middot;</span>
+                  <a href="/terms.html" target="_blank">Terms of Service</a>
+                </div>
                 <div class="app-version" id="app-version"></div>
               </div>
             </div>
@@ -336,7 +356,7 @@
       <aside id="reading-pane" class="reading-pane hidden">
         <div class="reading-chrome-top">
           <div class="reading-header">
-            <button class="btn icon" id="close-reading-btn">
+            <button class="btn icon" id="close-reading-btn" title="Close article" aria-label="Close article">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -349,7 +369,7 @@
           <div id="reading-meta" class="reading-meta"></div>
           <!-- Audio Player -->
           <div id="audio-player" class="audio-player hidden">
-            <button class="audio-play-btn" id="audio-play-btn" title="Play audio">
+            <button class="audio-play-btn" id="audio-play-btn" title="Play audio" aria-label="Play audio">
               <svg class="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
@@ -393,7 +413,7 @@
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
             </svg>
           </button>
-          <button class="btn icon" id="archive-btn" title="Archive">
+          <button class="btn icon" id="archive-btn" title="Archive" aria-label="Archive">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="21 8 21 21 3 21 3 8"></polyline>
               <rect x="1" y="3" width="22" height="5"></rect>
@@ -421,7 +441,7 @@
       <div class="modal-content digest-modal-content">
         <div class="modal-header">
           <h2>Add URL</h2>
-          <button class="btn icon modal-close-btn">
+          <button class="btn icon modal-close-btn" title="Close" aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -463,7 +483,7 @@
       <div class="modal-content digest-modal-content">
         <div class="modal-header">
           <h2>Podcast Host Personalities</h2>
-          <button class="btn icon modal-close-btn">
+          <button class="btn icon modal-close-btn" title="Close" aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -513,7 +533,7 @@
       <div class="modal-content digest-modal-content">
         <div class="modal-header">
           <h2>Import Articles</h2>
-          <button class="btn icon modal-close-btn">
+          <button class="btn icon modal-close-btn" title="Close" aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -554,7 +574,7 @@
       <div class="modal-content digest-modal-content">
         <div class="modal-header">
           <h2>Report a Bug</h2>
-          <button class="btn icon modal-close-btn">
+          <button class="btn icon modal-close-btn" title="Close" aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -562,15 +582,13 @@
           </button>
         </div>
         <div class="modal-body">
-          <p class="digest-description">Tell us what went wrong. A screenshot, your recent activity log, and the app version are attached automatically so we can track it down.</p>
+          <p class="digest-description">Tell us what went wrong. Your recent activity log and the app version are attached automatically so we can track it down — add a screenshot below if it helps.</p>
 
           <div class="digest-form">
             <div class="form-group">
               <label for="bug-report-text">What happened?</label>
               <textarea id="bug-report-text" rows="3" placeholder="Describe the bug"></textarea>
             </div>
-
-            <div id="bug-report-shot" class="bug-report-shot hidden"></div>
 
             <div class="form-group">
               <label for="bug-report-files">Add screenshots or a video (optional)</label>
@@ -610,6 +628,18 @@
     </div>
   </div>
 
+
+  <!-- Third-party libs. Moved here (from <head>) so they no longer block
+       parsing/painting the body above them — same reasoning as the app's own
+       scripts below, which have always lived at the bottom of <body>. Order
+       relative to those scripts is unchanged: these still run first, so
+       window.supabase / marked / Sentry are ready before config.js, db.js,
+       sentry-init.js, and app.js (which use them) run. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Error reporting (see sentry-init.js) -->
+  <script src="https://browser.sentry-cdn.com/10.69.0/bundle.min.js" crossorigin="anonymous"></script>
 
   <!-- Config -->
   <!-- logbuffer.js first: it wraps console.* so a bug report can carry the

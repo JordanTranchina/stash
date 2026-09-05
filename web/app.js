@@ -9,6 +9,32 @@ class StashApp {
     this.currentSave = null;
     this.saves = [];
     this.offlinePrefetchInFlight = false;
+    this.offlineContentPreloadInFlight = false;
+
+    // List pagination. The list view only ever needs the metadata columns
+    // below — never `content` (the full article body), which is fetched
+    // separately per-article (see openReadingPane) so a big stash doesn't
+    // mean downloading every article's text on every app open.
+    this.PAGE_SIZE = 50;
+    this.savesOffset = 0;
+    this.hasMoreSaves = true;
+    this.loadingMoreSaves = false;
+    // search_saves() (see search()) returns its full result set in one call
+    // rather than being range-paginated like loadSaves — infinite scroll is
+    // suppressed while a search is active so it can't clobber the results
+    // with a plain loadSaves() page.
+    this.searchActive = false;
+    this.SAVES_LIST_COLUMNS =
+      'id, folder_id, url, title, excerpt, highlight, site_name, author, ' +
+      'published_at, image_url, is_archived, is_favorite, read_at, ' +
+      'read_percent, source, audio_url, word_count, created_at, updated_at';
+
+    // How much gets preloaded (full article text, cached to IndexedDB) for
+    // offline reading without the user opening every article first: saves
+    // from the last 30 days, or the 100 most recently saved — whichever a
+    // given save qualifies under.
+    this.OFFLINE_PRELOAD_DAYS = 30;
+    this.OFFLINE_PRELOAD_COUNT = 100;
 
     // Audio player state
     this.audio = null;
@@ -46,10 +72,10 @@ class StashApp {
     this.bugReporter.bindEvents();
     this.installErrorReporting();
 
-    // Deep link (also used by the podcast show notes): ?report-bug=1 opens the
-    // reporter straight away. No auto-screenshot — the app may still be loading.
+    // Deep link (also used by the podcast show notes): ?report-bug=1 opens
+    // the reporter straight away.
     if (new URLSearchParams(window.location.search).get('report-bug') === '1') {
-      this.bugReporter.open({ autoShot: false });
+      this.bugReporter.open();
     }
 
     // Everything that touches user data waits on a real session. getSession()
@@ -97,6 +123,7 @@ class StashApp {
 
     if (session) {
       this.user = session.user;
+      window.StashAnalytics?.capture('signed_in');
       this.showMainScreen();
       this.loadData();
       this.syncPendingShares();
@@ -104,6 +131,7 @@ class StashApp {
       this.setupRealtime();
     } else {
       this.user = null;
+      window.StashAnalytics?.capture('signed_out');
       this.teardownRealtime();
       this.saves = [];
       this.showAuthScreen();
@@ -259,22 +287,30 @@ class StashApp {
   }
 
   bindEvents() {
+    // Every lookup below is optional-chained: a single renamed/missing element
+    // ID used to throw here and abort the rest of bindEvents (and init()
+    // itself, since it isn't wrapped in try/catch) — see STASH-2/STASH-7.
     // Auth form
-    document.getElementById('auth-form').addEventListener('submit', (e) => {
+    document.getElementById('auth-form')?.addEventListener('submit', (e) => {
       e.preventDefault();
       this.signIn();
     });
 
-    document.getElementById('signup-btn').addEventListener('click', () => {
+    document.getElementById('signup-btn')?.addEventListener('click', () => {
       this.signUp();
     });
 
-    document.getElementById('google-signin-btn').addEventListener('click', () => {
+    document.getElementById('google-signin-btn')?.addEventListener('click', () => {
       this.signInWithGoogle();
     });
 
-    document.getElementById('signout-btn').addEventListener('click', () => {
+    document.getElementById('signout-btn')?.addEventListener('click', () => {
       this.signOut();
+    });
+
+    // Retry button on the "couldn't load your saves" error state (see loadSaves)
+    document.getElementById('load-error-retry-btn')?.addEventListener('click', () => {
+      this.loadSaves();
     });
 
     // Bottom tab bar navigation
@@ -287,32 +323,36 @@ class StashApp {
     });
 
     // Stats (opened from within Settings)
-    document.getElementById('view-stats-btn').addEventListener('click', () => {
+    document.getElementById('view-stats-btn')?.addEventListener('click', () => {
       this.showStats();
     });
 
     // Offline image downloads (Settings → Offline Reading)
     const offlineImagesToggle = document.getElementById('offline-images-toggle');
-    offlineImagesToggle.checked = this.getOfflineImagesEnabled();
-    offlineImagesToggle.addEventListener('change', (e) => {
-      localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
-      if (e.target.checked) this.prefetchOfflineImages(this.saves);
-    });
+    if (offlineImagesToggle) {
+      offlineImagesToggle.checked = this.getOfflineImagesEnabled();
+      offlineImagesToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
+        if (e.target.checked) this.prefetchOfflineImages(this.saves);
+      });
+    }
 
     const offlineWifiOnlyToggle = document.getElementById('offline-wifi-only-toggle');
-    offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
-    offlineWifiOnlyToggle.addEventListener('change', (e) => {
-      localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
-    });
+    if (offlineWifiOnlyToggle) {
+      offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
+      offlineWifiOnlyToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
+      });
+    }
 
-    document.getElementById('offline-clear-btn').addEventListener('click', () => {
+    document.getElementById('offline-clear-btn')?.addEventListener('click', () => {
       this.clearOfflineImageCache();
     });
     this.updateOfflineStorageLabel();
 
     // Search
     let searchTimeout;
-    document.getElementById('search-input').addEventListener('input', (e) => {
+    document.getElementById('search-input')?.addEventListener('input', (e) => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
         this.search(e.target.value);
@@ -320,13 +360,39 @@ class StashApp {
     });
 
     // Sort
-    document.getElementById('sort-select').addEventListener('change', (e) => {
+    document.getElementById('sort-select')?.addEventListener('change', (e) => {
       window.StashAnalytics?.capture('sort_changed', { sort: e.target.value, view: this.currentView });
       this.loadSaves();
     });
 
+    // Infinite scroll: load the next page of saves once the user nears the
+    // bottom of the list. Only "all"/"archived" are paginated (podcasts and
+    // settings don't use #saves-container).
+    const contentScroll = document.getElementById('content-scroll');
+    if (contentScroll) {
+      const NEAR_BOTTOM_PX = 600;
+      contentScroll.addEventListener('scroll', () => {
+        if (this.currentView !== 'all' && this.currentView !== 'archived') return;
+        if (this.searchActive) return;
+        const remaining = contentScroll.scrollHeight - contentScroll.scrollTop - contentScroll.clientHeight;
+        if (remaining < NEAR_BOTTOM_PX) this.loadMoreSaves();
+      });
+    }
+
+    // Opening a save: one delegated listener on the container instead of a
+    // listener per card (renderSaves() used to attach/detach these on every
+    // render, which added up across a large, frequently-re-rendered list).
+    document.getElementById('saves-container')?.addEventListener('click', (e) => {
+      const card = e.target.closest('.save-card');
+      if (!card) return;
+      const swipeEl = card.closest('.save-card-swipe');
+      if (swipeEl && swipeEl._suppressClick) return;
+      const save = this._savesById?.get(card.dataset.id);
+      if (save) this.openReadingPane(save);
+    });
+
     // Reading pane
-    document.getElementById('close-reading-btn').addEventListener('click', () => {
+    document.getElementById('close-reading-btn')?.addEventListener('click', () => {
       this.closeReadingPane();
     });
 
@@ -339,7 +405,7 @@ class StashApp {
       }
     });
 
-    document.getElementById('archive-btn').addEventListener('click', () => {
+    document.getElementById('archive-btn')?.addEventListener('click', () => {
       this.toggleArchive();
     });
 
@@ -351,19 +417,19 @@ class StashApp {
     });
 
     // Font size controls (reading pane footer + Settings default)
-    document.getElementById('reading-font-decrease-btn').addEventListener('click', () => {
+    document.getElementById('reading-font-decrease-btn')?.addEventListener('click', () => {
       this.adjustFontSize(-this.FONT_SIZE_STEP);
     });
-    document.getElementById('reading-font-increase-btn').addEventListener('click', () => {
+    document.getElementById('reading-font-increase-btn')?.addEventListener('click', () => {
       this.adjustFontSize(this.FONT_SIZE_STEP);
     });
-    document.getElementById('reading-font-reset-btn').addEventListener('click', () => {
+    document.getElementById('reading-font-reset-btn')?.addEventListener('click', () => {
       this.resetFontSize();
     });
-    document.getElementById('settings-font-decrease-btn').addEventListener('click', () => {
+    document.getElementById('settings-font-decrease-btn')?.addEventListener('click', () => {
       this.adjustDefaultFontSize(-this.FONT_SIZE_STEP);
     });
-    document.getElementById('settings-font-increase-btn').addEventListener('click', () => {
+    document.getElementById('settings-font-increase-btn')?.addEventListener('click', () => {
       this.adjustDefaultFontSize(this.FONT_SIZE_STEP);
     });
 
@@ -377,17 +443,17 @@ class StashApp {
     }
 
     // Audio player controls
-    document.getElementById('audio-play-btn').addEventListener('click', () => {
+    document.getElementById('audio-play-btn')?.addEventListener('click', () => {
       this.toggleAudioPlayback();
     });
 
-    document.getElementById('audio-speed').addEventListener('change', (e) => {
+    document.getElementById('audio-speed')?.addEventListener('change', (e) => {
       if (this.audio) {
         this.audio.playbackRate = parseFloat(e.target.value);
       }
     });
 
-    document.getElementById('audio-progress-bar').addEventListener('click', (e) => {
+    document.getElementById('audio-progress-bar')?.addEventListener('click', (e) => {
       if (this.audio && this.audio.duration) {
         const rect = e.target.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
@@ -398,52 +464,52 @@ class StashApp {
     // Podcast Settings Modal (host personalities)
     const podcastModal = document.getElementById('podcast-modal');
 
-    document.getElementById('podcast-settings-btn').addEventListener('click', () => {
+    document.getElementById('podcast-settings-btn')?.addEventListener('click', () => {
       this.showPodcastModal();
     });
-    podcastModal.querySelector('.modal-overlay').addEventListener('click', () => {
+    podcastModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
       this.hidePodcastModal();
     });
-    podcastModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+    podcastModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
       this.hidePodcastModal();
     });
-    document.getElementById('podcast-cancel-btn').addEventListener('click', () => {
+    document.getElementById('podcast-cancel-btn')?.addEventListener('click', () => {
       this.hidePodcastModal();
     });
-    document.getElementById('podcast-save-btn').addEventListener('click', () => {
+    document.getElementById('podcast-save-btn')?.addEventListener('click', () => {
       this.savePodcastPreferences();
     });
 
     // Add URL Modal (manually ingest a single link)
     const addUrlModal = document.getElementById('add-url-modal');
 
-    document.getElementById('header-add-btn').addEventListener('click', () => {
+    document.getElementById('header-add-btn')?.addEventListener('click', () => {
       this.showAddUrlModal();
     });
 
     // Report a bug — always-visible header button, on every view.
-    document.getElementById('header-bug-btn').addEventListener('click', () => {
+    document.getElementById('header-bug-btn')?.addEventListener('click', () => {
       this.bugReporter.open();
     });
-    addUrlModal.querySelector('.modal-overlay').addEventListener('click', () => {
+    addUrlModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
       this.hideAddUrlModal();
     });
-    addUrlModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+    addUrlModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
       this.hideAddUrlModal();
     });
-    document.getElementById('add-url-cancel-btn').addEventListener('click', () => {
+    document.getElementById('add-url-cancel-btn')?.addEventListener('click', () => {
       this.hideAddUrlModal();
     });
-    document.getElementById('add-url-save-btn').addEventListener('click', () => {
+    document.getElementById('add-url-save-btn')?.addEventListener('click', () => {
       this.saveUrlManually();
     });
-    document.getElementById('add-url-paste-btn').addEventListener('click', () => {
+    document.getElementById('add-url-paste-btn')?.addEventListener('click', () => {
       this.pasteUrlFromClipboard();
     });
     // Native paste (long-press / Ctrl+V) doesn't go through the button above,
     // but people often paste a whole forwarded message rather than a bare
     // link — detect the URL inside it the same way.
-    document.getElementById('add-url-url').addEventListener('paste', (e) => {
+    document.getElementById('add-url-url')?.addEventListener('paste', (e) => {
       const pasted = (e.clipboardData || window.clipboardData).getData('text');
       const detected = window.StashSave.extractUrlFromText(pasted);
       if (detected && detected !== pasted.trim()) {
@@ -455,38 +521,38 @@ class StashApp {
     // Import Articles Modal (CSV from other read-it-later services)
     const importModal = document.getElementById('import-modal');
 
-    document.getElementById('import-settings-btn').addEventListener('click', () => {
+    document.getElementById('import-settings-btn')?.addEventListener('click', () => {
       this.showImportModal();
     });
-    importModal.querySelector('.modal-overlay').addEventListener('click', () => {
+    importModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
       this.hideImportModal();
     });
-    importModal.querySelector('.modal-close-btn').addEventListener('click', () => {
+    importModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
       this.hideImportModal();
     });
-    document.getElementById('import-cancel-btn').addEventListener('click', () => {
+    document.getElementById('import-cancel-btn')?.addEventListener('click', () => {
       this.handleImportCancel();
     });
-    document.getElementById('import-file').addEventListener('change', (e) => {
+    document.getElementById('import-file')?.addEventListener('change', (e) => {
       this.handleImportFile(e.target.files[0]);
     });
-    document.getElementById('import-start-btn').addEventListener('click', () => {
+    document.getElementById('import-start-btn')?.addEventListener('click', () => {
       this.runImport();
     });
 
     // PWA: Online/Offline Status
     window.addEventListener('online', () => this.updateOnlineStatus());
     window.addEventListener('offline', () => this.updateOnlineStatus());
-    
+
     // PWA: Install Prompt
     const installBtn = document.getElementById('install-app-settings-btn');
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
-      installBtn.classList.remove('hidden');
+      installBtn?.classList.remove('hidden');
     });
 
-    installBtn.addEventListener('click', () => {
+    installBtn?.addEventListener('click', () => {
       if (!this.deferredPrompt) return;
       this.deferredPrompt.prompt();
       this.deferredPrompt.userChoice.then((choiceResult) => {
@@ -498,7 +564,7 @@ class StashApp {
     });
 
     window.addEventListener('appinstalled', () => {
-      installBtn.classList.add('hidden');
+      installBtn?.classList.add('hidden');
       this.deferredPrompt = null;
     });
   }
@@ -675,34 +741,56 @@ class StashApp {
     });
   }
 
-  async loadSaves() {
+  // Loads one page of the current view (`reset: true`, the default) or the
+  // next page onto the end of the current list (`reset: false`, see
+  // loadMoreSaves). The list only ever needs metadata — SAVES_LIST_COLUMNS
+  // deliberately leaves out `content` (the full article body), which can be
+  // megabytes across a large stash and is fetched per-article instead (see
+  // openReadingPane / preloadOfflineArticles).
+  async loadSaves({ reset = true } = {}) {
     const container = document.getElementById('saves-container');
     const loading = document.getElementById('loading');
+    const loadingMore = document.getElementById('loading-more');
     const empty = document.getElementById('empty-state');
-    
-    // OFFLINE: Load from IndexedDB first for instant render.
-    // getArticles() returns the raw cache (all articles, keyed/ordered by id),
-    // so we must apply the same view filter + sort the server query uses.
-    // Otherwise the first paint flashes archived items in id order before the
-    // fresh server response replaces it with the correct, ordered list.
-    const cachedSaves = await window.StashDB.getArticles();
-    const visibleCached = this.filterAndSortSaves(cachedSaves);
-    if (visibleCached.length > 0) {
+    const loadError = document.getElementById('load-error-state');
+
+    if (reset) {
+      this.savesOffset = 0;
+      this.hasMoreSaves = true;
+      this.searchActive = false;
+      loadError.classList.add('hidden');
+
+      // OFFLINE: Load from IndexedDB first for instant render.
+      // getArticles() returns the raw cache (all cached metadata, keyed/
+      // ordered by id), so we must apply the same view filter + sort the
+      // server query uses. Otherwise the first paint flashes archived items
+      // in id order before the fresh server response replaces it with the
+      // correct, ordered list. The cache can hold more than one page's worth
+      // from earlier sessions; the first fresh page below intentionally
+      // replaces it with just the current page, so scrolling further re-pages
+      // from the server exactly like a first-ever load would.
+      const cachedSaves = await window.StashDB.getArticles();
+      const visibleCached = this.filterAndSortSaves(cachedSaves);
+      if (visibleCached.length > 0) {
         this.saves = visibleCached;
         this.renderSaves();
-    } else {
+      } else {
         // Only show spinner if we have NO data to show for this view
         loading.classList.remove('hidden');
+      }
+    } else {
+      if (loadingMore) loadingMore.classList.remove('hidden');
     }
 
-    // ONLINE: Fetch fresh data
+    // ONLINE: Fetch the current page
     const sortValue = document.getElementById('sort-select').value;
     const [column, direction] = sortValue.split('.');
 
     let query = this.supabase
       .from('saves')
-      .select('*')
-      .order(column, { ascending: direction === 'asc' });
+      .select(this.SAVES_LIST_COLUMNS)
+      .order(column, { ascending: direction === 'asc' })
+      .range(this.savesOffset, this.savesOffset + this.PAGE_SIZE - 1);
 
     // Apply view filters
     if (this.currentView === 'archived') {
@@ -714,36 +802,83 @@ class StashApp {
     const { data, error } = await query;
 
     loading.classList.add('hidden');
+    if (loadingMore) loadingMore.classList.add('hidden');
 
     if (error) {
       console.error('Error loading saves:', error);
-      // If we have cached data, we are fine. Maybe show a toast?
-      // For now, silent fail to offline mode is acceptable behavior
+      if (this.saves.length > 0) {
+        // Already showing cached/previous data (rendered above, or from an
+        // earlier page) — let it stand rather than blanking a working view,
+        // but say so since it's now stale.
+        this.showToast("Couldn't refresh — showing saved data");
+      } else if (reset) {
+        // No cache and the fetch failed: previously this left the screen
+        // totally blank (empty of any message) because neither the loading
+        // spinner nor the empty-state applied — indistinguishable from "no
+        // saves yet" or "still loading" (issue #107). Show a distinct,
+        // retryable error state instead.
+        empty.classList.add('hidden');
+        container.innerHTML = '';
+        loadError.classList.remove('hidden');
+      }
       return;
     }
 
-    this.saves = data || [];
-    
-    // UPDATE CACHE: Save latest data to IndexedDB
-    if (this.saves.length > 0) {
-        window.StashDB.saveArticles(this.saves);
+    const page = data || [];
+    this.hasMoreSaves = page.length === this.PAGE_SIZE;
+    this.savesOffset += page.length;
+    this.saves = reset ? page : this.saves.concat(page);
+    window.StashAnalytics?.capture('saves_loaded', { view: this.currentView, page_count: page.length, total: this.saves.length });
+
+    // UPDATE CACHE: merge this page's metadata into IndexedDB.
+    if (page.length > 0) {
+      window.StashDB.saveArticles(page);
     }
 
-    // Prefetch article images for offline reading. Only the unarchived
-    // ("all") view is used as the source of truth for "every unarchived
-    // save" — the archived view's saves are excluded from offline caching
-    // by design (see prefetchOfflineImages). Fire-and-forget.
+    // Prefetch article images + preload article text for offline reading.
+    // Only the unarchived ("all") view is used as the source of truth for
+    // "every unarchived save" — the archived view's saves are excluded from
+    // offline caching by design (see prefetchOfflineImages). Scoped to just
+    // this page's saves — earlier pages were already handled when they
+    // loaded. Deferred to idle time so it never competes with the render
+    // that just happened. Fire-and-forget.
     if (this.currentView !== 'archived') {
-      this.prefetchOfflineImages(this.saves);
+      const pageIndex = (this.savesOffset - page.length) / this.PAGE_SIZE;
+      this.runWhenIdle(() => {
+        this.prefetchOfflineImages(page);
+        this.preloadOfflineArticles(page, pageIndex);
+      });
     }
 
+    // Once per session, on a fresh load of the main list: drop anything from
+    // the local caches (metadata, article bodies, offline-image bookkeeping)
+    // that's no longer on the server — otherwise those caches only ever grow,
+    // even for saves deleted here or on another device. Cheap (id column
+    // only) and idle-deferred, so it never competes with the render above.
+    if (reset && this.currentView === 'all') {
+      this.runWhenIdle(() => this.pruneStaleCache());
+    }
+
+    loadError.classList.add('hidden');
     if (this.saves.length === 0) {
       this.renderEmptyState();
       empty.classList.remove('hidden');
       container.innerHTML = ''; // Clear any cached data if server says empty (edge case)
     } else {
       empty.classList.add('hidden');
-      this.renderSaves();
+      this.renderSaves(reset ? {} : { appendItems: page });
+    }
+  }
+
+  // Called by the #content-scroll listener in bindEvents() as the user nears
+  // the bottom of the list.
+  async loadMoreSaves() {
+    if (this.loadingMoreSaves || !this.hasMoreSaves) return;
+    this.loadingMoreSaves = true;
+    try {
+      await this.loadSaves({ reset: false });
+    } finally {
+      this.loadingMoreSaves = false;
     }
   }
 
@@ -763,103 +898,130 @@ class StashApp {
     }
   }
 
-  renderSaves() {
+  // Markup for one save card (optionally wrapped in the swipe-to-archive
+  // container). Pulled out of renderSaves so the initial full render and the
+  // "append the next page" path (see loadSaves/loadMoreSaves) share it.
+  saveCardHtml(save, swipeEnabled, swipeRestores = false) {
+    const isHighlight = !!save.highlight;
+    const date = new Date(save.created_at).toLocaleDateString();
+
+    let cardHtml;
+    if (isHighlight) {
+      cardHtml = `
+        <div class="save-card highlight" data-id="${save.id}">
+          <div class="save-card-content">
+            <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
+            <div class="save-card-highlight">"${this.escapeHtml(save.highlight)}"</div>
+            <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
+            <div class="save-card-meta">
+              <span class="save-card-date">${date}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      // Reading time comes from the word_count column (see the
+      // 20260904_saves_word_count.sql migration) — never from splitting
+      // `save.content`, which the list view no longer fetches at all.
+      const minutes = this.readingTime(save);
+      const publishedDate = this.formattedPublishedDate(save);
+      const publishedSuffix = publishedDate
+        ? `<span class="meta-date-plain"> - ${this.escapeHtml(publishedDate)}</span>`
+        : '';
+      const readtime = minutes === null ? '' : `
+              <span class="save-card-readtime">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <path d="M12 7v5l3 2"></path>
+                </svg>${minutes} min read${publishedSuffix}
+              </span>`;
+      cardHtml = `
+        <div class="save-card" data-id="${save.id}">
+          <div class="save-card-content">
+            <div class="save-card-body">
+              <div class="save-card-site">${this.escapeHtml(save.site_name || this.hostFromUrl(save.url))}</div>
+              <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
+              ${readtime}
+            </div>
+            <div class="save-card-thumb">${this.cardThumb(save)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (!swipeEnabled) return cardHtml;
+
+    // Wrap in a swipe container with the action revealed on left-swipe:
+    // "Archive" on normal lists, "Move to Stash" in the archived view.
+    const swipeActionSvg = swipeRestores
+      ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 14 4 9 9 4"></polyline>
+            <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+          </svg>`
+      : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+            <rect x="1" y="3" width="22" height="5"></rect>
+            <line x1="10" y1="12" x2="14" y2="12"></line>
+          </svg>`;
+    return `
+      <div class="save-card-swipe" data-id="${save.id}">
+        <div class="save-card-swipe-action" aria-hidden="true">
+          ${swipeActionSvg}
+          <span>${swipeRestores ? 'Move to Stash' : 'Archive'}</span>
+        </div>
+        ${cardHtml}
+      </div>
+    `;
+  }
+
+  // Wires up swipe-to-archive on every `.save-card-swipe` found under `root`
+  // (a scope, not just the whole container, so appending a page only attaches
+  // gesture handlers to the cards that are actually new).
+  wireSwipeToArchive(root) {
+    const restore = this.currentView === 'archived';
+    root.querySelectorAll('.save-card-swipe').forEach(swipeEl => {
+      const card = swipeEl.querySelector('.save-card');
+      const save = this._savesById.get(swipeEl.dataset.id);
+      if (card && save) this.attachSwipeToArchive(swipeEl, card, save, restore);
+    });
+  }
+
+  // renderSaves() rebuilds the whole list (view switch, sort/search change,
+  // or the first page of a fresh loadSaves()). renderSaves({ appendItems })
+  // instead appends just the newly-loaded page onto the end without touching
+  // the DOM for cards already on screen — see loadSaves/loadMoreSaves.
+  renderSaves({ appendItems } = {}) {
     const container = document.getElementById('saves-container');
 
-    // Swipe commits an archive on normal lists and an un-archive (restore) in
-    // the archived view — either way every card gets the swipe wrapper.
+    // Keyed lookup for card->save resolution (click delegation, swipe
+    // wiring). Rebuilt from the full list on every render; O(n) to build and
+    // O(1) per lookup, replacing the old `this.saves.find()` per card, which
+    // was O(n) per card and so O(n²) across the whole list.
+    this._savesById = new Map(this.saves.map(s => [s.id, s]));
+
+    // Every list gets the swipe wrapper: it commits an archive on normal
+    // lists and an un-archive (restore) in the archived view.
     const swipeEnabled = true;
     const swipeRestores = this.currentView === 'archived';
 
-    container.innerHTML = this.saves.map(save => {
-      const isHighlight = !!save.highlight;
-      const date = new Date(save.created_at).toLocaleDateString();
-
-      let cardHtml;
-      if (isHighlight) {
-        cardHtml = `
-          <div class="save-card highlight" data-id="${save.id}">
-            <div class="save-card-content">
-              <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
-              <div class="save-card-highlight">"${this.escapeHtml(save.highlight)}"</div>
-              <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-              <div class="save-card-meta">
-                <span class="save-card-date">${date}</span>
-              </div>
-            </div>
-          </div>
-        `;
-      } else {
-        const minutes = this.readingTime(save);
-        const publishedDate = this.formattedPublishedDate(save);
-        const publishedSuffix = publishedDate
-          ? `<span class="meta-date-plain"> - ${this.escapeHtml(publishedDate)}</span>`
-          : '';
-        const readtime = minutes === null ? '' : `
-                <span class="save-card-readtime">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path d="M12 7v5l3 2"></path>
-                  </svg>${minutes} min read${publishedSuffix}
-                </span>`;
-        cardHtml = `
-          <div class="save-card" data-id="${save.id}">
-            <div class="save-card-content">
-              <div class="save-card-body">
-                <div class="save-card-site">${this.escapeHtml(save.site_name || this.hostFromUrl(save.url))}</div>
-                <div class="save-card-title">${this.escapeHtml(save.title || 'Untitled')}</div>
-                ${readtime}
-              </div>
-              <div class="save-card-thumb">${this.cardThumb(save)}</div>
-            </div>
-          </div>
-        `;
+    if (appendItems && appendItems.length) {
+      const html = appendItems.map(save => this.saveCardHtml(save, swipeEnabled, swipeRestores)).join('');
+      container.insertAdjacentHTML('beforeend', html);
+      // Only the freshly-inserted cards need wiring — a page is at most
+      // PAGE_SIZE items, so looking each one up by id is cheap.
+      if (swipeEnabled) {
+        appendItems.forEach(save => {
+          const swipeEl = container.querySelector(`.save-card-swipe[data-id="${save.id}"]`);
+          const card = swipeEl?.querySelector('.save-card');
+          if (swipeEl && card) this.attachSwipeToArchive(swipeEl, card, save, swipeRestores);
+        });
       }
-
-      if (!swipeEnabled) return cardHtml;
-
-      // Wrap in a swipe container with the action revealed on left-swipe:
-      // "Archive" on normal lists, "Move to Stash" in the archived view.
-      const swipeActionSvg = swipeRestores
-        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="9 14 4 9 9 4"></polyline>
-              <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
-            </svg>`
-        : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="21 8 21 21 3 21 3 8"></polyline>
-              <rect x="1" y="3" width="22" height="5"></rect>
-              <line x1="10" y1="12" x2="14" y2="12"></line>
-            </svg>`;
-      return `
-        <div class="save-card-swipe" data-id="${save.id}">
-          <div class="save-card-swipe-action" aria-hidden="true">
-            ${swipeActionSvg}
-            <span>${swipeRestores ? 'Move to Stash' : 'Archive'}</span>
-          </div>
-          ${cardHtml}
-        </div>
-      `;
-    }).join('');
-
-    // Bind click events (guarding against clicks that are really the end of a swipe)
-    container.querySelectorAll('.save-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const swipeEl = card.closest('.save-card-swipe');
-        if (swipeEl && swipeEl._suppressClick) return;
-        const id = card.dataset.id;
-        const save = this.saves.find(s => s.id === id);
-        if (save) this.openReadingPane(save);
-      });
-    });
-
-    // Wire up the swipe gesture on each card
-    if (swipeEnabled) {
-      container.querySelectorAll('.save-card-swipe').forEach(swipeEl => {
-        const card = swipeEl.querySelector('.save-card');
-        const save = this.saves.find(s => s.id === swipeEl.dataset.id);
-        if (card && save) this.attachSwipeToArchive(swipeEl, card, save, swipeRestores);
-      });
+      return;
     }
+
+    container.innerHTML = this.saves.map(save => this.saveCardHtml(save, swipeEnabled, swipeRestores)).join('');
+
+    if (swipeEnabled) this.wireSwipeToArchive(container);
   }
 
   // Attach a left-swipe gesture to a single save card. When `restore` is true
@@ -1203,9 +1365,27 @@ class StashApp {
     }
   }
 
+  // Runs `fn` when the browser is otherwise idle (falling back to a short
+  // timeout where requestIdleCallback isn't available, e.g. Safari), so
+  // background prefetch/preload work never competes with rendering the page
+  // that was just loaded.
+  runWhenIdle(fn) {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => fn(), { timeout: 2000 });
+    } else {
+      setTimeout(fn, 200);
+    }
+  }
+
   // Downloads article images for every save in `saves` that isn't already
   // fully cached, honoring the enabled/Wi-Fi-only settings and a storage
-  // headroom check. Fire-and-forget: callers don't await this.
+  // headroom check. Inline article images (as opposed to the og:image in
+  // `image_url`) are only found when `save.content` is already loaded —
+  // the list view doesn't fetch it (see SAVES_LIST_COLUMNS), so this mainly
+  // catches inline images for saves preloadOfflineArticles has already
+  // fetched the body for, or that the reader has opened. Up to 4 images
+  // download concurrently rather than one at a time. Fire-and-forget:
+  // callers don't await this.
   async prefetchOfflineImages(saves) {
     if (this.offlinePrefetchInFlight) return;
     if (!('caches' in window) || !window.StashOffline || !window.StashDB) return;
@@ -1217,41 +1397,141 @@ class StashApp {
       if (!(await this.hasOfflineStorageHeadroom())) return;
 
       const cache = await caches.open(window.StashOffline.IMAGE_CACHE_NAME);
-      for (const save of saves) {
-        if (save.is_archived) continue; // only unarchived saves stay offline-ready
-        if (!this.shouldPrefetchOfflineImagesNow()) break; // network/setting changed mid-pass
+      const queue = saves.filter(s => !s.is_archived); // only unarchived saves stay offline-ready
+      const CONCURRENCY = 4;
+      let next = 0;
 
-        const urls = window.StashOffline.extractImageUrls(save);
-        const existing = await window.StashDB.getOfflineStatus(save.id);
-        if (existing && existing.allCached && JSON.stringify(existing.imageUrls) === JSON.stringify(urls)) {
-          continue; // already fully cached for this exact set of image URLs
-        }
+      const worker = async () => {
+        while (next < queue.length) {
+          const save = queue[next++];
+          if (!this.shouldPrefetchOfflineImagesNow()) return; // network/setting changed mid-pass
 
-        let failures = 0;
-        for (const url of urls) {
-          try {
-            if (await cache.match(url)) continue;
-            // Cross-origin article images rarely send CORS headers for plain
-            // <img> use, so request them the same way the browser's own
-            // <img> tag would (no-cors, opaque response) — that's still
-            // cacheable and renders fine as an <img src>, just unreadable
-            // from script, which is all we need here.
-            const res = await fetch(url, { mode: 'no-cors' });
-            await cache.put(url, res);
-          } catch (e) {
-            failures++;
+          const urls = window.StashOffline.extractImageUrls(save);
+          const existing = await window.StashDB.getOfflineStatus(save.id);
+          const urlsKey = urls.join('\n');
+          if (existing && existing.allCached && (existing.imageUrls || []).join('\n') === urlsKey) {
+            continue; // already fully cached for this exact set of image URLs
           }
-        }
 
-        await window.StashDB.setOfflineStatus(save.id, {
-          imageUrls: urls,
-          allCached: failures === 0,
-          cachedAt: Date.now(),
-        });
-      }
+          let failures = 0;
+          await Promise.all(urls.map(async (url) => {
+            try {
+              if (await cache.match(url)) return;
+              // Cross-origin article images rarely send CORS headers for plain
+              // <img> use, so request them the same way the browser's own
+              // <img> tag would (no-cors, opaque response) — that's still
+              // cacheable and renders fine as an <img src>, just unreadable
+              // from script, which is all we need here.
+              const res = await fetch(url, { mode: 'no-cors' });
+              await cache.put(url, res);
+            } catch (e) {
+              failures++;
+            }
+          }));
+
+          await window.StashDB.setOfflineStatus(save.id, {
+            imageUrls: urls,
+            allCached: failures === 0,
+            cachedAt: Date.now(),
+          });
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
       this.updateOfflineStorageLabel();
     } finally {
       this.offlinePrefetchInFlight = false;
+    }
+  }
+
+  // Preloads full article text (and, once it's loaded, that save's inline
+  // images) for offline reading, without waiting for the user to open every
+  // article first. Scoped to saves that are either recent or among the most
+  // recently saved — see OFFLINE_PRELOAD_DAYS / OFFLINE_PRELOAD_COUNT —
+  // rather than the whole stash, so this stays a background nice-to-have and
+  // never turns back into "download everything". Reuses the same
+  // enabled/Wi-Fi-only/storage-headroom gating as prefetchOfflineImages, via
+  // the same settings. Fire-and-forget: callers don't await this.
+  //
+  // `pageIndex` is this page's position in the paginated list (0 for the
+  // first page loaded this session) — the "most recently saved" check only
+  // needs to know whether this page is still within the first
+  // OFFLINE_PRELOAD_COUNT saves, not a separate query.
+  async preloadOfflineArticles(saves, pageIndex = 0) {
+    if (this.offlineContentPreloadInFlight) return;
+    if (!window.StashDB?.getArticleContent || !window.StashDB?.saveArticleContent) return;
+    if (!this.shouldPrefetchOfflineImagesNow()) return; // same gating as image prefetch
+    if (!saves || !saves.length) return;
+
+    const cutoff = Date.now() - this.OFFLINE_PRELOAD_DAYS * 24 * 60 * 60 * 1000;
+    const recentEnough = (save) => new Date(save.created_at).getTime() >= cutoff;
+    const withinTopCount = (indexInPage) =>
+      pageIndex * this.PAGE_SIZE + indexInPage < this.OFFLINE_PRELOAD_COUNT;
+
+    const candidates = saves.filter((save, i) =>
+      !save.is_archived && !save.highlight && (recentEnough(save) || withinTopCount(i)));
+    if (!candidates.length) return;
+
+    this.offlineContentPreloadInFlight = true;
+    try {
+      if (!(await this.hasOfflineStorageHeadroom())) return;
+
+      const CONCURRENCY = 4;
+      let next = 0;
+      const worker = async () => {
+        while (next < candidates.length) {
+          const save = candidates[next++];
+          if (!this.shouldPrefetchOfflineImagesNow()) return;
+          if (typeof save.content === 'string') continue; // already in hand
+
+          try {
+            const cached = await window.StashDB.getArticleContent(save.id);
+            if (typeof cached === 'string') {
+              save.content = cached;
+              continue; // already cached from an earlier session
+            }
+          } catch (e) { /* fall through to a network fetch */ }
+
+          if (!navigator.onLine) continue;
+          try {
+            const { data, error } = await this.supabase
+              .from('saves')
+              .select('content')
+              .eq('id', save.id)
+              .single();
+            if (error || !data) continue;
+            const content = data.content || '';
+            await window.StashDB.saveArticleContent(save.id, content);
+            save.content = content;
+            // Now that content is loaded, this save's inline images (not
+            // just its og:image) can be found and cached too.
+            this.prefetchOfflineImages([save]);
+          } catch (e) { /* best-effort — try again next time this save shows up */ }
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, worker));
+    } finally {
+      this.offlineContentPreloadInFlight = false;
+    }
+  }
+
+  // Once per session: fetches every id currently on the server for this
+  // user and drops anything from the local caches that isn't in that set
+  // (see StashDB.pruneMissingArticles). Only the id column is requested, so
+  // this stays cheap even for a large stash. Best-effort — skipped offline,
+  // and any failure just leaves the prune for next session.
+  async pruneStaleCache() {
+    if (this._prunedThisSession) return;
+    if (!window.StashDB?.pruneMissingArticles) return;
+    if (!navigator.onLine) return;
+    this._prunedThisSession = true;
+    try {
+      const { data, error } = await this.supabase.from('saves').select('id');
+      if (error || !data) return;
+      await window.StashDB.pruneMissingArticles(data.map(s => s.id));
+    } catch (e) {
+      /* best-effort */
     }
   }
 
@@ -1362,6 +1642,11 @@ class StashApp {
 
   // Podcasts view (Listen Later, #12)
   async loadPodcasts() {
+    // Guard against a call that lands before/after the signed-in user is set
+    // (STASH-D): the query below reads this.user.id, which threw "Cannot read
+    // properties of null (reading 'id')" when this ran without a session.
+    if (!this.user) return;
+
     const container = document.getElementById('saves-container');
     const loading = document.getElementById('loading');
     const empty = document.getElementById('empty-state');
@@ -1420,7 +1705,7 @@ class StashApp {
       return `
         <div class="podcast-episode" data-id="${ep.id}">
           <div class="podcast-episode-header">
-            ${ep.artwork_url ? `<img class="podcast-episode-artwork" src="${this.escapeHtml(ep.artwork_url)}" alt="">` : ''}
+            ${ep.artwork_url ? `<img class="podcast-episode-artwork" src="${this.safeImageUrl(ep.artwork_url)}" alt="" loading="lazy" decoding="async">` : ''}
             <div class="podcast-episode-header-text">
               <div class="podcast-episode-title">${this.escapeHtml(ep.title || 'Untitled Episode')}</div>
               <div class="podcast-episode-meta">${date}${duration ? ` · ${duration}` : ''}</div>
@@ -1527,14 +1812,21 @@ class StashApp {
 
   async search(query) {
     if (!query.trim()) {
-      this.loadSaves();
+      this.loadSaves(); // resets searchActive back to false
       return;
     }
 
-    const { data } = await this.supabase.rpc('search_saves', {
-      search_query: query,
-      user_uuid: this.user.id,
-    });
+    this.searchActive = true;
+    // search_saves() returns setof saves (select *) — restricting the
+    // client-side select to the list columns (no `content`) keeps a search
+    // just as light as a normal page load; the reading pane fetches the
+    // body on demand either way (see openReadingPane/getSaveContent).
+    const { data } = await this.supabase
+      .rpc('search_saves', {
+        search_query: query,
+        user_uuid: this.user.id,
+      })
+      .select(this.SAVES_LIST_COLUMNS);
 
     this.saves = data || [];
     // query_length lets zero-result rate ignore half-typed stubs: search runs
@@ -1559,41 +1851,16 @@ class StashApp {
       ${save.site_name || ''} ${save.author ? `· ${save.author}` : ''} · ${new Date(save.created_at).toLocaleDateString()}
     `;
 
-    // Handle audio player visibility
-    const audioPlayer = document.getElementById('audio-player');
-    const audioGenerating = document.getElementById('audio-generating');
+    this.updateAudioIndicator(save);
 
-    if (save.audio_url) {
-      // Audio is ready - show player
-      audioPlayer.classList.remove('hidden');
-      audioGenerating.classList.add('hidden');
-      this.initAudio(save.audio_url);
-    } else if (save.content && save.content.length > 100 && !save.highlight) {
-      // Content exists but no audio yet - show generating indicator
-      audioPlayer.classList.add('hidden');
-      audioGenerating.classList.remove('hidden');
-    } else {
-      // No audio applicable (highlights, short content)
-      audioPlayer.classList.add('hidden');
-      audioGenerating.classList.add('hidden');
-    }
-
-    if (save.highlight) {
-      document.getElementById('reading-body').innerHTML = `
-        <blockquote style="font-style: italic; background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-          "${this.escapeHtml(save.highlight)}"
-        </blockquote>
-        <p><a href="${save.url}" target="_blank" style="color: var(--primary);">View original →</a></p>
-      `;
-    } else if (save.content || save.excerpt) {
-      document.getElementById('reading-body').innerHTML = this.renderMarkdown(save.content || save.excerpt);
-    } else {
-      document.getElementById('reading-body').innerHTML = `
-        <div class="reading-empty">
-          <p>We couldn't fetch this article's content.</p>
-          <a href="${save.url || '#'}" target="_blank" class="btn primary">View Original</a>
-        </div>
-      `;
+    // The list view no longer fetches `content` (see SAVES_LIST_COLUMNS) —
+    // most `save` objects arrive here with only `excerpt`. Render whatever's
+    // already on hand immediately (never block opening the pane on a
+    // network round-trip), then fetch the full body in the background and
+    // swap it in once it lands.
+    this.renderReadingBody(save, save.content);
+    if (!save.highlight && typeof save.content !== 'string') {
+      this.loadFullSaveContent(save);
     }
 
     document.getElementById('open-original-btn').href = save.url || '#';
@@ -1633,19 +1900,124 @@ class StashApp {
     // Add open class for mobile slide-in animation
     requestAnimationFrame(() => {
       pane.classList.add('open');
-      // Resume roughly where the reader left off.
-      const readingContent = document.getElementById('reading-content');
-      if (readingContent && initialPercent > 0) {
-        const scrollHeight = readingContent.scrollHeight - readingContent.clientHeight;
-        if (scrollHeight > 0) {
-          readingContent.scrollTop = (initialPercent / 100) * scrollHeight;
-        }
-      }
+      this.restoreReadingScrollPosition(initialPercent);
     });
 
     // Push a history entry so the Android back gesture closes the reading
     // pane instead of falling through to the OS and exiting the app.
     history.pushState({ stashView: 'reading' }, '');
+  }
+
+  // Resumes roughly where the reader left off. Pulled out of openReadingPane
+  // so it can also be re-run once the full article body swaps in (see
+  // loadFullSaveContent) — the excerpt rendered at open time is usually too
+  // short for scrollHeight to reflect a meaningful position.
+  restoreReadingScrollPosition(percent) {
+    const readingContent = document.getElementById('reading-content');
+    if (!readingContent || percent <= 0) return;
+    const scrollHeight = readingContent.scrollHeight - readingContent.clientHeight;
+    if (scrollHeight > 0) {
+      readingContent.scrollTop = (percent / 100) * scrollHeight;
+    }
+  }
+
+  // Shows the audio player if TTS audio is ready, the "generating" indicator
+  // if there's enough content for one to eventually exist, or neither.
+  updateAudioIndicator(save) {
+    const audioPlayer = document.getElementById('audio-player');
+    const audioGenerating = document.getElementById('audio-generating');
+
+    if (save.audio_url) {
+      // Audio is ready - show player
+      audioPlayer.classList.remove('hidden');
+      audioGenerating.classList.add('hidden');
+      this.initAudio(save.audio_url);
+    } else if (save.content && save.content.length > 100 && !save.highlight) {
+      // Content exists but no audio yet - show generating indicator
+      audioPlayer.classList.add('hidden');
+      audioGenerating.classList.remove('hidden');
+    } else {
+      // No audio applicable (highlights, short content, or content not
+      // loaded yet — re-checked once loadFullSaveContent() resolves)
+      audioPlayer.classList.add('hidden');
+      audioGenerating.classList.add('hidden');
+    }
+  }
+
+  // Renders the reading pane body from whatever text is available: the full
+  // article, falling back to the excerpt, falling back to a "couldn't fetch"
+  // placeholder. `content` is passed explicitly (rather than always reading
+  // `save.content`) so the same renderer serves both the immediate render in
+  // openReadingPane and the swap-in once loadFullSaveContent resolves.
+  renderReadingBody(save, content) {
+    const body = document.getElementById('reading-body');
+    if (save.highlight) {
+      body.innerHTML = `
+        <blockquote style="font-style: italic; background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          "${this.escapeHtml(save.highlight)}"
+        </blockquote>
+        <p><a href="${this.escapeHtml(save.url)}" target="_blank" rel="noopener" style="color: var(--primary);">View original →</a></p>
+      `;
+    } else if (content || save.excerpt) {
+      body.innerHTML = this.renderMarkdown(content || save.excerpt);
+      this.prepareArticleImages(body);
+    } else {
+      body.innerHTML = `
+        <div class="reading-empty">
+          <p>We couldn't fetch this article's content.</p>
+          <a href="${this.escapeHtml(save.url) || '#'}" target="_blank" rel="noopener" class="btn primary">View Original</a>
+        </div>
+      `;
+    }
+  }
+
+  // Article text is fetched once per save, ever: this checks the on-device
+  // content cache first, then falls back to a single-row Supabase fetch (only
+  // `content` — everything else is already on `save` from the list query),
+  // and writes the result back to the cache. See also preloadOfflineArticles,
+  // which does the same fetch+cache ahead of time for recent saves so most
+  // opens hit the cache and skip the network entirely.
+  async getSaveContent(save) {
+    if (typeof save.content === 'string') return save.content;
+    if (window.StashDB?.getArticleContent) {
+      try {
+        const cached = await window.StashDB.getArticleContent(save.id);
+        if (typeof cached === 'string') return cached;
+      } catch (e) { /* fall through to a network fetch */ }
+    }
+    if (!navigator.onLine) return null;
+    try {
+      const { data, error } = await this.supabase
+        .from('saves')
+        .select('content')
+        .eq('id', save.id)
+        .single();
+      if (error || !data) return null;
+      const content = data.content || '';
+      window.StashDB?.saveArticleContent?.(save.id, content).catch(() => {});
+      return content;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Background fetch+swap for the reading pane opened in openReadingPane.
+  // Bails out quietly if the user has since closed/switched articles, or if
+  // nothing came back (offline with no cache, or the fetch failed).
+  async loadFullSaveContent(save) {
+    const content = await this.getSaveContent(save);
+    if (!content || this.currentSave !== save) return;
+
+    save.content = content;
+    this.renderReadingBody(save, content);
+    if (!save.audio_url) this.updateAudioIndicator(save);
+
+    // The excerpt-based render usually didn't have enough height to resume
+    // scroll position correctly — try again now that the full body is in.
+    const percent = Math.min(Math.max(save.read_percent || 0, 0), 100);
+    if (percent > 0 && document.getElementById('reading-content')?.scrollTop === 0) {
+      this.restoreReadingScrollPosition(percent);
+    }
   }
 
   closeReadingPane({ fromPopState = false } = {}) {
@@ -1719,11 +2091,21 @@ class StashApp {
     }
   }
 
-  // Word count of a save's extracted content, or null when there's no body
-  // text. Shared by article_opened / article_read_progress so length-vs-read
-  // analysis doesn't need a save_id join back to the row.
+  // Word count for a save, or null when there's no body text to count.
+  // Shared by readingTime() (card reading-time line) and the
+  // article_opened / article_read_progress analytics events.
+  //
+  // Prefers the stored `word_count` column (see the
+  // 20260904_saves_word_count.sql migration, kept current by a DB trigger)
+  // so this never has to re-split the full article text — the list view
+  // doesn't even fetch `content` anymore (see SAVES_LIST_COLUMNS). Splitting
+  // `save.content` is only a fallback for the moment right after a fresh
+  // save/edit, before the row (and its trigger-computed word_count) has come
+  // back from the server.
   wordCount(save) {
-    const text = (save && save.content) || '';
+    if (!save) return null;
+    if (Number.isFinite(save.word_count)) return save.word_count || null;
+    const text = save.content || '';
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     return words || null;
   }
@@ -1988,11 +2370,18 @@ class StashApp {
     });
   }
 
+  // Escapes for both text and attribute contexts. The old implementation set
+  // .textContent and read back .innerHTML, which leaves quotes untouched — a
+  // title or image URL containing a double quote could then break out of an
+  // attribute and inject markup.
   escapeHtml(text) {
     if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // Human-friendly host (e.g. "theverge.com") used as the publication source
@@ -2035,14 +2424,48 @@ class StashApp {
     return `linear-gradient(135deg, hsl(${hue} 62% 68%) 0%, hsl(${(hue + 40) % 360} 58% 52%) 100%)`;
   }
 
+  // Article bodies carry the original page's <img> tags. Deferring the ones
+  // below the fold keeps opening a long article cheap, and upgrading http://
+  // sources avoids mixed content the browser would otherwise block.
+  prepareArticleImages(root) {
+    root.querySelectorAll('img').forEach((img) => {
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      const src = img.getAttribute('src') || '';
+      if (/^http:\/\//i.test(src)) {
+        img.setAttribute('src', src.replace(/^http:\/\//i, 'https://'));
+      }
+    });
+  }
+
+  // Image URLs come from third-party page metadata, so they are neither
+  // trusted markup nor guaranteed to be https. Anything that is not http(s) is
+  // dropped (the caller then draws a monogram tile), http:// is upgraded so the
+  // https-served app does not request mixed content, and the result is escaped
+  // for use inside a src attribute.
+  safeImageUrl(url) {
+    if (!url) return '';
+    const trimmed = String(url).trim();
+    // Protocol-relative URLs are common in scraped metadata and are https here.
+    const absolute = trimmed.startsWith('//') ? `https:${trimmed}` : trimmed;
+    if (!/^https?:\/\//i.test(absolute)) return '';
+    return this.escapeHtml(absolute.replace(/^http:\/\//i, 'https://'));
+  }
+
   // Thumbnail markup for an article card: the real og:image when present,
   // otherwise a colored monogram tile using the source's first letter.
   cardThumb(save) {
-    if (save.image_url) {
+    const src = this.safeImageUrl(save.image_url);
+    if (src) {
       const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
       const seed = this.escapeHtml(save.site_name || save.title || save.url || '');
       const initial = this.escapeHtml((save.site_name || save.title || '?').trim().charAt(0) || '?');
-      return `<img src="${save.image_url}" alt="" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
+      // loading/decoding keep a long list from fetching every og:image at once:
+      // these are full-size article images rendered into a 96x96 tile, so an
+      // eager list of a few hundred saves pulled down tens of megabytes and
+      // pushed Largest Contentful Paint far out. width/height match the CSS box
+      // so the browser can reserve the space before the image arrives.
+      return `<img src="${src}" alt="" width="96" height="96" loading="lazy" decoding="async" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
     }
     return this.fallbackTile(save.site_name || save.title || save.url || '', (save.site_name || save.title || '?').trim().charAt(0) || '?');
   }

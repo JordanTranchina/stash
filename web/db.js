@@ -1,7 +1,8 @@
 // Stash IndexedDB Wrapper
 const DB_NAME = 'StashDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_ARTICLES = 'articles';
+const STORE_ARTICLE_CONTENT = 'article_content'; // Full article bodies, cached separately (see below)
 const STORE_PENDING = 'pending_saves'; // For offline shares
 const STORE_SESSION = 'session'; // Auth tokens the Service Worker can read
 const STORE_OFFLINE_STATUS = 'offline_status'; // Per-article image prefetch bookkeeping
@@ -29,9 +30,23 @@ const dbPromise = new Promise((resolve, reject) => {
     request.onupgradeneeded = (event) => {
         const db = event.target.result;
         
-        // Store for cached articles (read-only offline access)
+        // Store for cached article metadata (read-only offline access) —
+        // everything the saves list needs EXCEPT the full article body. Kept
+        // small on purpose: saveArticles() is called with every page loaded
+        // (see web/app.js loadSaves), so this store holds one row per save
+        // ever paged through, not per save ever saved.
         if (!db.objectStoreNames.contains(STORE_ARTICLES)) {
             db.createObjectStore(STORE_ARTICLES, { keyPath: 'id' });
+        }
+
+        // Full article bodies, keyed separately from STORE_ARTICLES so the
+        // list's metadata cache never has to carry megabytes of article text
+        // just to render a list of titles. Populated on demand when an
+        // article is opened (getArticleContent/saveArticleContent, see
+        // web/app.js getSaveContent) and ahead of time for saves within the
+        // offline preload window (see preloadOfflineArticles).
+        if (!db.objectStoreNames.contains(STORE_ARTICLE_CONTENT)) {
+            db.createObjectStore(STORE_ARTICLE_CONTENT, { keyPath: 'id' });
         }
 
         // Store for pending saves (write offline, sync later)
@@ -98,6 +113,54 @@ self.StashDB = {
         });
     },
     
+    // Full-article-body cache (see STORE_ARTICLE_CONTENT above).
+    async getArticleContent(id) {
+        const db = await dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_ARTICLE_CONTENT], 'readonly');
+            const store = transaction.objectStore(STORE_ARTICLE_CONTENT);
+            const request = store.get(id);
+            request.onsuccess = () => resolve(request.result ? request.result.content : undefined);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async saveArticleContent(id, content) {
+        const db = await dbPromise;
+        const transaction = db.transaction([STORE_ARTICLE_CONTENT], 'readwrite');
+        transaction.objectStore(STORE_ARTICLE_CONTENT).put({ id, content, cachedAt: Date.now() });
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
+    // Drops cached metadata/content/offline-image bookkeeping for any id NOT
+    // in `keepIds` (an array/Set of every id currently on the server for this
+    // user — see StashApp.pruneStaleCache). Without this, a save deleted on
+    // the server (or on another device) would stay in the local cache forever
+    // — every page ever paged through, and every article body ever opened or
+    // preloaded, otherwise only ever grows.
+    async pruneMissingArticles(keepIds) {
+        const keep = keepIds instanceof Set ? keepIds : new Set(keepIds);
+        const db = await dbPromise;
+        const stores = [STORE_ARTICLES, STORE_ARTICLE_CONTENT, STORE_OFFLINE_STATUS];
+        const transaction = db.transaction(stores, 'readwrite');
+        stores.forEach((name) => {
+            const store = transaction.objectStore(name);
+            const request = store.getAllKeys();
+            request.onsuccess = () => {
+                request.result.forEach((key) => {
+                    if (!keep.has(key)) store.delete(key);
+                });
+            };
+        });
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+    },
+
     // Update the archived flag on a single cached article in place. Keeps the
     // offline cache consistent with the server after an archive/unarchive so the
     // next load's filtered render doesn't flash a stale (wrongly-filed) item.
