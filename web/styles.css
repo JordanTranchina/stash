@@ -1950,6 +1950,15 @@ select {
   color: var(--primary);
 }
 
+.legal-links {
+  margin-top: 8px;
+}
+
+.legal-links span {
+  margin: 0 6px;
+  color: var(--text-muted);
+}
+
 .app-version {
   margin-top: 8px;
   font-size: 10px;
