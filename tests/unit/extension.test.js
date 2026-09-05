@@ -143,7 +143,7 @@ describe('buildHighlightPayload', () => {
 // ---------------------------------------------------------------------------
 // Duplicate saves
 //
-// The dedup trigger added in supabase/migrations/20260824_saves_url_dedup.sql
+// The dedup trigger added in supabase/migrations/20260824010000_saves_url_dedup.sql
 // suppresses the INSERT for a URL that's already stashed (bumping the existing
 // save's date instead), so PostgREST hands back an empty representation.
 // savePage reads that empty array as "already saved" rather than as a failure.

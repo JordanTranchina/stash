@@ -174,7 +174,7 @@ describe('wordCount / readingTime', () => {
   /**
    * Mirrors StashApp.wordCount (web/app.js). The saves list query no longer
    * fetches `content` (see SAVES_LIST_COLUMNS) — reading time has to come
-   * from the stored `word_count` column (20260904_saves_word_count.sql)
+   * from the stored `word_count` column (20260904220221_saves_word_count.sql)
    * instead of re-splitting the full article body on every render.
    */
   function wordCount(save) {

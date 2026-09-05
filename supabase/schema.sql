@@ -154,7 +154,8 @@ begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql
+set search_path = '';
 
 -- Triggers for updated_at
 create trigger saves_updated_at
@@ -171,12 +172,13 @@ returns setof saves as $$
 begin
   return query
   select *
-  from saves
+  from public.saves
   where user_id = user_uuid
     and fts @@ plainto_tsquery('english', search_query)
   order by ts_rank(fts, plainto_tsquery('english', search_query)) desc;
 end;
-$$ language plpgsql;
+$$ language plpgsql
+set search_path = '';
 
 -- User preferences table (podcast host personalities, etc.)
 create table user_preferences (

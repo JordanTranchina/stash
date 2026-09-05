@@ -71,7 +71,7 @@ survive a second user, and it's worth undoing now even if you never ship to
 anyone. Deleting those four policies (and re-enabling the sign-in screen) is the
 single highest-value change here.
 
-**Now:** `supabase/migrations/20260824_multi_user_lockdown.sql` drops all four
+**Now:** `supabase/migrations/20260824000000_multi_user_lockdown.sql` drops all four
 policies. It also adds the missing DELETE policy on `user_preferences`, an
 `allowed_emails` invite allowlist enforced by a trigger on `auth.users` (existing
 accounts grandfathered in), and the `podcast_feeds` table B4 needs. **Applied to
