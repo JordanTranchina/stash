@@ -43,7 +43,7 @@
   // being sent. Resolves to `{ ok, duplicate }`: `duplicate` is true when the
   // URL was already stashed, in which case the server bumped the existing
   // save's date instead of creating a second copy (see
-  // supabase/migrations/20260824_saves_url_dedup.sql). Throws on network
+  // supabase/migrations/20260824010000_saves_url_dedup.sql). Throws on network
   // failure (and on a missing token) so callers can tell a retry-later failure
   // from a rejection; the thrown Error carries `.noSession = true` for the
   // missing-token case so callers can prompt a sign-in instead of queueing.

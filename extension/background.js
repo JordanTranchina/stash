@@ -361,7 +361,7 @@ async function savePage(tab) {
     console.log('Insert result:', result);
 
     // A duplicate save returns no row: the database's dedup trigger
-    // (supabase/migrations/20260824_saves_url_dedup.sql) recognised the URL as
+    // (supabase/migrations/20260824010000_saves_url_dedup.sql) recognised the URL as
     // one that's already stashed and bumped that save's date instead of
     // inserting a second copy. Report it as a save either way — the article is
     // in the library and back at the top of the list.

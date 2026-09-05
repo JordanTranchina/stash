@@ -109,7 +109,7 @@ stores its screenshot/video attachments in Storage. It needs two extra secrets:
 - `GITHUB_REPO` — `JordanTranchina/stash` (the `owner/repo` issues are filed in).
 
 It also expects the `bug-attachments` Storage bucket to exist — apply
-`supabase/migrations/20260831_bug_attachments_bucket.sql` (`supabase db push`, or
+`supabase/migrations/20260831000000_bug_attachments_bucket.sql` (`supabase db push`, or
 run it in the SQL editor). That bucket is **public-read** so images render inline
 in the issue body; object paths include a random UUID so the URLs are
 unguessable. If that tradeoff is unacceptable, make the bucket private and switch

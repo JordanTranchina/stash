@@ -531,7 +531,7 @@ serve(async (req) => {
 
     // `maybeSingle` rather than `single`: a duplicate save legitimately returns
     // no row. The database's dedup trigger (supabase/migrations/
-    // 20260824_saves_url_dedup.sql) recognises a URL that's already stashed and
+    // 20260824010000_saves_url_dedup.sql) recognises a URL that's already stashed and
     // bumps that save's date instead of inserting a second copy, so PostgREST
     // has nothing to hand back.
     const { data, error } = await supabase

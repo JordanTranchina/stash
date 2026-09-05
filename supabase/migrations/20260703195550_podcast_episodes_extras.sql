@@ -3,7 +3,7 @@
 --
 -- Why:
 --  * `podcast/script.py` (save_to_supabase) inserts a `script_json` field, but the
---    original 20260126_create_podcast_episodes.sql never defined that column, so the
+--    original 20260126200217_create_podcast_episodes.sql never defined that column, so the
 --    insert would fail. This adds it.
 --  * `chapters` stores the per-article chapter markers used by Interactive RSS Chapters
 --    (issue #14) and served by the podcast-chapters edge function.

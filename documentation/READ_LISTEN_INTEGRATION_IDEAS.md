@@ -12,7 +12,7 @@ aspirational — each idea below says what it builds on.
   newest-first within a 7-day window, so a save can no longer silently age
   out and never be discussed. `podcast/script.py` stamps every discussed
   save with `podcast_episode_id` / `podcast_discussed_at`
-  (`supabase/migrations/20260726_saves_podcast_discussed.sql`), so nothing
+  (`supabase/migrations/20260730115730_saves_podcast_discussed.sql`), so nothing
   is re-discussed in a later episode.
 
 ## Ideas

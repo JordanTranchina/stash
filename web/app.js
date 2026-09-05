@@ -921,7 +921,7 @@ class StashApp {
       `;
     } else {
       // Reading time comes from the word_count column (see the
-      // 20260904_saves_word_count.sql migration) — never from splitting
+      // 20260904220221_saves_word_count.sql migration) — never from splitting
       // `save.content`, which the list view no longer fetches at all.
       const minutes = this.readingTime(save);
       const publishedDate = this.formattedPublishedDate(save);
@@ -2031,7 +2031,7 @@ class StashApp {
   // article_opened / article_read_progress analytics events.
   //
   // Prefers the stored `word_count` column (see the
-  // 20260904_saves_word_count.sql migration, kept current by a DB trigger)
+  // 20260904220221_saves_word_count.sql migration, kept current by a DB trigger)
   // so this never has to re-split the full article text — the list view
   // doesn't even fetch `content` anymore (see SAVES_LIST_COLUMNS). Splitting
   // `save.content` is only a fallback for the moment right after a fresh

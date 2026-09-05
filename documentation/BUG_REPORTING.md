@@ -10,7 +10,7 @@ repo-scoped token.
 | Where | What |
 | :-- | :-- |
 | `supabase/functions/report-bug/` | Verifies the caller's JWT, uploads attachments to the `bug-attachments` Storage bucket, creates the GitHub issue. |
-| `supabase/migrations/20260831_bug_attachments_bucket.sql` | Creates the public-read `bug-attachments` bucket. |
+| `supabase/migrations/20260831000000_bug_attachments_bucket.sql` | Creates the public-read `bug-attachments` bucket. |
 | `web/logbuffer.js` | Wraps `console.*` into a 200-entry ring buffer + captures the last uncaught error. Loaded first in `index.html` / `save.html`. |
 | `web/bug-report.js` | `BugReporter` — the modal, auto screenshot (lazy-loads html2canvas), submit, and an IndexedDB retry queue drained on `online` / app open / Background Sync (`sync-bug-reports`). |
 | `web/app.js` | Settings entry point, `?report-bug=1` deep link, and a throttled "Something went wrong · Report" toast wired to `window.onerror` / `unhandledrejection` and the archive/undo failure paths. |
