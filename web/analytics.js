@@ -27,6 +27,15 @@
   // { source: 'manual', duplicate: false }). Never let analytics itself
   // throw or block the caller.
   function capture(event, properties) {
+    // Every tracked event doubles as a StashLog breadcrumb (the "Recent
+    // logs" a bug report ships — see web/logbuffer.js), independent of
+    // whether PostHog is actually configured. Without this, a bug report
+    // filed right after signing in / opening an article / archiving
+    // something had no record of any of it — console.error was the only
+    // thing logbuffer.js ever saw (issue #107).
+    if (typeof console !== 'undefined' && console.info) {
+      try { console.info('[event] ' + event, properties || {}); } catch (e) {}
+    }
     if (!apiKey) return;
     const body = {
       api_key: apiKey,

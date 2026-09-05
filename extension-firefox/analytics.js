@@ -26,6 +26,12 @@
   // throw or block the caller — same "fire and forget" contract as
   // SentryLite.captureException.
   function capture(event, properties) {
+    // Every tracked event doubles as a logbuffer.js breadcrumb (the "Recent
+    // logs" a bug report ships), independent of whether PostHog is actually
+    // configured — see web/analytics.js for the same fix and issue #107.
+    if (typeof console !== 'undefined' && console.info) {
+      try { console.info('[event] ' + event, properties || {}); } catch (e) {}
+    }
     if (!apiKey) return;
     const body = {
       api_key: apiKey,
