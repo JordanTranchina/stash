@@ -480,6 +480,28 @@ class StashApp {
       this.savePodcastPreferences();
     });
 
+    // Share Sheet Setup Modal (iOS Shortcut save token)
+    const shareTokenModal = document.getElementById('share-token-modal');
+
+    document.getElementById('share-token-settings-btn')?.addEventListener('click', () => {
+      this.showShareTokenModal();
+    });
+    shareTokenModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
+      this.hideShareTokenModal();
+    });
+    shareTokenModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
+      this.hideShareTokenModal();
+    });
+    document.getElementById('share-token-done-btn')?.addEventListener('click', () => {
+      this.hideShareTokenModal();
+    });
+    document.getElementById('share-token-copy-btn')?.addEventListener('click', () => {
+      this.copySaveToken();
+    });
+    document.getElementById('share-token-regenerate-btn')?.addEventListener('click', () => {
+      this.regenerateSaveToken();
+    });
+
     // Add URL Modal (manually ingest a single link)
     const addUrlModal = document.getElementById('add-url-modal');
 
@@ -2542,6 +2564,89 @@ class StashApp {
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save';
     }
+  }
+
+  // Share Sheet Setup Methods (iOS Shortcut save token)
+  //
+  // iOS/iPadOS won't let an installed PWA register into the native share
+  // sheet the way it does on Android (see ios-shortcut/README.md), so the
+  // supported path is an Apple Shortcut. Shortcuts can't run a Supabase
+  // sign-in flow, so it authenticates with this long-lived per-user token
+  // (save_tokens table) instead of a JWT — set up once here, never expires
+  // on its own.
+  showShareTokenModal() {
+    const modal = document.getElementById('share-token-modal');
+    modal.classList.remove('hidden');
+    this.loadSaveToken();
+  }
+
+  hideShareTokenModal() {
+    document.getElementById('share-token-modal').classList.add('hidden');
+    document.getElementById('share-token-status').classList.add('hidden');
+  }
+
+  async loadSaveToken() {
+    const field = document.getElementById('share-token-value');
+    field.value = 'Loading…';
+    try {
+      const { data, error } = await this.supabase
+        .from('save_tokens')
+        .select('token')
+        .eq('user_id', this.user.id)
+        .single();
+
+      if (error) throw error;
+      field.value = data.token;
+    } catch (error) {
+      console.error('Error loading save token:', error);
+      field.value = '';
+      this.showShareTokenStatus("Couldn't load your save token. Try again.", 'error');
+    }
+  }
+
+  async copySaveToken() {
+    const token = document.getElementById('share-token-value').value;
+    if (!token || token === 'Loading…') return;
+    try {
+      await navigator.clipboard.writeText(token);
+      this.showShareTokenStatus('Token copied!', 'success');
+    } catch (error) {
+      console.error('Error copying save token:', error);
+      this.showShareTokenStatus('Could not copy. Select and copy the token by hand.', 'error');
+    }
+  }
+
+  async regenerateSaveToken() {
+    const confirmed = confirm(
+      'Regenerate your save token? Your current iOS Shortcut will stop working until you paste the new token into it.'
+    );
+    if (!confirmed) return;
+
+    const field = document.getElementById('share-token-value');
+    field.value = 'Loading…';
+    try {
+      const { data, error } = await this.supabase
+        .from('save_tokens')
+        .update({ token: crypto.randomUUID().replace(/-/g, '') })
+        .eq('user_id', this.user.id)
+        .select('token')
+        .single();
+
+      if (error) throw error;
+      field.value = data.token;
+      this.showShareTokenStatus('New token generated. Update your Shortcut with it.', 'success');
+    } catch (error) {
+      console.error('Error regenerating save token:', error);
+      this.showShareTokenStatus("Couldn't regenerate the token. Try again.", 'error');
+      this.loadSaveToken();
+    }
+  }
+
+  showShareTokenStatus(message, kind) {
+    const status = document.getElementById('share-token-status');
+    status.textContent = message;
+    status.className = `digest-status ${kind}`;
+    status.classList.remove('hidden');
   }
 
   // Podcast Settings Methods (custom host personalities, #13)

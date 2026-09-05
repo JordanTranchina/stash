@@ -1604,6 +1604,38 @@ select {
   color: var(--danger);
 }
 
+/* Share Sheet Setup modal (iOS Shortcut save token) */
+.share-token-steps {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 20px;
+  padding-left: 20px;
+}
+
+.share-token-steps code {
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.share-token-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-token-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.share-token-row .btn {
+  flex-shrink: 0;
+}
+
 /* Report a Bug modal */
 .bug-report-attachments {
   display: flex;

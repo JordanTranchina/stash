@@ -208,6 +208,21 @@
               </div>
 
               <div class="settings-section">
+                <h3>iOS Share Sheet</h3>
+                <button class="settings-row" id="share-token-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                    <polyline points="16 6 12 2 8 6"></polyline>
+                    <line x1="12" y1="2" x2="12" y2="15"></line>
+                  </svg>
+                  <span>Set Up Share Sheet Save</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="settings-section">
                 <h3>Offline Reading</h3>
                 <div class="settings-row offline-toggle-row">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -514,6 +529,48 @@
         <div class="modal-footer">
           <button class="btn secondary" id="podcast-cancel-btn">Cancel</button>
           <button class="btn primary" id="podcast-save-btn">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Share Sheet Setup Modal (iOS Shortcut save token) -->
+    <div id="share-token-modal" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-content digest-modal-content">
+        <div class="modal-header">
+          <h2>Set Up Share Sheet Save</h2>
+          <button class="btn icon modal-close-btn" title="Close" aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="digest-description">Apple does not let installed web apps join the iOS share sheet. Use the Shortcuts app instead. Follow these steps:</p>
+          <ol class="share-token-steps">
+            <li>Open the Shortcuts app on your iPhone or iPad.</li>
+            <li>Build the "Save to Stash" Shortcut from your Stash project (see <code>ios-shortcut/README.md</code>).</li>
+            <li>Copy your save token below and paste it into the Shortcut's header field.</li>
+            <li>Turn on <strong>Show in Share Sheet</strong> for the Shortcut.</li>
+          </ol>
+          <p class="digest-description">This token does not expire. Share a link from any app, choose <strong>Save to Stash</strong>, and it saves straight to your library.</p>
+
+          <div class="digest-form">
+            <div class="form-group">
+              <label for="share-token-value">Your save token</label>
+              <div class="share-token-row">
+                <input type="text" id="share-token-value" readonly value="Loading…">
+                <button class="btn secondary" id="share-token-copy-btn" type="button">Copy</button>
+              </div>
+            </div>
+
+            <div id="share-token-status" class="digest-status hidden"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn secondary" id="share-token-regenerate-btn" type="button">Regenerate Token</button>
+          <button class="btn primary" id="share-token-done-btn" type="button">Done</button>
         </div>
       </div>
     </div>

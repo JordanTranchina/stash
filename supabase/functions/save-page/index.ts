@@ -9,7 +9,7 @@ import { reportError } from "../_shared/sentry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "apikey, content-type, authorization",
+  "Access-Control-Allow-Headers": "apikey, content-type, authorization, x-stash-save-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -370,38 +370,74 @@ serve(async (req) => {
   }
 
   try {
-    // The saving user is whoever the JWT says it is. A user_id in the body is
-    // ignored: the anon key is public (it ships in the extension), so trusting
-    // the body would let anyone insert articles into anyone else's library.
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing Authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Use the caller's own apikey (every client sends its public, RLS-bound
-    // publishable/anon key) for the auth lookup, falling back to the injected
-    // env key. This keeps working if the project disables the legacy anon JWT
-    // after migrating to sb_publishable_/sb_secret_ keys — otherwise the
-    // injected SUPABASE_ANON_KEY would be an invalid apikey and every save
-    // would 401. User identity still comes from getUser() verifying the JWT.
-    const callerApiKey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY")!;
-    const authClient = createClient(
+    // The saving user is whoever the caller authenticates as. A user_id in
+    // the body is ignored: the anon key is public (it ships in the
+    // extension), so trusting the body would let anyone insert articles into
+    // anyone else's library.
+    //
+    // The service-role client is created once up front (rather than only
+    // just before the insert, as before) because it now also backs the
+    // save-token lookup below.
+    const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      callerApiKey,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: authData, error: authError } = await authClient.auth.getUser();
-    if (authError || !authData?.user) {
-      return new Response(
-        JSON.stringify({ error: "Invalid or expired token" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    let userId: string;
+
+    // The iOS Shortcut (ios-shortcut/README.md) can't run a Supabase sign-in
+    // flow and a JWT expires hourly, so it authenticates instead with a
+    // long-lived per-user token (supabase/migrations/20260905_save_tokens.sql)
+    // that's set up once from Settings > Share Sheet Setup and never expires
+    // on its own. Checked before Authorization so a Shortcut never needs to
+    // also carry a JWT it has no way to obtain.
+    const saveToken = req.headers.get("X-Stash-Save-Token");
+    if (saveToken) {
+      const { data: tokenRow } = await supabase
+        .from("save_tokens")
+        .update({ last_used_at: new Date().toISOString() })
+        .eq("token", saveToken)
+        .select("user_id")
+        .maybeSingle();
+      if (!tokenRow) {
+        return new Response(
+          JSON.stringify({ error: "Invalid save token" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      userId = tokenRow.user_id;
+    } else {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(
+          JSON.stringify({ error: "Missing Authorization header" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Use the caller's own apikey (every client sends its public, RLS-bound
+      // publishable/anon key) for the auth lookup, falling back to the
+      // injected env key. This keeps working if the project disables the
+      // legacy anon JWT after migrating to sb_publishable_/sb_secret_ keys —
+      // otherwise the injected SUPABASE_ANON_KEY would be an invalid apikey
+      // and every save would 401. User identity still comes from getUser()
+      // verifying the JWT.
+      const callerApiKey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY")!;
+      const authClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        callerApiKey,
+        { global: { headers: { Authorization: authHeader } } }
       );
+
+      const { data: authData, error: authError } = await authClient.auth.getUser();
+      if (authError || !authData?.user) {
+        return new Response(
+          JSON.stringify({ error: "Invalid or expired token" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      userId = authData.user.id;
     }
-    const userId = authData.user.id;
 
     const { url, highlight, source, prefetched, created_at, title } = await req.json();
 
@@ -522,13 +558,10 @@ serve(async (req) => {
       }
     }
 
-    // Save to database. Still the service-role client — the row is written with
-    // the JWT-derived user_id above, so bypassing RLS here doesn't widen access.
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
+    // Save to database. Still the service-role client created above — the row
+    // is written with the userId resolved above, so bypassing RLS here
+    // doesn't widen access.
+    //
     // `maybeSingle` rather than `single`: a duplicate save legitimately returns
     // no row. The database's dedup trigger (supabase/migrations/
     // 20260824_saves_url_dedup.sql) recognises a URL that's already stashed and
