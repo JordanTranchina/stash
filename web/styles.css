@@ -789,6 +789,10 @@ select {
   color: var(--text-secondary);
 }
 
+#load-error-state .btn {
+  margin-top: 16px;
+}
+
 /* Reading Pane */
 .reading-pane {
   position: relative;

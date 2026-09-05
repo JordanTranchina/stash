@@ -306,6 +306,11 @@ class StashApp {
       this.signOut();
     });
 
+    // Retry button on the "couldn't load your saves" error state (see loadSaves)
+    document.getElementById('load-error-retry-btn')?.addEventListener('click', () => {
+      this.loadSaves();
+    });
+
     // Bottom tab bar navigation
     document.querySelectorAll('.bottom-nav-item[data-view]').forEach(item => {
       item.addEventListener('click', (e) => {
@@ -745,11 +750,13 @@ class StashApp {
     const loading = document.getElementById('loading');
     const loadingMore = document.getElementById('loading-more');
     const empty = document.getElementById('empty-state');
+    const loadError = document.getElementById('load-error-state');
 
     if (reset) {
       this.savesOffset = 0;
       this.hasMoreSaves = true;
       this.searchActive = false;
+      loadError.classList.add('hidden');
 
       // OFFLINE: Load from IndexedDB first for instant render.
       // getArticles() returns the raw cache (all cached metadata, keyed/
@@ -797,8 +804,21 @@ class StashApp {
 
     if (error) {
       console.error('Error loading saves:', error);
-      // If we have cached data, we are fine. Maybe show a toast?
-      // For now, silent fail to offline mode is acceptable behavior
+      if (this.saves.length > 0) {
+        // Already showing cached/previous data (rendered above, or from an
+        // earlier page) — let it stand rather than blanking a working view,
+        // but say so since it's now stale.
+        this.showToast("Couldn't refresh — showing saved data");
+      } else if (reset) {
+        // No cache and the fetch failed: previously this left the screen
+        // totally blank (empty of any message) because neither the loading
+        // spinner nor the empty-state applied — indistinguishable from "no
+        // saves yet" or "still loading" (issue #107). Show a distinct,
+        // retryable error state instead.
+        empty.classList.add('hidden');
+        container.innerHTML = '';
+        loadError.classList.remove('hidden');
+      }
       return;
     }
 
@@ -836,6 +856,7 @@ class StashApp {
       this.runWhenIdle(() => this.pruneStaleCache());
     }
 
+    loadError.classList.add('hidden');
     if (this.saves.length === 0) {
       this.renderEmptyState();
       empty.classList.remove('hidden');

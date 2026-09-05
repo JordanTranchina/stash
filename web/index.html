@@ -137,6 +137,18 @@
               <h3>Your stash is empty</h3>
               <p>Save your first article: tap <strong>Settings &rarr; Add URL</strong> and paste a link. On your phone you can also use the Share button in any browser and pick Stash.</p>
             </div>
+
+            <!-- Shown instead of empty-state when loadSaves() couldn't reach
+                 the server AND there's no cached data to fall back to — see
+                 StashApp.loadSaves. Without this, a failed fetch left a
+                 totally blank screen indistinguishable from "still loading"
+                 or "no saves yet" (issue #107). -->
+            <div id="load-error-state" class="empty-state hidden">
+              <div class="empty-icon">⚠️</div>
+              <h3>Couldn't load your saves</h3>
+              <p>Check your connection and try again.</p>
+              <button type="button" class="btn primary" id="load-error-retry-btn">Retry</button>
+            </div>
           </div>
 
           <!-- Settings View -->
