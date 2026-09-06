@@ -1,6 +1,17 @@
 -- Migration: Per-user long-lived save tokens
 -- Created at: 2026-09-05
 --
+-- Filename note (issue #120): this file originally shipped as
+-- 20260905_save_tokens.sql, a date-only version like the ones renamed to
+-- full 14-digit timestamps in 20260905035455_drop_mezcal_bottles_cross_
+-- contamination.sql's PR (#113). That short version sorted BEFORE this
+-- project's already-applied 20260905035455 migration, so `supabase db
+-- push` refused every subsequent deploy with "local migration files to be
+-- inserted before the last migration on remote database" — deploy-
+-- supabase.yml has been failing on every push since, silently leaving
+-- later schema/function changes undeployed. Renamed to sort after it.
+-- Idempotent, so re-running it here is a no-op.
+--
 -- Why: the iOS Shortcut (ios-shortcut/README.md) is the only way to get
 -- Stash into the native iOS/iPadOS share sheet — WebKit doesn't implement
 -- the Web Share Target API that makes the PWA a share target on Android.
