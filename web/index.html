@@ -547,14 +547,7 @@
           </button>
         </div>
         <div class="modal-body">
-          <p class="digest-description">Apple does not let installed web apps join the iOS share sheet. Use the Shortcuts app instead. Follow these steps:</p>
-          <ol class="share-token-steps">
-            <li>Open the Shortcuts app on your iPhone or iPad.</li>
-            <li>Build the "Save to Stash" Shortcut from your Stash project (see <code>ios-shortcut/README.md</code>).</li>
-            <li>Copy your save token below and paste it into the Shortcut's header field.</li>
-            <li>Turn on <strong>Show in Share Sheet</strong> for the Shortcut.</li>
-          </ol>
-          <p class="digest-description">This token does not expire. Share a link from any app, choose <strong>Save to Stash</strong>, and it saves straight to your library.</p>
+          <p class="digest-description">Apple does not let installed web apps join the iOS share sheet. Use the Shortcut below instead. This token does not expire, so it's a one-time setup.</p>
 
           <div class="digest-form">
             <div class="form-group">
@@ -567,6 +560,25 @@
 
             <div id="share-token-status" class="digest-status hidden"></div>
           </div>
+
+          <div id="share-token-get-shortcut" class="share-token-get-shortcut hidden">
+            <ol class="share-token-steps">
+              <li>Copy your save token above.</li>
+              <li>On your iPhone or iPad, tap <strong>Get the Shortcut</strong> below.</li>
+              <li>When Shortcuts asks for your save token, paste it in.</li>
+            </ol>
+            <a class="btn primary" id="share-token-get-shortcut-link" href="#" target="_blank" rel="noopener">Get the Shortcut</a>
+          </div>
+
+          <details class="share-token-manual">
+            <summary>Build it yourself instead</summary>
+            <ol class="share-token-steps">
+              <li>Open the Shortcuts app on your iPhone or iPad.</li>
+              <li>Build the "Save to Stash" Shortcut from your Stash project (see <code>ios-shortcut/README.md</code>).</li>
+              <li>Copy your save token above and paste it into the Shortcut's header field.</li>
+              <li>Turn on <strong>Show in Share Sheet</strong> for the Shortcut.</li>
+            </ol>
+          </details>
         </div>
         <div class="modal-footer">
           <button class="btn secondary" id="share-token-regenerate-btn" type="button">Regenerate Token</button>

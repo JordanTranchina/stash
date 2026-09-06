@@ -1636,6 +1636,36 @@ select {
   flex-shrink: 0;
 }
 
+.share-token-get-shortcut {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.share-token-get-shortcut .btn {
+  width: 100%;
+  text-align: center;
+}
+
+.share-token-manual {
+  margin-top: 20px;
+}
+
+.share-token-manual summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.share-token-manual[open] summary {
+  margin-bottom: 8px;
+}
+
+.share-token-manual .share-token-steps {
+  margin-bottom: 0;
+}
+
 /* Report a Bug modal */
 .bug-report-attachments {
   display: flex;

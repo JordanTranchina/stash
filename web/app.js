@@ -2578,6 +2578,17 @@ class StashApp {
     const modal = document.getElementById('share-token-modal');
     modal.classList.remove('hidden');
     this.loadSaveToken();
+
+    const getShortcut = document.getElementById('share-token-get-shortcut');
+    const manual = modal.querySelector('.share-token-manual');
+    const hasShortcutLink = !!CONFIG.IOS_SHORTCUT_URL;
+    getShortcut.classList.toggle('hidden', !hasShortcutLink);
+    if (hasShortcutLink) {
+      document.getElementById('share-token-get-shortcut-link').href = CONFIG.IOS_SHORTCUT_URL;
+    }
+    // Collapsed by default when the one-tap Shortcut link is available;
+    // expanded when it isn't, since building it by hand is then the only path.
+    manual.open = !hasShortcutLink;
   }
 
   hideShareTokenModal() {

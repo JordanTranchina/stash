@@ -104,8 +104,45 @@ Now, from Safari or Chrome on your iPhone or iPad: tap **Share**, then tap
 **Save to Stash**. The article is scraped and saved. It appears in the Stash
 web app moments later.
 
+### Step 4: Turn it into a one-tap template for friends (optional)
+
+Do this once, as the instance owner. Everyone you invite to your Stash
+instance shares the same `SUPABASE_URL` and `SUPABASE_ANON_KEY`, so those
+two values can stay baked into the Shortcut. Only the save token differs
+per person. Apple's Shortcuts app has a built-in way to ask for just that
+one value when someone else adds your Shortcut: an **import question**.
+
+1. Open the "Save to Stash" Shortcut in the Shortcuts editor.
+2. Tap the **ⓘ** button at the top.
+3. Tap **Customize Shortcut…**.
+4. Tap **Add Question**.
+5. On the canvas, tap the `X-Stash-Save-Token` header value in Action 3
+   (the one currently set to your own save token).
+6. Set the prompt text to something like "Paste your Stash save token".
+   Leave **Default Value** blank.
+7. Tap **Done**, then tap **Done** again to close the customize screen.
+
+Now share it:
+
+1. Tap the **Share** icon (a square with an arrow pointing up).
+2. Tap **Copy iCloud Link**.
+3. Send that link to anyone using your Stash instance. When they tap it,
+   Shortcuts asks them to paste their own save token, then adds "Save to
+   Stash" straight to their library — no manual action-building.
+4. Paste the link into `IOS_SHORTCUT_URL` in `web/config.js`. Once set,
+   Settings → iOS Share Sheet shows a **Get the Shortcut** button instead of
+   the manual build steps.
+
+If you change the Shortcut's actions later, generate a new iCloud link and
+update `IOS_SHORTCUT_URL` — an old link keeps pointing at the old version.
+
 ## Troubleshooting
 
+- **Tapping the iCloud link shows a review screen listing the Shortcut's
+  actions, not the save-token prompt.** This is normal for any Shortcut
+  added from a link rather than the App Store. Tap **Add Untrusted
+  Shortcut** (or **Add Shortcut**) to continue — the save-token prompt
+  appears right after.
 - **Don't see it in the share sheet?** Scroll to the bottom of the share
   sheet and tap **Edit Actions…**. Turn on "Save to Stash" and drag it up.
   Also confirm **Show in Share Sheet** is on and the accepted types include
