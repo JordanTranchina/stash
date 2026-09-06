@@ -583,10 +583,47 @@ class StashApp {
     // app opens.
     const installBtn = document.getElementById('install-app-settings-btn');
     const installModal = document.getElementById('install-app-modal');
+    const installRow = document.querySelector('.install-app-row');
+    const installTooltip = document.getElementById('install-app-tooltip');
+    const installInfoBtn = document.getElementById('install-app-info-btn');
 
     if (this.isStandalone()) {
-      installBtn?.classList.add('hidden');
+      installRow?.classList.add('hidden');
+      installTooltip?.classList.add('hidden');
     }
+
+    // "What is a PWA?" tooltip — hover shows it (desktop), a tap toggles
+    // it and keeps it open until dismissed (touch, where hover doesn't
+    // exist). A tap outside closes a pinned-open tooltip.
+    let installTooltipPinned = false;
+    const showInstallTooltip = () => {
+      installTooltip?.classList.remove('hidden');
+      installInfoBtn?.setAttribute('aria-expanded', 'true');
+    };
+    const hideInstallTooltip = () => {
+      installTooltip?.classList.add('hidden');
+      installInfoBtn?.setAttribute('aria-expanded', 'false');
+    };
+    installInfoBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      installTooltipPinned = !installTooltipPinned;
+      if (installTooltipPinned) {
+        window.StashAnalytics?.capture('pwa_info_tooltip_opened');
+        showInstallTooltip();
+      } else {
+        hideInstallTooltip();
+      }
+    });
+    installInfoBtn?.addEventListener('mouseenter', () => showInstallTooltip());
+    installInfoBtn?.addEventListener('mouseleave', () => {
+      if (!installTooltipPinned) hideInstallTooltip();
+    });
+    document.addEventListener('click', (e) => {
+      if (installTooltipPinned && e.target !== installInfoBtn && !installInfoBtn?.contains(e.target)) {
+        installTooltipPinned = false;
+        hideInstallTooltip();
+      }
+    });
 
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -618,7 +655,8 @@ class StashApp {
     });
 
     window.addEventListener('appinstalled', () => {
-      installBtn?.classList.add('hidden');
+      installRow?.classList.add('hidden');
+      installTooltip?.classList.add('hidden');
       this.hideInstallToast();
       localStorage.setItem('stash-pwa-toast-dismissed', '1');
       window.StashAnalytics?.capture('pwa_installed', { source: this.pwaPromptSource || 'unknown' });
