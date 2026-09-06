@@ -239,6 +239,7 @@ async function submitBugReport(payload) {
   fd.append('observed', payload.observed || '');
   fd.append('source', 'extension');
   fd.append('email', payload.email || '');
+  fd.append('userId', payload.userId || '');
   fd.append('env', JSON.stringify(payload.env || {}));
   fd.append('logs', JSON.stringify(payload.logs || []));
   fd.append('lastError', JSON.stringify(payload.lastError || null));

@@ -142,6 +142,7 @@ class BugReporter {
       observed: document.getElementById('bug-report-observed').value.trim(),
       source: 'web',
       email: (this.app && this.app.user && this.app.user.email) || '',
+      userId: (this.app && this.app.user && this.app.user.id) || '',
       env: JSON.stringify((window.StashLog && window.StashLog.getEnv(view)) || {}),
       logs: JSON.stringify((window.StashLog && window.StashLog.getLogs()) || []),
       lastError: JSON.stringify((window.StashLog && window.StashLog.getLastError()) || null),
