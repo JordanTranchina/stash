@@ -575,10 +575,13 @@ class StashApp {
 
     // PWA: Install Prompt
     //
-    // The Settings row is always visible (unless the app is already
-    // installed) so there's always a way in, even on browsers like Safari
-    // that never fire beforeinstallprompt: promptInstall() falls back to a
-    // manual instructions modal there. The Home toast (maybeShowInstallToast,
+    // On Chrome/Edge, the native install dialog auto-triggers the moment
+    // beforeinstallprompt fires (see below) — the Settings row and Home
+    // toast are a manual fallback for anyone who dismissed it, plus the
+    // only path at all on browsers like Safari that never fire
+    // beforeinstallprompt: promptInstall() falls back to a manual
+    // instructions modal there. The Settings row is always visible (unless
+    // the app is already installed). The Home toast (maybeShowInstallToast,
     // called from showMainScreen) offers the same action for the first few
     // app opens.
     const installBtn = document.getElementById('install-app-settings-btn');
@@ -628,6 +631,15 @@ class StashApp {
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
+      // Auto-trigger the native install dialog the moment Chrome/Edge makes
+      // it available, rather than waiting for a tap on the Settings button
+      // or the Home banner — those stay as a manual fallback. Suppressed
+      // once someone's dismissed the native dialog once, so it doesn't nag
+      // on every visit; installing or dismissing the Settings/Home banner
+      // path doesn't set this, since that's a deliberate choice either way.
+      if (localStorage.getItem('stash-pwa-auto-prompt-declined') !== '1') {
+        this.promptInstall('auto');
+      }
     });
 
     installBtn?.addEventListener('click', () => {
@@ -689,6 +701,11 @@ class StashApp {
       prompt.prompt();
       prompt.userChoice.then((choiceResult) => {
         window.StashAnalytics?.capture('pwa_install_prompted', { source, outcome: choiceResult.outcome });
+        // Only the auto-triggered dialog sets this — declining a prompt
+        // someone asked for (Settings/Home banner) isn't "leave me alone."
+        if (source === 'auto' && choiceResult.outcome === 'dismissed') {
+          localStorage.setItem('stash-pwa-auto-prompt-declined', '1');
+        }
       });
     } else {
       const platform = this.detectInstallPlatform();
