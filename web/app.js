@@ -1693,10 +1693,22 @@ class StashApp {
 
     const episodes = (!error && data) ? data : [];
     const isOwner = this.user && this.user.id === CONFIG.OWNER_USER_ID;
+    // Everyone gets a self-serve "make one now" button. It POSTs to the
+    // `request-podcast` Edge Function, which rate-limits per user and then
+    // fires the daily GitHub workflow scoped to just this user — no GitHub
+    // account needed on the user's side.
+    const makeNowBtn = `
+      <button type="button" id="podcast-make-now-btn" class="btn primary podcast-generate-btn"
+        onclick="window.stashApp.requestPodcastNow(this)">
+        🎙️ Make an episode now
+      </button>`;
+    // Owner keeps a link straight to the Actions page for a full multi-user
+    // run / debugging; it's demoted to a secondary link now that the button
+    // above covers the common case.
     const generateBtn = isOwner ? `
-      <a class="btn primary podcast-generate-btn" href="${CONFIG.PODCAST_WORKFLOW_URL}" target="_blank" rel="noopener"
-         title="Opens the GitHub Actions workflow — click 'Run workflow' to generate a new episode now.">
-        🎙️ Generate Podcast Now
+      <a class="btn secondary podcast-generate-link" href="${CONFIG.PODCAST_WORKFLOW_URL}" target="_blank" rel="noopener"
+         title="Owner only: open the GitHub Actions workflow (e.g. to run a full multi-user generation).">
+        ⚙️ Open workflow
       </a>` : '';
     const subscribeBlock = this.buildPodcastSubscribeBlock(feed);
 
@@ -1706,6 +1718,7 @@ class StashApp {
           <div class="podcasts-header">
             <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast.</p>
             ${subscribeBlock}
+            ${makeNowBtn}
             ${generateBtn}
           </div>
           <div class="podcasts-empty">
@@ -1745,6 +1758,7 @@ class StashApp {
         <div class="podcasts-header">
           <p class="podcasts-intro">Your saved articles, turned into a conversational AI podcast.</p>
           ${subscribeBlock}
+          ${makeNowBtn}
           ${generateBtn}
         </div>
         <div class="podcasts-list">${cards}</div>
@@ -1817,6 +1831,62 @@ class StashApp {
 
     this.showToast('Podcast turned on! Your first episode arrives tomorrow morning.');
     this.loadPodcasts();
+  }
+
+  // "Make an episode now" — asks the `request-podcast` Edge Function to run
+  // the generation workflow for just this user. The function rate-limits per
+  // user (a few per rolling 24h), so a 429 here is expected, not an error.
+  async requestPodcastNow(btnEl) {
+    const btn = btnEl || document.getElementById('podcast-make-now-btn');
+    if (btn && btn.dataset.busy === '1') return;
+    if (btn) {
+      btn.dataset.busy = '1';
+      btn.disabled = true;
+      btn.textContent = '⏳ Starting…';
+    }
+    let succeeded = false;
+    try {
+      const token = await this.getAccessToken();
+      if (!token) throw new Error('no-session');
+      const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/request-podcast`, {
+        method: 'POST',
+        headers: { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        succeeded = true;
+        window.StashAnalytics?.capture('podcast_ondemand_requested', {
+          remaining: typeof body.remaining === 'number' ? body.remaining : null,
+        });
+        this.showToast(
+          typeof body.remaining === 'number'
+            ? `On it! Your episode shows up here in a few minutes — ${body.remaining} more today.`
+            : 'On it! Your episode will show up here in a few minutes.',
+        );
+        if (btn) btn.textContent = '⏳ Generating…'; // stays disabled: one run at a time
+        return;
+      }
+
+      if (res.status === 429) {
+        this.showToast(body.error || "You've hit the limit for on-demand episodes. Try again later.");
+      } else {
+        this.showToast(body.error || "Couldn't start an episode just now — try again in a bit.");
+      }
+    } catch (e) {
+      console.error('requestPodcastNow failed:', e);
+      this.showToast(
+        e && e.message === 'no-session'
+          ? 'Please sign in again to make an episode.'
+          : "Couldn't start an episode — check your connection and try again.",
+      );
+    } finally {
+      if (btn && !succeeded) {
+        btn.dataset.busy = '';
+        btn.disabled = false;
+        btn.textContent = '🎙️ Make an episode now';
+      }
+    }
   }
 
   async copyFeedLink(url) {

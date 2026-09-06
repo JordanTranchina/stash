@@ -104,8 +104,10 @@ The `report-bug` Edge Function files an in-app bug report as a GitHub issue and
 stores its screenshot/video attachments in Storage. It needs two extra secrets:
 
 - `GITHUB_TOKEN` — a **fine-grained** personal access token scoped to **only the
-  `stash` repo**, with **Issues: Read and write**. Nothing else. This is the
-  account the issues are created as; the end user never signs in to GitHub.
+  `stash` repo**, with **Issues: Read and write** (and **Actions: Read and
+  write** if you also want the `request-podcast` function below — the two share
+  this one token). This is the account the issues/workflow runs are created as;
+  the end user never signs in to GitHub.
 - `GITHUB_REPO` — `JordanTranchina/stash` (the `owner/repo` issues are filed in).
 
 It also expects the `bug-attachments` Storage bucket to exist — apply
@@ -117,6 +119,26 @@ the function to signed URLs.
 
 Deploy: `supabase functions deploy report-bug`.
 
+### `request-podcast` function (in-app "Make an episode now")
+
+The `request-podcast` Edge Function lets any signed-in user trigger a podcast
+episode on demand from the Podcasts tab, instead of waiting for the 8:00 AM UTC
+cron. It verifies the caller's JWT, rate-limits them off the
+`podcast_generation_requests` ledger, then fires `podcast.yml` via
+`workflow_dispatch` scoped to just that user.
+
+Secrets:
+
+- `GITHUB_TOKEN` / `GITHUB_REPO` — same as `report-bug` above; the token just
+  additionally needs **Actions: Read and write** on the `stash` repo.
+- `GITHUB_WORKFLOW_REF` *(optional)* — git ref the workflow runs on. Default
+  `main`.
+- `PODCAST_ONDEMAND_LIMIT` *(optional)* — accepted on-demand requests per user
+  per rolling 24h. Default `3`.
+
+Apply `supabase/migrations/20260906_podcast_generation_requests.sql`
+(`supabase db push`). Deploy: `supabase functions deploy request-podcast`.
+
 ## 4. Summary of Key Locations
 
 | Secret | Rotation/Redo Link | Cloud Deployment Link (to set) |
@@ -125,7 +147,7 @@ Deploy: `supabase functions deploy report-bug`.
 | **Supabase Key** | [Supabase API Settings](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/api) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **Supabase Access Token** (for automated deploys) | [Supabase Access Tokens](https://supabase.com/dashboard/account/tokens) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **Supabase DB Password** (for automated deploys) | [Project Settings → Database](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/database) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
-| **`GITHUB_TOKEN` (report-bug)** | [Fine-grained PATs](https://github.com/settings/personal-access-tokens) — `stash` repo, Issues: R/W | [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions) |
+| **`GITHUB_TOKEN` (report-bug + request-podcast)** | [Fine-grained PATs](https://github.com/settings/personal-access-tokens) — `stash` repo, Issues: R/W + Actions: R/W | [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions) |
 | **Vercel Personal Access Token** (only if you ever script Vercel from CI) | [Vercel Personal Access Tokens](https://vercel.com/account/tokens) | Not needed today — Vercel deploys via its own GitHub integration, no GitHub secret required |
 
 ### Note on `VERCEL_OIDC_TOKEN`
