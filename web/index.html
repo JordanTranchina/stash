@@ -273,7 +273,7 @@
 
               <div class="settings-section">
                 <h3>General</h3>
-                <button class="settings-row hidden" id="install-app-settings-btn">
+                <button class="settings-row" id="install-app-settings-btn">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -596,6 +596,27 @@
       </div>
     </div>
 
+    <!-- Install App Instructions Modal. Shown instead of the native install
+         prompt on browsers that don't support beforeinstallprompt (Safari,
+         Firefox) — text is filled in by JS per platform. -->
+    <div id="install-app-modal" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-content digest-modal-content">
+        <div class="modal-header">
+          <h2>Install App</h2>
+          <button class="btn icon modal-close-btn" title="Close" aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p id="install-app-instructions"></p>
+        </div>
+      </div>
+    </div>
+
     <!-- Import Articles Modal (CSV from other read-it-later services) -->
     <div id="import-modal" class="modal hidden">
       <div class="modal-overlay"></div>
@@ -689,6 +710,21 @@
           <button class="btn primary" id="bug-report-submit-btn">Submit</button>
         </div>
       </div>
+    </div>
+
+    <!-- Install App Toast. Shown on Home for the first few app opens (see
+         StashApp.maybeShowInstallToast) until the user installs, dismisses
+         it, or the shown-count limit is reached. Separate from #toast below
+         since it does not auto-hide on a timer. -->
+    <div id="install-toast" class="toast install-toast hidden">
+      <span id="install-toast-message">Install Stash for quick access and offline reading.</span>
+      <button type="button" class="toast-action" id="install-toast-install-btn">Install</button>
+      <button type="button" class="toast-close-btn" id="install-toast-close-btn" aria-label="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
     </div>
 
     <!-- Toast / Notification -->

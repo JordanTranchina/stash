@@ -2213,6 +2213,28 @@ select {
   pointer-events: none;
 }
 
+.install-toast {
+  gap: 10px;
+}
+
+.toast-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 4px;
+  margin: -4px -6px -4px 0;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.toast-close-btn:hover {
+  opacity: 1;
+}
+
 /* Podcasts View (Listen Later, #12) */
 .podcasts-view {
   /* Injected into #saves-container (display: grid), so span every column;
