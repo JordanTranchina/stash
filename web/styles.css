@@ -1604,6 +1604,68 @@ select {
   color: var(--danger);
 }
 
+/* Share Sheet Setup modal (iOS Shortcut save token) */
+.share-token-steps {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 20px;
+  padding-left: 20px;
+}
+
+.share-token-steps code {
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.share-token-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-token-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.share-token-row .btn {
+  flex-shrink: 0;
+}
+
+.share-token-get-shortcut {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.share-token-get-shortcut .btn {
+  width: 100%;
+  text-align: center;
+}
+
+.share-token-manual {
+  margin-top: 20px;
+}
+
+.share-token-manual summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.share-token-manual[open] summary {
+  margin-bottom: 8px;
+}
+
+.share-token-manual .share-token-steps {
+  margin-bottom: 0;
+}
+
 /* Report a Bug modal */
 .bug-report-attachments {
   display: flex;

@@ -3,73 +3,76 @@
 Save pages to Stash from the **native share sheet** on iPhone and iPad —
 from Safari, Chrome, or any other app.
 
-## Why a Shortcut (and not the PWA)?
+## Why a Shortcut, and not the PWA
 
-On iOS/iPadOS, web apps **cannot** register themselves into the share sheet.
-The `share_target` entry in `web/manifest.json` is what makes Stash appear as a
-share destination on **Android**, but Apple's WebKit does not implement the Web
-Share Target API — so an installed Stash PWA will never show up in the iPad/iPhone
-share sheet no matter how it was added to the Home Screen. (Note too that on iOS
-only **Safari** installs a real PWA; Chrome's "Add to Home Screen" just makes a
-bookmark.)
+On iOS and iPadOS, a web app cannot register itself into the share sheet.
+Android supports this through the `share_target` entry in `web/manifest.json`.
+Apple's WebKit does not support this feature. An installed Stash PWA will
+never appear in the iPhone or iPad share sheet, no matter how it was added to
+the Home Screen. (Note: on iOS, only Safari installs a real PWA. Chrome's
+"Add to Home Screen" only creates a bookmark.)
 
-The Apple-blessed way to add a custom share-sheet action is a **Shortcut**, which
-is exactly what this sets up. It works identically on iPhone and iPad.
+The Apple-supported way to add a custom action to the share sheet is a
+**Shortcut**. This guide sets one up. It works the same way on iPhone and
+iPad.
 
 ## What you get
 
-This Shortcut posts to the same `save-page` Edge Function the Chrome extension and
-Android share flow use, so shared links are **fully scraped server-side** — you
-get the whole article (title, content, excerpt, image), not just a bare URL.
+This Shortcut sends the shared link to the same `save-page` server function
+that the Chrome extension and the Android share flow use. Stash scrapes the
+full article on the server — title, content, excerpt, and image — not just
+the bare URL.
 
-## Use the PWA share target instead, if you can
-
-For most people this Shortcut is the wrong tool. Stash is a PWA and registers
-itself as a share target: add the web app to your home screen, sign in once,
-and "Save to Stash" appears in the normal iOS share sheet with no setup and no
-tokens to manage.
-
-The Shortcut is worth the trouble only if you specifically want the save to
-happen without a browser window opening — and it comes with a real caveat.
-Saves now have to be authenticated, and the Shortcuts app can't run a Google
-sign-in flow. The only way to authenticate a Shortcut is to paste in an access
-token by hand, and Supabase access tokens expire (an hour by default), so you
-would be re-pasting a fresh token regularly. If you signed up with Google and
-have no password, you can't get a token this way at all.
-
-If that's still what you want, here's the setup.
+Setup takes about two minutes and you do it once. The Shortcut authenticates
+with a save token from your Stash account. This token does not expire on its
+own, so the Shortcut keeps working without any upkeep.
 
 ## Setup
 
-You need three values. They're the same ones in your `extension/config.js` /
-`web/config.js`:
+### Step 1: Get your save token
+
+1. Open the Stash web app and sign in.
+2. Go to **Settings**.
+3. Under **iOS Share Sheet**, tap **Set Up Share Sheet Save**.
+4. Tap **Copy** to copy your save token.
+
+Keep this token private. Anyone who has it can save pages to your library.
+If it leaks, tap **Regenerate Token** in the same screen to replace it — this
+also breaks the old token, so update your Shortcut with the new one.
+
+You also need your Supabase project URL and anon key. These are the same
+values in `web/config.js`:
 
 | Placeholder | Where it comes from | This project's value |
 | --- | --- | --- |
 | `SUPABASE_URL` | Supabase → Project Settings → API | `https://jntnmvxkirrosxjquuoy.supabase.co` |
 | `SUPABASE_ANON_KEY` | Supabase → Project Settings → API (publishable key) | `sb_publishable_56A0I5tN0tvybD2yJ81UKQ_Fn2ibI1s` |
-| `ACCESS_TOKEN` | Your own session — see "Getting an access token" below | (expires hourly) |
+| `SAVE_TOKEN` | Settings → iOS Share Sheet → Set Up Share Sheet Save | (yours — copy it in step 1 above) |
 
-1. Open the **Shortcuts** app (built in on iPhone/iPad).
+### Step 2: Build the Shortcut
+
+1. Open the **Shortcuts** app (built in on iPhone and iPad).
 2. Tap **+** to create a new shortcut.
-3. Add these actions in order:
+3. Add the actions below, in order.
 
-### Action 1 — Receive input
-- Search for **"Receive input from Share Sheet"** (or open the shortcut settings
-  and enable **Show in Share Sheet** — see the last section).
+#### Action 1 — Receive input
+
+- Search for **"Receive input from Share Sheet"**.
 - Set **Receive** to accept **URLs** and **Safari web pages**.
 
-### Action 2 — Get URLs from Input
-- Add **"Get URLs from Input"** and point it at **Shortcut Input**.
-- This pulls a clean URL out of whatever the app shared (a page, a link, etc.).
+#### Action 2 — Get URLs from Input
 
-### Action 3 — Get Contents of URL  *(this is the save)*
+- Add **"Get URLs from Input"** and point it at **Shortcut Input**.
+- This pulls a clean URL out of whatever the app shared.
+
+#### Action 3 — Get Contents of URL (this is the save)
+
 - Add **"Get Contents of URL"**.
 - **URL:** `https://jntnmvxkirrosxjquuoy.supabase.co/functions/v1/save-page`
-- Tap **Show More**, set **Method** to **POST**.
+- Tap **Show More**, then set **Method** to **POST**.
 - **Headers:**
   - `apikey` : `sb_publishable_56A0I5tN0tvybD2yJ81UKQ_Fn2ibI1s`
-  - `Authorization` : `Bearer YOUR_ACCESS_TOKEN`
+  - `X-Stash-Save-Token` : `YOUR_SAVE_TOKEN`
   - `Content-Type` : `application/json`
 - **Request Body:** **JSON**
   ```json
@@ -79,56 +82,79 @@ You need three values. They're the same ones in your `extension/config.js` /
   }
   ```
   For the `"url"` value, delete the placeholder text and insert the **URLs**
-  variable from Action 2 (tap the field → Select Variable → *URLs*). Only the URL
-  is required — the server scrapes the title, content, image and site name itself.
+  variable from Action 2 (tap the field, then **Select Variable**, then
+  **URLs**). The server reads the user from the save token, so only the URL
+  is required — it scrapes the title, content, image, and site name itself.
 
-There is no `user_id` field any more. `save-page` reads the user from the
-`Authorization` header and returns 401 without one — and the anon key is not
-an access token, so it won't do here.
+#### Action 4 — Show notification (optional)
 
-### Action 4 — Show notification (optional)
-- Add **"Show Notification"** with text **"Saved to Stash!"** so you get
+- Add **"Show Notification"** with the text **"Saved to Stash!"** for
   confirmation.
 
-## Getting an access token
+### Step 3: Add it to the share sheet
 
-You need an email/password account for this — an account created through
-Google has no password to exchange for a token.
-
-On a computer, sign in to the Stash web app and copy the `access_token` from
-the Supabase session in local storage (Developer Tools > Application > Local
-Storage). Or request one directly:
-
-```bash
-curl -X POST 'https://YOUR_PROJECT_ID.supabase.co/auth/v1/token?grant_type=password' \
-  -H 'apikey: YOUR_SUPABASE_ANON_KEY' \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"your-password"}'
-```
-
-The `access_token` in the response goes in the `Authorization` header. When it
-expires the Shortcut will start failing with a 401 and you'll need to repeat
-this.
-
-## Add it to the Share Sheet
-
-1. Tap the shortcut's name at the top, then the **ⓘ** (or the settings toggle).
-2. Enable **Show in Share Sheet**.
-3. Under **Share Sheet Types**, make sure **URLs** and **Safari web pages** are on.
+1. Tap the shortcut's name at the top, then tap the **ⓘ** button (or the
+   settings toggle).
+2. Turn on **Show in Share Sheet**.
+3. Under **Share Sheet Types**, confirm **URLs** and **Safari web pages** are
+   on.
 4. Name it **"Save to Stash"**.
 
-Now, from Safari or Chrome on your iPad/iPhone: **Share → Save to Stash**. The
-article is scraped and saved, and appears in the Stash web app moments later.
+Now, from Safari or Chrome on your iPhone or iPad: tap **Share**, then tap
+**Save to Stash**. The article is scraped and saved. It appears in the Stash
+web app moments later.
+
+### Step 4: Turn it into a one-tap template for friends (optional)
+
+Do this once, as the instance owner. Everyone you invite to your Stash
+instance shares the same `SUPABASE_URL` and `SUPABASE_ANON_KEY`, so those
+two values can stay baked into the Shortcut. Only the save token differs
+per person. Apple's Shortcuts app has a built-in way to ask for just that
+one value when someone else adds your Shortcut: an **import question**.
+
+1. Open the "Save to Stash" Shortcut in the Shortcuts editor.
+2. Tap the **ⓘ** button at the top.
+3. Tap **Customize Shortcut…**.
+4. Tap **Add Question**.
+5. On the canvas, tap the `X-Stash-Save-Token` header value in Action 3
+   (the one currently set to your own save token).
+6. Set the prompt text to something like "Paste your Stash save token".
+   Leave **Default Value** blank.
+7. Tap **Done**, then tap **Done** again to close the customize screen.
+
+Now share it:
+
+1. Tap the **Share** icon (a square with an arrow pointing up).
+2. Tap **Copy iCloud Link**.
+3. Send that link to anyone using your Stash instance. When they tap it,
+   Shortcuts asks them to paste their own save token, then adds "Save to
+   Stash" straight to their library — no manual action-building.
+4. Paste the link into `IOS_SHORTCUT_URL` in `web/config.js`. Once set,
+   Settings → iOS Share Sheet shows a **Get the Shortcut** button instead of
+   the manual build steps.
+
+If you change the Shortcut's actions later, generate a new iCloud link and
+update `IOS_SHORTCUT_URL` — an old link keeps pointing at the old version.
 
 ## Troubleshooting
 
-- **Don't see it in the share sheet?** Scroll to the bottom of the share sheet and
-  tap **Edit Actions…** — enable "Save to Stash" and drag it up. Also confirm
-  *Show in Share Sheet* is on and the accepted types include URLs.
-- **Sharing from Chrome shows nothing saved?** Chrome shares a plain URL, which
-  Action 2 handles — make sure Action 3's body `url` uses the **URLs** variable,
-  not the shared *text*.
-- **Getting an error notification?** Add a temporary **"Show Notification"** with
-  the **Contents of URL** output right after Action 3 to see the server's
-  response — a `401` means the `Authorization` token is wrong or has expired
-  (they last about an hour); a `400` means the `url` didn't come through.
+- **Tapping the iCloud link shows a review screen listing the Shortcut's
+  actions, not the save-token prompt.** This is normal for any Shortcut
+  added from a link rather than the App Store. Tap **Add Untrusted
+  Shortcut** (or **Add Shortcut**) to continue — the save-token prompt
+  appears right after.
+- **Don't see it in the share sheet?** Scroll to the bottom of the share
+  sheet and tap **Edit Actions…**. Turn on "Save to Stash" and drag it up.
+  Also confirm **Show in Share Sheet** is on and the accepted types include
+  URLs.
+- **Sharing from Chrome shows nothing saved?** Chrome shares a plain URL,
+  which Action 2 handles. Confirm Action 3's body `url` field uses the
+  **URLs** variable, not the shared *text*.
+- **Getting an error notification?** Add a temporary **"Show Notification"**
+  action with the **Contents of URL** output right after Action 3, to see
+  the server's response.
+  - A `401` means the `X-Stash-Save-Token` header is wrong, or the token was
+    regenerated in Settings. Copy the current token from Settings and update
+    the Shortcut.
+  - A `400` means the `url` field didn't come through. Check that Action 3's
+    body uses the **URLs** variable from Action 2.

@@ -36,4 +36,12 @@ const CONFIG = {
   // PostHog ingestion host: 'https://us.i.posthog.com' (US cloud, default)
   // or 'https://eu.i.posthog.com' (EU cloud) — match your project's region.
   POSTHOG_HOST: 'https://us.i.posthog.com',
+
+  // iCloud link to the "Save to Stash" Apple Shortcut template (see
+  // ios-shortcut/README.md). The Shortcut already has this instance's
+  // SUPABASE_URL/SUPABASE_ANON_KEY baked in and asks the installer for only
+  // one thing — their own save token — via a built-in Shortcuts "import
+  // question". Settings > iOS Share Sheet links here when set. Leave blank
+  // to fall back to the manual, build-it-yourself steps in that guide.
+  IOS_SHORTCUT_URL: '',
 };
