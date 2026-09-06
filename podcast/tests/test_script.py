@@ -264,6 +264,77 @@ class TestMainFailsLoudly:
 
 
 # ---------------------------------------------------------------------------
+# run() – Sentry reporting on fatal errors
+# ---------------------------------------------------------------------------
+
+class TestSentryReporting:
+    def test_reports_fail_exit_to_sentry_when_configured(self, monkeypatch):
+        """fail() raises SystemExit; run() must capture it before it propagates."""
+        monkeypatch.setattr(script, "SENTRY_DSN", "https://fake@sentry.example/1")
+        monkeypatch.setattr(script, "USER_ID", "user-123")
+
+        async def boom():
+            script.fail("ffmpeg failed to assemble the episode MP3")
+        monkeypatch.setattr(script, "main", boom)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture, \
+             patch("script.sentry_sdk.set_tag") as mock_set_tag, \
+             patch("script.sentry_sdk.flush") as mock_flush:
+            with pytest.raises(SystemExit):
+                script.run()
+
+        mock_set_tag.assert_called_once_with("podcast_user_id", "user-123")
+        assert mock_capture.call_count == 1
+        reported = mock_capture.call_args.args[0]
+        assert isinstance(reported, SystemExit)
+        assert "ffmpeg failed" in str(reported.code)
+        mock_flush.assert_called_once()
+
+    def test_reports_uncaught_exception_to_sentry(self, monkeypatch):
+        """A crash past fail()'s reach (e.g. an upload step) must also be reported."""
+        monkeypatch.setattr(script, "SENTRY_DSN", "https://fake@sentry.example/1")
+
+        async def boom():
+            raise ConnectionError("Supabase storage upload timed out")
+        monkeypatch.setattr(script, "main", boom)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture, \
+             patch("script.sentry_sdk.set_tag"), \
+             patch("script.sentry_sdk.flush"):
+            with pytest.raises(ConnectionError):
+                script.run()
+
+        assert mock_capture.call_count == 1
+        assert isinstance(mock_capture.call_args.args[0], ConnectionError)
+
+    def test_does_not_call_sentry_when_dsn_not_configured(self, monkeypatch):
+        """No SENTRY_DSN secret set — must stay a silent no-op, not raise."""
+        monkeypatch.setattr(script, "SENTRY_DSN", None)
+
+        async def boom():
+            script.fail("something broke")
+        monkeypatch.setattr(script, "main", boom)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture:
+            with pytest.raises(SystemExit):
+                script.run()
+
+        mock_capture.assert_not_called()
+
+    def test_does_not_call_sentry_on_success(self, monkeypatch):
+        monkeypatch.setattr(script, "SENTRY_DSN", "https://fake@sentry.example/1")
+
+        async def succeeds():
+            return None
+        monkeypatch.setattr(script, "main", succeeds)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture:
+            script.run()
+
+        mock_capture.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Chapters (#14)
 # ---------------------------------------------------------------------------
 

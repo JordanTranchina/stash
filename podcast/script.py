@@ -4,6 +4,7 @@ import json
 import subprocess
 import time
 import requests
+import sentry_sdk
 from google import genai
 from google.genai import types
 import asyncio
@@ -27,6 +28,18 @@ USER_ID = os.getenv("USER_ID")
 supabase_client: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Mirrors the web app / Edge Functions' Sentry setup (see
+# supabase/functions/_shared/sentry.ts): reporting is a no-op whenever
+# SENTRY_DSN isn't set, so the pipeline runs the same with or without a
+# Sentry project configured. Before this, a run that crashed had no alert
+# of any kind — a subscriber's episode could go missing for days before
+# anyone noticed. (A run that finds nothing to discuss is not reported
+# here — that's an expected quiet day, not a failure; see the run summary
+# written in main() instead.)
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(dsn=SENTRY_DSN, environment="podcast-pipeline", traces_sample_rate=0)
 
 # Gemini model for scriptwriting. Default to 2.5 Flash-Lite: as of 2026 it's the
 # most generous free tier (15 RPM / 1,000 requests per day). gemini-2.0-flash had
@@ -849,5 +862,30 @@ async def main():
           f"({duration_seconds}s, {len(chapters)} chapters)")
 
 
+def _report_fatal_error(error):
+    """Send a fatal error to Sentry before it exits/propagates, if configured.
+
+    Covers both `fail()` (raises SystemExit with the reason as its message)
+    and any uncaught exception past that point — audio synthesis, ffmpeg
+    assembly, the Supabase upload — none of which are required to route
+    through fail(). Without this, such a crash was only ever visible as a
+    red CI job nobody was watching.
+    """
+    if not SENTRY_DSN:
+        return
+    sentry_sdk.set_tag("podcast_user_id", USER_ID or "unknown")
+    sentry_sdk.capture_exception(error)
+    sentry_sdk.flush(timeout=2)
+
+
+def run():
+    """Entry point: run the pipeline, reporting any fatal error to Sentry first."""
+    try:
+        asyncio.run(main())
+    except BaseException as e:
+        _report_fatal_error(e)
+        raise
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()
