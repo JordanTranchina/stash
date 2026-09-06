@@ -6,3 +6,4 @@ aiofiles
 supabase
 youtube-transcript-api
 Pillow
+sentry-sdk

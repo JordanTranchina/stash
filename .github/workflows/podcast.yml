@@ -110,6 +110,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           USER_ID: ${{ matrix.user_id }}
+          # Optional: reports a fatal pipeline error for this user to Sentry
+          # (see script.py's _report_fatal_error). No-op if the secret isn't set.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: python podcast/script.py
 
   retention:

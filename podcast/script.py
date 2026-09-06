@@ -4,6 +4,7 @@ import json
 import subprocess
 import time
 import requests
+import sentry_sdk
 from google import genai
 from google.genai import types
 import asyncio
@@ -28,6 +29,18 @@ supabase_client: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Mirrors the web app / Edge Functions' Sentry setup (see
+# supabase/functions/_shared/sentry.ts): reporting is a no-op whenever
+# SENTRY_DSN isn't set, so the pipeline runs the same with or without a
+# Sentry project configured. Before this, a run that crashed had no alert
+# of any kind — a subscriber's episode could go missing for days before
+# anyone noticed. (A run that finds nothing to discuss is not reported
+# here — that's an expected quiet day, not a failure; see the run summary
+# written in main() instead.)
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(dsn=SENTRY_DSN, environment="podcast-pipeline", traces_sample_rate=0)
+
 # Gemini model for scriptwriting. Default to 2.5 Flash-Lite: as of 2026 it's the
 # most generous free tier (15 RPM / 1,000 requests per day). gemini-2.0-flash had
 # its free tier zeroed out. Override with the GEMINI_MODEL env var if needed.
@@ -38,12 +51,20 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 # used to cost the user that entire day's episode. Retry those with backoff
 # before giving up. 429 (quota exhausted) is deliberately excluded — a quota
 # reset takes longer than a short retry window can cover.
+#
+# A response that doesn't parse as valid JSON is retried too: flash-lite
+# occasionally truncates or malforms its own JSON output, and a fresh
+# generation attempt usually comes back clean, so the whole episode
+# shouldn't die on one bad response (a single day's outage cost an entire
+# subscriber's episode before this was added).
 GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
 GEMINI_RETRY_BASE_DELAY_SECONDS = float(os.getenv("GEMINI_RETRY_BASE_DELAY_SECONDS", "15"))
 RETRYABLE_GEMINI_ERROR_MARKERS = ("503", "UNAVAILABLE", "500", "INTERNAL")
 
 
 def _is_retryable_gemini_error(error):
+    if isinstance(error, json.JSONDecodeError):
+        return True
     text = str(error)
     return any(marker in text for marker in RETRYABLE_GEMINI_ERROR_MARKERS)
 
@@ -228,9 +249,8 @@ def generate_script(articles, prefs=None):
 
     prompt = f"Here are the articles to discuss today:\n\n{json.dumps(articles_payload, indent=2)}"
 
-    try:
-        response = _call_gemini_with_retry(
-            client.models.generate_content,
+    def _generate_and_parse():
+        response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -245,7 +265,13 @@ def generate_script(articles, prefs=None):
         if content.endswith("```"):
             content = content[:-3]
 
+        # A JSONDecodeError raised here is caught by _call_gemini_with_retry
+        # (via _is_retryable_gemini_error) and retried with a fresh generation,
+        # not just re-parsed — the broken text itself is never valid twice.
         return json.loads(content)
+
+    try:
+        return _call_gemini_with_retry(_generate_and_parse)
     except Exception as e:
         # Surface the real reason (quota/rate-limit, bad key, bad JSON, …) instead
         # of silently returning None so the pipeline can fail loudly.
@@ -685,19 +711,63 @@ def fail(reason):
     sys.exit(f"FATAL: {reason}")
 
 
+def _write_step_summary(text):
+    """Append a line to the GitHub Actions run summary, if running in CI.
+
+    A "no episode today" run still exits 0 (see the caller) so the schedule
+    stays green — that's correct, but it means the reason lives only in a
+    step's raw log unless something also puts it somewhere a person actually
+    looks. $GITHUB_STEP_SUMMARY is that place: it renders directly on the
+    workflow run page. Outside CI (local runs) the env var is unset, so this
+    is a no-op.
+    """
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    try:
+        with open(summary_path, "a") as f:
+            f.write(text.rstrip("\n") + "\n")
+    except OSError as e:
+        print(f"Warning: could not write to GITHUB_STEP_SUMMARY: {e}")
+
+
+def _describe_no_articles(stats):
+    """Turn fetch_recent_articles' stats dict into a one-line human reason."""
+    candidates = stats.get("candidates", 0)
+    max_age_hours = stats.get("max_age_hours")
+    skipped = stats.get("skipped", [])
+
+    if candidates == 0:
+        age = f"{max_age_hours:g}h" if max_age_hours is not None else "the recency window"
+        return f"No new saves in the last {age}."
+
+    reasons = "; ".join(f"'{title}' — {reason}" for title, reason in skipped)
+    return (
+        f"{candidates} recent save(s) found, but none had enough article "
+        f"text to discuss: {reasons}."
+    )
+
+
 async def main():
     print("Fetching articles...")
+    fetch_stats = {}
     try:
-        articles = fetch_recent_articles(limit=3)
+        articles = fetch_recent_articles(limit=3, stats=fetch_stats)
     except Exception as e:
         fail(str(e))
 
     # Not a failure: nothing was saved recently enough to discuss (see
     # fetch_recent_articles' recency window). Exit 0 so the scheduled run stays
-    # green on quiet days.
+    # green on quiet days — but say why, and put it somewhere visible (the run
+    # summary), so a run that quietly produces no episode isn't indistinguishable
+    # from one that actually worked.
     if not articles:
+        reason = _describe_no_articles(fetch_stats)
         print("No recent unarchived, undiscussed articles found — nothing to "
-              "generate. Exiting cleanly (this is not an error).")
+              f"generate. Exiting cleanly (this is not an error). {reason}")
+        _write_step_summary(
+            f"### No episode generated\n- User: `{USER_ID}`\n- Reason: {reason}\n"
+        )
         return
 
     # Load custom host personalities once and reuse for script + audio (#13)
@@ -792,5 +862,30 @@ async def main():
           f"({duration_seconds}s, {len(chapters)} chapters)")
 
 
+def _report_fatal_error(error):
+    """Send a fatal error to Sentry before it exits/propagates, if configured.
+
+    Covers both `fail()` (raises SystemExit with the reason as its message)
+    and any uncaught exception past that point — audio synthesis, ffmpeg
+    assembly, the Supabase upload — none of which are required to route
+    through fail(). Without this, such a crash was only ever visible as a
+    red CI job nobody was watching.
+    """
+    if not SENTRY_DSN:
+        return
+    sentry_sdk.set_tag("podcast_user_id", USER_ID or "unknown")
+    sentry_sdk.capture_exception(error)
+    sentry_sdk.flush(timeout=2)
+
+
+def run():
+    """Entry point: run the pipeline, reporting any fatal error to Sentry first."""
+    try:
+        asyncio.run(main())
+    except BaseException as e:
+        _report_fatal_error(e)
+        raise
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()
