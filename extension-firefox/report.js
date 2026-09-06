@@ -74,13 +74,14 @@ async function addFiles(fileList) {
   renderAttachments();
 }
 
-function collectPayload(email) {
+function collectPayload(user) {
   const payload = {
     description: $('description').value.trim(),
     steps: $('steps').value.trim(),
     expected: $('expected').value.trim(),
     observed: $('observed').value.trim(),
-    email: email || '',
+    email: (user && user.email) || '',
+    userId: (user && user.id) || '',
     env: context.env || {},
     logs: context.logs || [],
     lastError: context.lastError || null,
@@ -93,22 +94,22 @@ function collectPayload(email) {
   return payload;
 }
 
-function getUserEmail() {
+function getUser() {
   return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({ action: 'getUser' }, (res) => {
         void chrome.runtime.lastError;
-        resolve((res && res.user && res.user.email) || '');
+        resolve((res && res.user) || null);
       });
     } catch (e) {
-      resolve('');
+      resolve(null);
     }
   });
 }
 
 async function submit() {
   const btn = $('submit-btn');
-  const payload = collectPayload(await getUserEmail());
+  const payload = collectPayload(await getUser());
   if (!payload.description) {
     setStatus('Please describe what went wrong.', 'error');
     return;
