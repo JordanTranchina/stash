@@ -2532,17 +2532,20 @@ select {
   color: var(--text-muted);
 }
 
-/* Install App row: the row itself just holds two independent controls
-   (install + info), so it isn't clickable or hover-highlighted like a
-   normal settings-row — only its buttons are. */
+/* Install App row: tinted with the app's accent color, same treatment as
+   the Home install banner, rather than the plain gray of a normal
+   settings-row. The row itself just holds two independent controls
+   (install + info) — only its buttons are clickable, not the row. */
 .install-app-row {
   cursor: default;
   padding: 8px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
+  border-color: transparent;
 }
 
 .install-app-row:hover {
-  border-color: var(--border);
-  background: var(--bg-secondary);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
 }
 
 .install-app-main-btn {
@@ -2553,7 +2556,7 @@ select {
   padding: 8px;
   background: none;
   border: none;
-  color: inherit;
+  color: var(--primary-dark);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -2561,11 +2564,11 @@ select {
 }
 
 .install-app-main-btn:hover {
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg));
 }
 
 .install-app-main-btn svg {
-  color: var(--text-secondary);
+  color: var(--primary-dark);
   flex-shrink: 0;
 }
 
@@ -2580,14 +2583,16 @@ select {
   background: none;
   border: none;
   border-radius: 50%;
-  color: var(--text-muted);
+  color: var(--primary-dark);
+  opacity: 0.75;
   cursor: pointer;
 }
 
 .settings-info-btn:hover,
 .settings-info-btn[aria-expanded="true"] {
+  opacity: 1;
   color: var(--primary);
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg));
 }
 
 .settings-tooltip {
