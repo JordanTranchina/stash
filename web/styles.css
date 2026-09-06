@@ -2213,11 +2213,62 @@ select {
   pointer-events: none;
 }
 
-.install-toast {
+/* Install App Banner — full-bleed strip sitting directly above the bottom
+   tab bar, tinted with the app's accent color rather than floating as a
+   dark pill like .toast. 60px matches the tab bar's own rendered height
+   (10px+10px padding, 22px icon, 4px gap, ~13px label). */
+.install-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  z-index: 90;
+  display: flex;
+  align-items: center;
   gap: 10px;
+  padding: 12px 20px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
 }
 
-.toast-close-btn {
+.install-banner.hidden {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+.install-banner-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--primary-dark);
+}
+
+.install-banner-message {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+.install-banner-install-btn {
+  flex-shrink: 0;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.install-banner-install-btn:hover {
+  background: var(--primary-dark);
+}
+
+.install-banner-close-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -2225,13 +2276,13 @@ select {
   background: none;
   border: none;
   padding: 4px;
-  margin: -4px -6px -4px 0;
-  color: inherit;
+  margin: -4px -2px -4px 0;
+  color: var(--primary-dark);
   opacity: 0.7;
   cursor: pointer;
 }
 
-.toast-close-btn:hover {
+.install-banner-close-btn:hover {
   opacity: 1;
 }
 

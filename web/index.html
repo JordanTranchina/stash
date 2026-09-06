@@ -712,15 +712,23 @@
       </div>
     </div>
 
-    <!-- Install App Toast. Shown on Home for the first few app opens (see
+    <!-- Install App Banner. Shown on Home for the first few app opens (see
          StashApp.maybeShowInstallToast) until the user installs, dismisses
-         it, or the shown-count limit is reached. Separate from #toast below
+         it, or the shown-count limit is reached. Edge-to-edge, sitting
+         directly above the bottom tab bar — separate from #toast below
          since it does not auto-hide on a timer. -->
-    <div id="install-toast" class="toast install-toast hidden">
-      <span id="install-toast-message">Install Stash for quick access and offline reading.</span>
-      <button type="button" class="toast-action" id="install-toast-install-btn">Install</button>
-      <button type="button" class="toast-close-btn" id="install-toast-close-btn" aria-label="Dismiss">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div id="install-toast" class="install-banner hidden">
+      <span class="install-banner-icon" aria-hidden="true">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </span>
+      <span id="install-toast-message" class="install-banner-message">Install Stash</span>
+      <button type="button" class="install-banner-install-btn" id="install-toast-install-btn">Install</button>
+      <button type="button" class="install-banner-close-btn" id="install-toast-close-btn" aria-label="Dismiss">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
