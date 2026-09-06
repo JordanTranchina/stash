@@ -234,6 +234,51 @@ class TestFetchRecentArticles:
         with patch("extract.requests.get", return_value=mock_response):
             assert extract.fetch_recent_articles(limit=3) == []
 
+    def test_stats_reports_zero_candidates_on_quiet_day(self, monkeypatch):
+        """The caller needs to tell 'nothing saved' apart from 'saved but unusable'."""
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+
+        stats = {}
+        with patch("extract.requests.get", return_value=mock_response):
+            extract.fetch_recent_articles(limit=3, stats=stats)
+
+        assert stats["candidates"] == 0
+        assert stats["skipped"] == []
+        assert stats["max_age_hours"] == extract.DEFAULT_MAX_AGE_HOURS
+
+    def test_stats_records_skip_reasons_for_ineligible_candidates(self, monkeypatch):
+        self._patch_env(monkeypatch)
+        too_short = {**MOCK_ARTICLE, "id": "short-1", "title": "Too Short", "content": "tiny", "excerpt": "tiny"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [too_short]
+
+        stats = {}
+        with patch("extract.requests.get", return_value=mock_response):
+            articles = extract.fetch_recent_articles(limit=3, stats=stats)
+
+        assert articles == []
+        assert stats["candidates"] == 1
+        assert len(stats["skipped"]) == 1
+        title, reason = stats["skipped"][0]
+        assert title == "Too Short"
+        assert "chars of body text" in reason
+
+    def test_stats_is_untouched_when_not_requested(self, monkeypatch):
+        """The stats kwarg must stay fully optional — existing callers pass nothing."""
+        self._patch_env(monkeypatch)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [MOCK_ARTICLE]
+
+        with patch("extract.requests.get", return_value=mock_response):
+            articles = extract.fetch_recent_articles(limit=3)
+
+        assert len(articles) == 1
+
     def test_recently_saved_article_surfaces_before_ancient_one(self, monkeypatch):
         """Regression test: episodes were discussing years-old undiscussed
         saves before anything recently saved, because selection was

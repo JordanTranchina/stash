@@ -126,6 +126,38 @@ class TestGenerateScript:
         assert mock_client.models.generate_content.call_count == 1
         mock_sleep.assert_not_called()
 
+    def test_retries_on_malformed_json_then_succeeds(self, monkeypatch):
+        """A one-off bad-JSON response from Gemini must not cost the day's episode."""
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        bad_response = MagicMock()
+        bad_response.text = '[{"speaker": "Alex" "text": "missing comma"}]'
+        good_response = MagicMock()
+        good_response.text = json.dumps(SAMPLE_SCRIPT)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [bad_response, good_response]
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep") as mock_sleep:
+            result = script.generate_script(SAMPLE_ARTICLES)
+
+        assert result == SAMPLE_SCRIPT
+        assert mock_client.models.generate_content.call_count == 2
+        mock_sleep.assert_called_once()
+
+    def test_gives_up_after_max_retries_on_persistent_malformed_json(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        bad_response = MagicMock()
+        bad_response.text = '[{"speaker": "Alex" "text": "still broken"}]'
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = bad_response
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep"):
+            with pytest.raises(RuntimeError, match="Gemini script generation failed"):
+                script.generate_script(SAMPLE_ARTICLES)
+
+        assert mock_client.models.generate_content.call_count == script.GEMINI_MAX_RETRIES
+
     def test_uses_flash_lite_model_by_default(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
         mock_client = MagicMock()
@@ -149,6 +181,52 @@ class TestMainFailsLoudly:
         """No recent articles is a normal no-op, not a failure — exit 0."""
         monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: [])
         # Should complete without raising SystemExit.
+        asyncio.run(script.main())
+
+    def test_writes_reason_to_step_summary_when_no_saves(self, monkeypatch, tmp_path):
+        """A quiet-day run must say *why* it produced nothing, not just go silent."""
+        def fake_fetch(limit=3, stats=None):
+            if stats is not None:
+                stats["max_age_hours"] = 24
+                stats["candidates"] = 0
+                stats["skipped"] = []
+            return []
+        monkeypatch.setattr(script, "fetch_recent_articles", fake_fetch)
+
+        summary_file = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+        monkeypatch.setattr(script, "USER_ID", "test-user-id")
+
+        asyncio.run(script.main())
+
+        summary_text = summary_file.read_text()
+        assert "test-user-id" in summary_text
+        assert "No new saves in the last 24h" in summary_text
+
+    def test_writes_skip_reasons_to_step_summary_when_all_candidates_skipped(self, monkeypatch, tmp_path):
+        """Distinguish 'nothing saved' from 'saved, but unusable' in the surfaced reason."""
+        def fake_fetch(limit=3, stats=None):
+            if stats is not None:
+                stats["max_age_hours"] = 24
+                stats["candidates"] = 1
+                stats["skipped"] = [("Some Article", "only 159 chars of body text (minimum 250)")]
+            return []
+        monkeypatch.setattr(script, "fetch_recent_articles", fake_fetch)
+
+        summary_file = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+
+        asyncio.run(script.main())
+
+        summary_text = summary_file.read_text()
+        assert "1 recent save(s) found" in summary_text
+        assert "Some Article" in summary_text
+        assert "only 159 chars" in summary_text
+
+    def test_no_step_summary_write_outside_ci(self, monkeypatch):
+        """GITHUB_STEP_SUMMARY is unset for local runs — must not raise."""
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: [])
         asyncio.run(script.main())
 
     def test_exits_nonzero_when_fetch_articles_raises(self, monkeypatch):
@@ -183,6 +261,77 @@ class TestMainFailsLoudly:
             asyncio.run(script.main())
         assert exc.value.code != 0
         assert "429" in str(exc.value.code)
+
+
+# ---------------------------------------------------------------------------
+# run() – Sentry reporting on fatal errors
+# ---------------------------------------------------------------------------
+
+class TestSentryReporting:
+    def test_reports_fail_exit_to_sentry_when_configured(self, monkeypatch):
+        """fail() raises SystemExit; run() must capture it before it propagates."""
+        monkeypatch.setattr(script, "SENTRY_DSN", "https://fake@sentry.example/1")
+        monkeypatch.setattr(script, "USER_ID", "user-123")
+
+        async def boom():
+            script.fail("ffmpeg failed to assemble the episode MP3")
+        monkeypatch.setattr(script, "main", boom)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture, \
+             patch("script.sentry_sdk.set_tag") as mock_set_tag, \
+             patch("script.sentry_sdk.flush") as mock_flush:
+            with pytest.raises(SystemExit):
+                script.run()
+
+        mock_set_tag.assert_called_once_with("podcast_user_id", "user-123")
+        assert mock_capture.call_count == 1
+        reported = mock_capture.call_args.args[0]
+        assert isinstance(reported, SystemExit)
+        assert "ffmpeg failed" in str(reported.code)
+        mock_flush.assert_called_once()
+
+    def test_reports_uncaught_exception_to_sentry(self, monkeypatch):
+        """A crash past fail()'s reach (e.g. an upload step) must also be reported."""
+        monkeypatch.setattr(script, "SENTRY_DSN", "https://fake@sentry.example/1")
+
+        async def boom():
+            raise ConnectionError("Supabase storage upload timed out")
+        monkeypatch.setattr(script, "main", boom)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture, \
+             patch("script.sentry_sdk.set_tag"), \
+             patch("script.sentry_sdk.flush"):
+            with pytest.raises(ConnectionError):
+                script.run()
+
+        assert mock_capture.call_count == 1
+        assert isinstance(mock_capture.call_args.args[0], ConnectionError)
+
+    def test_does_not_call_sentry_when_dsn_not_configured(self, monkeypatch):
+        """No SENTRY_DSN secret set — must stay a silent no-op, not raise."""
+        monkeypatch.setattr(script, "SENTRY_DSN", None)
+
+        async def boom():
+            script.fail("something broke")
+        monkeypatch.setattr(script, "main", boom)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture:
+            with pytest.raises(SystemExit):
+                script.run()
+
+        mock_capture.assert_not_called()
+
+    def test_does_not_call_sentry_on_success(self, monkeypatch):
+        monkeypatch.setattr(script, "SENTRY_DSN", "https://fake@sentry.example/1")
+
+        async def succeeds():
+            return None
+        monkeypatch.setattr(script, "main", succeeds)
+
+        with patch("script.sentry_sdk.capture_exception") as mock_capture:
+            script.run()
+
+        mock_capture.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
