@@ -678,7 +678,9 @@ class StashApp {
   // Shared by the Settings row and the Home toast. Uses the native
   // beforeinstallprompt flow when available (Chrome/Edge/Android); otherwise
   // falls back to a manual instructions modal, since Safari and Firefox
-  // don't expose an install API at all.
+  // don't expose a JS API to trigger install at all — there is no way to
+  // make those browsers install programmatically, only to show someone
+  // where the button already lives in their browser's own UI.
   promptInstall(source) {
     if (this.deferredPrompt) {
       this.pwaPromptSource = source;
@@ -689,19 +691,138 @@ class StashApp {
         window.StashAnalytics?.capture('pwa_install_prompted', { source, outcome: choiceResult.outcome });
       });
     } else {
-      window.StashAnalytics?.capture('pwa_install_instructions_shown', {
-        source,
-        platform: this.isIOS() ? 'ios' : 'other',
-      });
-      this.showInstallInstructionsModal();
+      const platform = this.detectInstallPlatform();
+      window.StashAnalytics?.capture('pwa_install_instructions_shown', { source, platform });
+      this.showInstallInstructionsModal(platform);
     }
   }
 
-  showInstallInstructionsModal() {
-    const text = document.getElementById('install-app-instructions');
-    text.textContent = this.isIOS()
-      ? 'Tap the Share icon in your browser toolbar, then tap "Add to Home Screen."'
-      : 'Open your browser menu and look for "Install App" or "Add to Home Screen."';
+  // Best-effort browser/OS sniffing so the fallback instructions modal can
+  // point at the right menu instead of a generic "check your browser
+  // menu" — that's the whole reason it needed clearing up (issue: too
+  // vague to follow). Falls back to the closest desktop-Chromium case for
+  // anything unrecognized, since that covers the largest share of
+  // browsers that support installing at all.
+  detectInstallPlatform() {
+    const ua = navigator.userAgent;
+    const isIOSDevice = this.isIOS();
+    const isAndroid = /Android/.test(ua);
+    const isMac = /Macintosh/.test(ua) && !isIOSDevice;
+    // "Safari" also matches inside Chrome/Firefox/Edge's UA strings, so
+    // Safari proper is whatever's left after ruling those out.
+    const isSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|OPiOS|OPR/.test(ua);
+    const isFirefox = /Firefox/.test(ua) && !/FxiOS/.test(ua);
+
+    if (isIOSDevice) return isSafari ? 'ios-safari' : 'ios-other';
+    if (isAndroid) return isFirefox ? 'android-firefox' : 'android-chrome';
+    if (isMac && isSafari) return 'mac-safari';
+    if (isFirefox) return 'desktop-firefox';
+    return 'desktop-chrome';
+  }
+
+  // Small stroke-icon set used inline in the install steps below — same
+  // stroke-width-2 style as the rest of the app's SVGs.
+  installStepIcon(name) {
+    const icons = {
+      share:
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"></path><path d="M8 7l4-4 4 4"></path><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7"></path></svg>',
+      menu:
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>',
+      home:
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>',
+      desktop:
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>',
+    };
+    return icons[name] || '';
+  }
+
+  // One entry per detectInstallPlatform() result: an optional caveat
+  // (shown above the steps, e.g. "you'll need Safari for this") and the
+  // steps themselves. Steps are plain text — no bold/links — since this
+  // renders through textContent, not innerHTML.
+  getInstallSteps(platform) {
+    const steps = (...list) => list.map(([icon, text]) => ({ icon, text }));
+    switch (platform) {
+      case 'ios-safari':
+        return {
+          steps: steps(
+            ['share', 'Tap the Share button — the square with an arrow at the bottom of the screen.'],
+            ['home', 'Scroll down and tap "Add to Home Screen."'],
+            [null, 'Tap "Add" in the top right corner.']
+          ),
+        };
+      case 'ios-other':
+        return {
+          note: 'On an iPhone or iPad, only Safari can install apps.',
+          steps: steps(
+            [null, 'Open this page in Safari.'],
+            ['share', 'Tap the Share button — the square with an arrow at the bottom of the screen.'],
+            ['home', 'Tap "Add to Home Screen," then tap "Add."']
+          ),
+        };
+      case 'android-firefox':
+        return {
+          steps: steps(
+            ['menu', 'Tap the menu button (three dots) in the top right.'],
+            ['home', 'Tap "Install."']
+          ),
+        };
+      case 'android-chrome':
+        return {
+          steps: steps(
+            ['menu', 'Tap the menu button (three dots) in the top right.'],
+            ['home', 'Tap "Install app" or "Add to Home screen."'],
+            [null, 'Tap "Install" to confirm.']
+          ),
+        };
+      case 'mac-safari':
+        return {
+          steps: steps(
+            [null, 'Click "File" in the menu bar at the top of the screen.'],
+            ['desktop', 'Click "Add to Dock."']
+          ),
+        };
+      case 'desktop-firefox':
+        return {
+          note: "Firefox on a computer can't install apps yet. Open this page in Chrome, Edge, or Safari instead.",
+          steps: [],
+        };
+      case 'desktop-chrome':
+      default:
+        return {
+          steps: steps(
+            ['desktop', 'Look for the install icon in your address bar — a small screen with a down arrow.'],
+            [null, 'Click it, then click "Install."'],
+            [null, 'No icon there? Open the menu (three dots) and click "Install Stash…" instead.']
+          ),
+        };
+    }
+  }
+
+  showInstallInstructionsModal(platform) {
+    const { note, steps } = this.getInstallSteps(platform || this.detectInstallPlatform());
+
+    const noteEl = document.getElementById('install-app-instructions');
+    noteEl.textContent = note || '';
+    noteEl.classList.toggle('hidden', !note);
+
+    const stepsEl = document.getElementById('install-app-steps');
+    stepsEl.innerHTML = '';
+    for (const step of steps) {
+      const li = document.createElement('li');
+      if (step.icon) {
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'install-step-icon';
+        iconSpan.innerHTML = this.installStepIcon(step.icon);
+        li.appendChild(iconSpan);
+      }
+      const textSpan = document.createElement('span');
+      textSpan.textContent = step.text;
+      li.appendChild(textSpan);
+      stepsEl.appendChild(li);
+    }
+    stepsEl.classList.toggle('hidden', steps.length === 0);
+
     document.getElementById('install-app-modal').classList.remove('hidden');
   }
 
