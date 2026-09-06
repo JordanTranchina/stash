@@ -126,6 +126,38 @@ class TestGenerateScript:
         assert mock_client.models.generate_content.call_count == 1
         mock_sleep.assert_not_called()
 
+    def test_retries_on_malformed_json_then_succeeds(self, monkeypatch):
+        """A one-off bad-JSON response from Gemini must not cost the day's episode."""
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        bad_response = MagicMock()
+        bad_response.text = '[{"speaker": "Alex" "text": "missing comma"}]'
+        good_response = MagicMock()
+        good_response.text = json.dumps(SAMPLE_SCRIPT)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [bad_response, good_response]
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep") as mock_sleep:
+            result = script.generate_script(SAMPLE_ARTICLES)
+
+        assert result == SAMPLE_SCRIPT
+        assert mock_client.models.generate_content.call_count == 2
+        mock_sleep.assert_called_once()
+
+    def test_gives_up_after_max_retries_on_persistent_malformed_json(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        bad_response = MagicMock()
+        bad_response.text = '[{"speaker": "Alex" "text": "still broken"}]'
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = bad_response
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep"):
+            with pytest.raises(RuntimeError, match="Gemini script generation failed"):
+                script.generate_script(SAMPLE_ARTICLES)
+
+        assert mock_client.models.generate_content.call_count == script.GEMINI_MAX_RETRIES
+
     def test_uses_flash_lite_model_by_default(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
         mock_client = MagicMock()
@@ -149,6 +181,52 @@ class TestMainFailsLoudly:
         """No recent articles is a normal no-op, not a failure — exit 0."""
         monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: [])
         # Should complete without raising SystemExit.
+        asyncio.run(script.main())
+
+    def test_writes_reason_to_step_summary_when_no_saves(self, monkeypatch, tmp_path):
+        """A quiet-day run must say *why* it produced nothing, not just go silent."""
+        def fake_fetch(limit=3, stats=None):
+            if stats is not None:
+                stats["max_age_hours"] = 24
+                stats["candidates"] = 0
+                stats["skipped"] = []
+            return []
+        monkeypatch.setattr(script, "fetch_recent_articles", fake_fetch)
+
+        summary_file = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+        monkeypatch.setattr(script, "USER_ID", "test-user-id")
+
+        asyncio.run(script.main())
+
+        summary_text = summary_file.read_text()
+        assert "test-user-id" in summary_text
+        assert "No new saves in the last 24h" in summary_text
+
+    def test_writes_skip_reasons_to_step_summary_when_all_candidates_skipped(self, monkeypatch, tmp_path):
+        """Distinguish 'nothing saved' from 'saved, but unusable' in the surfaced reason."""
+        def fake_fetch(limit=3, stats=None):
+            if stats is not None:
+                stats["max_age_hours"] = 24
+                stats["candidates"] = 1
+                stats["skipped"] = [("Some Article", "only 159 chars of body text (minimum 250)")]
+            return []
+        monkeypatch.setattr(script, "fetch_recent_articles", fake_fetch)
+
+        summary_file = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
+
+        asyncio.run(script.main())
+
+        summary_text = summary_file.read_text()
+        assert "1 recent save(s) found" in summary_text
+        assert "Some Article" in summary_text
+        assert "only 159 chars" in summary_text
+
+    def test_no_step_summary_write_outside_ci(self, monkeypatch):
+        """GITHUB_STEP_SUMMARY is unset for local runs — must not raise."""
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.setattr(script, "fetch_recent_articles", lambda **kw: [])
         asyncio.run(script.main())
 
     def test_exits_nonzero_when_fetch_articles_raises(self, monkeypatch):

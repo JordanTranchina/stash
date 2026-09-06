@@ -174,7 +174,7 @@ def format_article(article):
     }
 
 
-def fetch_recent_articles(limit=5):
+def fetch_recent_articles(limit=5, stats=None):
     """Fetch unarchived, not-yet-discussed articles saved in the last day.
 
     Only saves newer than the recency cutoff (see :func:`get_max_age_hours`)
@@ -189,6 +189,12 @@ def fetch_recent_articles(limit=5):
     link-only saves) are skipped — see :func:`podcast_skip_reason`. Because
     that filtering happens after the query, we ask for a larger candidate pool
     than `limit` and stop once `limit` usable articles have been collected.
+
+    If ``stats`` is given (a dict), it is filled in with ``max_age_hours``,
+    ``candidates`` (how many saves matched the recency/archive query) and
+    ``skipped`` (a list of ``(title, reason)`` for each candidate dropped by
+    :func:`podcast_skip_reason`) — the caller uses this to explain a
+    zero-article run instead of just going quiet.
     """
     url = f"{SUPABASE_URL}/rest/v1/saves"
     candidate_limit = max(limit * CANDIDATE_MULTIPLIER, MIN_CANDIDATE_POOL)
@@ -217,6 +223,11 @@ def fetch_recent_articles(limit=5):
         print(f"No saves in the last {max_age_hours:g}h to discuss.")
     formatted_articles = []
 
+    if stats is not None:
+        stats["max_age_hours"] = max_age_hours
+        stats["candidates"] = len(articles)
+        stats["skipped"] = []
+
     for article in articles:
         if len(formatted_articles) >= limit:
             break
@@ -226,6 +237,8 @@ def fetch_recent_articles(limit=5):
         skip_reason = podcast_skip_reason(formatted["content"])
         if skip_reason:
             print(f"Skipping '{formatted['title']}' — {skip_reason}.")
+            if stats is not None:
+                stats["skipped"].append((formatted["title"], skip_reason))
             continue
 
         formatted_articles.append(formatted)
