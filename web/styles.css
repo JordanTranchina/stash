@@ -2213,6 +2213,79 @@ select {
   pointer-events: none;
 }
 
+/* Install App Banner — full-bleed strip sitting directly above the bottom
+   tab bar, tinted with the app's accent color rather than floating as a
+   dark pill like .toast. 60px matches the tab bar's own rendered height
+   (10px+10px padding, 22px icon, 4px gap, ~13px label). */
+.install-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+
+.install-banner.hidden {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+.install-banner-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--primary-dark);
+}
+
+.install-banner-message {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+.install-banner-install-btn {
+  flex-shrink: 0;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.install-banner-install-btn:hover {
+  background: var(--primary-dark);
+}
+
+.install-banner-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 4px;
+  margin: -4px -2px -4px 0;
+  color: var(--primary-dark);
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.install-banner-close-btn:hover {
+  opacity: 1;
+}
+
 /* Podcasts View (Listen Later, #12) */
 .podcasts-view {
   /* Injected into #saves-container (display: grid), so span every column;
@@ -2457,6 +2530,85 @@ select {
 
 .settings-row .settings-chevron {
   color: var(--text-muted);
+}
+
+/* Install App row: tinted with the app's accent color, same treatment as
+   the Home install banner, rather than the plain gray of a normal
+   settings-row. The row itself just holds two independent controls
+   (install + info) — only its buttons are clickable, not the row. */
+.install-app-row {
+  cursor: default;
+  padding: 8px;
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
+  border-color: transparent;
+}
+
+.install-app-row:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg));
+}
+
+.install-app-main-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px;
+  background: none;
+  border: none;
+  color: var(--primary-dark);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.install-app-main-btn:hover {
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg));
+}
+
+.install-app-main-btn svg {
+  color: var(--primary-dark);
+  flex-shrink: 0;
+}
+
+.settings-info-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--primary-dark);
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.settings-info-btn:hover,
+.settings-info-btn[aria-expanded="true"] {
+  opacity: 1;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg));
+}
+
+.settings-tooltip {
+  margin: -4px 0 8px;
+  padding: 12px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.settings-tooltip.hidden {
+  display: none;
 }
 
 .settings-checkbox {

@@ -52,6 +52,13 @@ class StashApp {
     // In-app bug reporter (Settings entry point + "Report" on failure toasts).
     this.bugReporter = new BugReporter(this);
 
+    // PWA install prompt (see bindEvents' "PWA: Install Prompt" section).
+    // deferredPrompt holds the beforeinstallprompt event on browsers that
+    // support it (Chrome/Edge/Android); pwaPromptSource records which UI
+    // triggered the prompt, for the appinstalled analytics event.
+    this.deferredPrompt = null;
+    this.pwaPromptSource = null;
+
     this.init();
   }
 
@@ -567,28 +574,162 @@ class StashApp {
     window.addEventListener('offline', () => this.updateOnlineStatus());
 
     // PWA: Install Prompt
+    //
+    // The Settings row is always visible (unless the app is already
+    // installed) so there's always a way in, even on browsers like Safari
+    // that never fire beforeinstallprompt: promptInstall() falls back to a
+    // manual instructions modal there. The Home toast (maybeShowInstallToast,
+    // called from showMainScreen) offers the same action for the first few
+    // app opens.
     const installBtn = document.getElementById('install-app-settings-btn');
+    const installModal = document.getElementById('install-app-modal');
+    const installRow = document.querySelector('.install-app-row');
+    const installTooltip = document.getElementById('install-app-tooltip');
+    const installInfoBtn = document.getElementById('install-app-info-btn');
+
+    if (this.isStandalone()) {
+      installRow?.classList.add('hidden');
+      installTooltip?.classList.add('hidden');
+    }
+
+    // "What is a PWA?" tooltip — hover shows it (desktop), a tap toggles
+    // it and keeps it open until dismissed (touch, where hover doesn't
+    // exist). A tap outside closes a pinned-open tooltip.
+    let installTooltipPinned = false;
+    const showInstallTooltip = () => {
+      installTooltip?.classList.remove('hidden');
+      installInfoBtn?.setAttribute('aria-expanded', 'true');
+    };
+    const hideInstallTooltip = () => {
+      installTooltip?.classList.add('hidden');
+      installInfoBtn?.setAttribute('aria-expanded', 'false');
+    };
+    installInfoBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      installTooltipPinned = !installTooltipPinned;
+      if (installTooltipPinned) {
+        window.StashAnalytics?.capture('pwa_info_tooltip_opened');
+        showInstallTooltip();
+      } else {
+        hideInstallTooltip();
+      }
+    });
+    installInfoBtn?.addEventListener('mouseenter', () => showInstallTooltip());
+    installInfoBtn?.addEventListener('mouseleave', () => {
+      if (!installTooltipPinned) hideInstallTooltip();
+    });
+    document.addEventListener('click', (e) => {
+      if (installTooltipPinned && e.target !== installInfoBtn && !installInfoBtn?.contains(e.target)) {
+        installTooltipPinned = false;
+        hideInstallTooltip();
+      }
+    });
+
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
-      installBtn?.classList.remove('hidden');
     });
 
     installBtn?.addEventListener('click', () => {
-      if (!this.deferredPrompt) return;
-      this.deferredPrompt.prompt();
-      this.deferredPrompt.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the install prompt');
-        }
-        this.deferredPrompt = null;
-      });
+      window.StashAnalytics?.capture('pwa_install_settings_clicked');
+      this.promptInstall('settings');
+    });
+
+    installModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
+      this.hideInstallInstructionsModal();
+    });
+    installModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
+      this.hideInstallInstructionsModal();
+    });
+
+    document.getElementById('install-toast-install-btn')?.addEventListener('click', () => {
+      window.StashAnalytics?.capture('pwa_install_toast_clicked');
+      localStorage.setItem('stash-pwa-toast-dismissed', '1');
+      this.hideInstallToast();
+      this.promptInstall('toast');
+    });
+    document.getElementById('install-toast-close-btn')?.addEventListener('click', () => {
+      window.StashAnalytics?.capture('pwa_install_toast_dismissed');
+      localStorage.setItem('stash-pwa-toast-dismissed', '1');
+      this.hideInstallToast();
     });
 
     window.addEventListener('appinstalled', () => {
-      installBtn?.classList.add('hidden');
+      installRow?.classList.add('hidden');
+      installTooltip?.classList.add('hidden');
+      this.hideInstallToast();
+      localStorage.setItem('stash-pwa-toast-dismissed', '1');
+      window.StashAnalytics?.capture('pwa_installed', { source: this.pwaPromptSource || 'unknown' });
       this.deferredPrompt = null;
     });
+  }
+
+  // True once installed and running standalone (Android/desktop Chrome
+  // report this via the display-mode media query; iOS Safari instead sets
+  // navigator.standalone, which doesn't exist on other browsers).
+  isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  }
+
+  // Shared by the Settings row and the Home toast. Uses the native
+  // beforeinstallprompt flow when available (Chrome/Edge/Android); otherwise
+  // falls back to a manual instructions modal, since Safari and Firefox
+  // don't expose an install API at all.
+  promptInstall(source) {
+    if (this.deferredPrompt) {
+      this.pwaPromptSource = source;
+      const prompt = this.deferredPrompt;
+      this.deferredPrompt = null;
+      prompt.prompt();
+      prompt.userChoice.then((choiceResult) => {
+        window.StashAnalytics?.capture('pwa_install_prompted', { source, outcome: choiceResult.outcome });
+      });
+    } else {
+      window.StashAnalytics?.capture('pwa_install_instructions_shown', {
+        source,
+        platform: this.isIOS() ? 'ios' : 'other',
+      });
+      this.showInstallInstructionsModal();
+    }
+  }
+
+  showInstallInstructionsModal() {
+    const text = document.getElementById('install-app-instructions');
+    text.textContent = this.isIOS()
+      ? 'Tap the Share icon in your browser toolbar, then tap "Add to Home Screen."'
+      : 'Open your browser menu and look for "Install App" or "Add to Home Screen."';
+    document.getElementById('install-app-modal').classList.remove('hidden');
+  }
+
+  hideInstallInstructionsModal() {
+    document.getElementById('install-app-modal').classList.add('hidden');
+  }
+
+  // Home toast nudging the user to install, for the first few app opens
+  // only. Called from showMainScreen(). Skipped entirely once installed, or
+  // once the user has installed/dismissed it (stash-pwa-toast-dismissed).
+  maybeShowInstallToast() {
+    if (this.isStandalone()) return;
+    if (this.currentView !== 'all') return;
+    if (localStorage.getItem('stash-pwa-toast-dismissed') === '1') return;
+
+    const MAX_SHOWN = 3;
+    const shownCount = parseInt(localStorage.getItem('stash-pwa-toast-count') || '0', 10);
+    if (shownCount >= MAX_SHOWN) return;
+
+    const toast = document.getElementById('install-toast');
+    if (!toast) return;
+    localStorage.setItem('stash-pwa-toast-count', String(shownCount + 1));
+    toast.classList.remove('hidden');
+    window.StashAnalytics?.capture('pwa_install_toast_shown', { count: shownCount + 1 });
+  }
+
+  hideInstallToast() {
+    document.getElementById('install-toast')?.classList.add('hidden');
   }
 
   setupRealtime() {
@@ -641,6 +782,7 @@ class StashApp {
     if (window.location.hash === '#settings') {
       this.setView('settings');
     }
+    this.maybeShowInstallToast();
   }
 
   async signIn() {
