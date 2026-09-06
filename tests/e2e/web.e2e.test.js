@@ -130,4 +130,25 @@ describe('Stash Web App — Auth Screen', () => {
     const mainScreen = await page.$('#main-screen');
     expect(mainScreen).not.toBeNull();
   });
+
+  test('viewport and apple status bar meta tags configure edge-to-edge PWA', async () => {
+    const viewport = await page.$eval('meta[name="viewport"]', (el) => el.getAttribute('content'));
+    expect(viewport).toContain('viewport-fit=cover');
+
+    const statusBarStyle = await page.$eval(
+      'meta[name="apple-mobile-web-app-status-bar-style"]',
+      (el) => el.getAttribute('content')
+    );
+    expect(statusBarStyle).toBe('black-translucent');
+  });
+
+  test('main-header renders with base padding on iPad viewport', async () => {
+    // iPad Air portrait width is 820px
+    await page.setViewport({ width: 820, height: 1180 });
+    const headerPaddingTop = await page.$eval('.main-header', (el) => {
+      return window.getComputedStyle(el).paddingTop;
+    });
+    // In headless browser where safe-area-inset-top is 0px, calc(12px + 0px) resolves to 12px
+    expect(headerPaddingTop).toBe('12px');
+  });
 });

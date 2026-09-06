@@ -9,6 +9,9 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 // ---------------------------------------------------------------------------
 // Stub the browser environment app.js expects to find
 // ---------------------------------------------------------------------------
@@ -216,3 +219,35 @@ describe('wordCount / readingTime', () => {
     expect(readingTime({})).toBeNull();
   });
 });
+
+describe('PWA safe-area layout', () => {
+  const cssPath = path.join(__dirname, '..', '..', 'web', 'styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+
+  test('main-header incorporates safe-area-inset-top in base styles', () => {
+    // Base rule for .main-header must pad the top by env(safe-area-inset-top)
+    // so iPad/tablet PWAs do not overlap the Apple status bar (#128).
+    expect(css).toMatch(/\.main-header\s*\{[^}]*padding-top:\s*calc\([^}]*env\(safe-area-inset-top/);
+  });
+
+  test('main-header retains safe-area-inset-top in mobile breakpoint', () => {
+    // Under @media (max-width: 768px), .main-header must keep safe-area-inset-top
+    expect(css).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.main-header\s*\{[^}]*padding-top:\s*calc\([^}]*env\(safe-area-inset-top/);
+  });
+
+  test('body does not have blanket safe-area padding that causes 100vh overflow', () => {
+    // Blanket padding on body broke flex layouts and caused vertical scrolling jitter.
+    expect(css).not.toMatch(/body\s*\{[^}]*padding:\s*env\(safe-area-inset-top\)/);
+  });
+
+  test('reading-header has safe-area-inset-top across tablet and mobile overlays', () => {
+    // Tablet (max-width: 1024px) overlay needs safe-area-inset-top for reading header
+    expect(css).toMatch(/@media\s*\(max-width:\s*1024px\)\s*\{[\s\S]*?\.reading-header\s*\{[^}]*padding-top:\s*calc\([^}]*env\(safe-area-inset-top/);
+  });
+
+  test('bottom-nav includes safe-area-inset-bottom and horizontal insets', () => {
+    expect(css).toMatch(/\.bottom-nav\s*\{[^}]*padding-bottom:\s*env\(safe-area-inset-bottom/);
+    expect(css).toMatch(/\.bottom-nav\s*\{[^}]*padding-left:\s*env\(safe-area-inset-left/);
+  });
+});
+
