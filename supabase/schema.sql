@@ -288,3 +288,29 @@ $$;
 create trigger create_podcast_feed_for_user
   after insert on auth.users
   for each row execute function public.create_podcast_feed_for_user();
+
+-- ---------------------------------------------------------------------------
+-- On-demand podcast generation requests (rate-limit ledger)
+-- ---------------------------------------------------------------------------
+-- The Podcasts tab's "Make an episode now" button hits the `request-podcast`
+-- Edge Function, which triggers the daily GitHub Actions workflow for one
+-- user. Each accepted request writes a row here; the function caps a user to
+-- a few requests per rolling 24h off this table and the UI reads it to show
+-- how many are left. Rows are written only by the function (service role);
+-- users may read their own but there is no client write policy, so the cap
+-- can't be forged around.
+
+create table podcast_generation_requests (
+  id                  uuid primary key default uuid_generate_v4(),
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  created_at          timestamptz not null default now(),
+  workflow_dispatched boolean not null default false
+);
+
+create index podcast_generation_requests_user_created_idx
+  on podcast_generation_requests (user_id, created_at desc);
+
+alter table podcast_generation_requests enable row level security;
+
+create policy "Users can view own generation requests" on podcast_generation_requests
+  for select using (auth.uid() = user_id);
