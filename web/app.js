@@ -923,7 +923,7 @@ class StashApp {
   // Markup for one save card (optionally wrapped in the swipe-to-archive
   // container). Pulled out of renderSaves so the initial full render and the
   // "append the next page" path (see loadSaves/loadMoreSaves) share it.
-  saveCardHtml(save, swipeEnabled) {
+  saveCardHtml(save, swipeEnabled, swipeRestores = false) {
     const isHighlight = !!save.highlight;
     const date = new Date(save.created_at).toLocaleDateString();
 
@@ -943,7 +943,7 @@ class StashApp {
       `;
     } else {
       // Reading time comes from the word_count column (see the
-      // 20260904_saves_word_count.sql migration) — never from splitting
+      // 20260904220221_saves_word_count.sql migration) — never from splitting
       // `save.content`, which the list view no longer fetches at all.
       const minutes = this.readingTime(save);
       const publishedDate = this.formattedPublishedDate(save);
@@ -973,16 +973,23 @@ class StashApp {
 
     if (!swipeEnabled) return cardHtml;
 
-    // Wrap in a swipe container with an "Archive" action revealed on left-swipe
-    return `
-      <div class="save-card-swipe" data-id="${save.id}">
-        <div class="save-card-swipe-action" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    // Wrap in a swipe container with the action revealed on left-swipe:
+    // "Archive" on normal lists, "Move to Stash" in the archived view.
+    const swipeActionSvg = swipeRestores
+      ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 14 4 9 9 4"></polyline>
+            <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+          </svg>`
+      : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="21 8 21 21 3 21 3 8"></polyline>
             <rect x="1" y="3" width="22" height="5"></rect>
             <line x1="10" y1="12" x2="14" y2="12"></line>
-          </svg>
-          <span>Archive</span>
+          </svg>`;
+    return `
+      <div class="save-card-swipe" data-id="${save.id}">
+        <div class="save-card-swipe-action" aria-hidden="true">
+          ${swipeActionSvg}
+          <span>${swipeRestores ? 'Move to Stash' : 'Archive'}</span>
         </div>
         ${cardHtml}
       </div>
@@ -993,10 +1000,11 @@ class StashApp {
   // (a scope, not just the whole container, so appending a page only attaches
   // gesture handlers to the cards that are actually new).
   wireSwipeToArchive(root) {
+    const restore = this.currentView === 'archived';
     root.querySelectorAll('.save-card-swipe').forEach(swipeEl => {
       const card = swipeEl.querySelector('.save-card');
       const save = this._savesById.get(swipeEl.dataset.id);
-      if (card && save) this.attachSwipeToArchive(swipeEl, card, save);
+      if (card && save) this.attachSwipeToArchive(swipeEl, card, save, restore);
     });
   }
 
@@ -1013,11 +1021,13 @@ class StashApp {
     // was O(n) per card and so O(n²) across the whole list.
     this._savesById = new Map(this.saves.map(s => [s.id, s]));
 
-    // Swipe-to-archive only makes sense for lists that aren't already archived.
-    const swipeEnabled = this.currentView !== 'archived';
+    // Every list gets the swipe wrapper: it commits an archive on normal
+    // lists and an un-archive (restore) in the archived view.
+    const swipeEnabled = true;
+    const swipeRestores = this.currentView === 'archived';
 
     if (appendItems && appendItems.length) {
-      const html = appendItems.map(save => this.saveCardHtml(save, swipeEnabled)).join('');
+      const html = appendItems.map(save => this.saveCardHtml(save, swipeEnabled, swipeRestores)).join('');
       container.insertAdjacentHTML('beforeend', html);
       // Only the freshly-inserted cards need wiring — a page is at most
       // PAGE_SIZE items, so looking each one up by id is cheap.
@@ -1025,19 +1035,20 @@ class StashApp {
         appendItems.forEach(save => {
           const swipeEl = container.querySelector(`.save-card-swipe[data-id="${save.id}"]`);
           const card = swipeEl?.querySelector('.save-card');
-          if (swipeEl && card) this.attachSwipeToArchive(swipeEl, card, save);
+          if (swipeEl && card) this.attachSwipeToArchive(swipeEl, card, save, swipeRestores);
         });
       }
       return;
     }
 
-    container.innerHTML = this.saves.map(save => this.saveCardHtml(save, swipeEnabled)).join('');
+    container.innerHTML = this.saves.map(save => this.saveCardHtml(save, swipeEnabled, swipeRestores)).join('');
 
     if (swipeEnabled) this.wireSwipeToArchive(container);
   }
 
-  // Attach a left-swipe-to-archive gesture to a single save card.
-  attachSwipeToArchive(swipeEl, cardEl, save) {
+  // Attach a left-swipe gesture to a single save card. When `restore` is true
+  // the gesture un-archives the save (archived view); otherwise it archives it.
+  attachSwipeToArchive(swipeEl, cardEl, save, restore = false) {
     const action = swipeEl.querySelector('.save-card-swipe-action');
     const THRESHOLD = 90; // px of left-drag needed to commit the archive
     let startX = 0, startY = 0, dx = 0;
@@ -1079,7 +1090,10 @@ class StashApp {
       cardEl.style.transition = 'transform 0.2s ease';
       if (Math.abs(dx) >= THRESHOLD) {
         cardEl.style.transform = 'translateX(-100%)';
-        setTimeout(() => this.archiveSaveById(save.id, swipeEl), 160);
+        setTimeout(() => {
+          if (restore) this.restoreSaveById(save.id, swipeEl);
+          else this.archiveSaveById(save.id, swipeEl);
+        }, 160);
       } else {
         cardEl.style.transform = 'translateX(0)';
         swipeEl.classList.remove('will-archive');
@@ -1149,6 +1163,57 @@ class StashApp {
     });
 
     // Remove the collapsed node, or fall back to the empty state
+    setTimeout(() => {
+      swipeEl?.remove();
+      if (this.saves.length === 0) {
+        this.renderEmptyState();
+        document.getElementById('empty-state').classList.remove('hidden');
+      }
+    }, 280);
+  }
+
+  // Restore a save by id (used by left-swipe in the archived view), collapsing
+  // its card out of the archived list.
+  async restoreSaveById(id, swipeEl) {
+    if (swipeEl) {
+      swipeEl.style.maxHeight = `${swipeEl.offsetHeight}px`;
+      swipeEl.style.overflow = 'hidden';
+      requestAnimationFrame(() => {
+        swipeEl.style.transition = 'max-height 0.25s ease, opacity 0.25s ease, margin 0.25s ease';
+        swipeEl.style.maxHeight = '0px';
+        swipeEl.style.opacity = '0';
+        swipeEl.style.margin = '0';
+      });
+    }
+
+    // Optimistically drop it from the archived list
+    const idx = this.saves.findIndex(s => s.id === id);
+    if (idx !== -1) this.saves.splice(idx, 1);
+
+    const { error } = await this.supabase
+      .from('saves')
+      .update({ is_archived: false })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error restoring save:', error);
+      window.StashLog?.noteError('Unarchive failed: ' + (error.message || error), '', 'restoreSaveById');
+      this.showToast('Could not move — try again', {
+        label: 'Report',
+        onClick: () => this.bugReporter.open({ prefillError: true }),
+      });
+      this.loadSaves();
+      return;
+    }
+
+    window.StashDB.saveArticles(this.saves);
+    window.StashDB.setArchived(id, false);
+    window.StashAnalytics?.capture('save_unarchived', { via: 'swipe' });
+    this.showToast('Moved to Stash', {
+      label: 'Undo',
+      onClick: () => this.archiveSaveById(id),
+    });
+
     setTimeout(() => {
       swipeEl?.remove();
       if (this.saves.length === 0) {
@@ -1834,7 +1899,7 @@ class StashApp {
     }
 
     // Update button states
-    document.getElementById('archive-btn').classList.toggle('active', save.is_archived);
+    this.updateArchiveButton(save.is_archived);
 
     // Show the percent already read from a previous session.
     const initialPercent = Math.min(Math.max(save.read_percent || 0, 0), 100);
@@ -2053,7 +2118,7 @@ class StashApp {
   // article_opened / article_read_progress analytics events.
   //
   // Prefers the stored `word_count` column (see the
-  // 20260904_saves_word_count.sql migration, kept current by a DB trigger)
+  // 20260904220221_saves_word_count.sql migration, kept current by a DB trigger)
   // so this never has to re-split the full article text — the list view
   // doesn't even fetch `content` anymore (see SAVES_LIST_COLUMNS). Splitting
   // `save.content` is only a fallback for the moment right after a fresh
@@ -2242,6 +2307,27 @@ class StashApp {
     return data.signedUrl;
   }
 
+  // Reflect archived state on the reading-pane archive button. When already
+  // archived the button un-archives, so it shows an "item lifting out of the
+  // box" icon and reads as Unarchive.
+  updateArchiveButton(isArchived) {
+    const btn = document.getElementById('archive-btn');
+    if (!btn) return;
+    btn.classList.toggle('active', isArchived);
+    btn.title = isArchived ? 'Unarchive' : 'Archive';
+    btn.setAttribute('aria-label', isArchived ? 'Unarchive' : 'Archive');
+    btn.innerHTML = isArchived
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8"></path>
+          <polyline points="8 6 12 2 16 6"></polyline>
+          <line x1="12" y1="2" x2="12" y2="14"></line>
+        </svg>`
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="21 8 21 21 3 21 3 8"></polyline>
+          <rect x="1" y="3" width="22" height="5"></rect>
+        </svg>`;
+  }
+
   async toggleArchive() {
     if (!this.currentSave) return;
 
@@ -2252,6 +2338,7 @@ class StashApp {
       .eq('id', this.currentSave.id);
 
     this.currentSave.is_archived = newValue;
+    this.updateArchiveButton(newValue);
     // Keep the offline cache in sync so the next render files this item correctly.
     window.StashDB.setArchived(this.currentSave.id, newValue);
     window.StashAnalytics?.capture(newValue ? 'save_archived' : 'save_unarchived', { via: 'reading_pane' });
