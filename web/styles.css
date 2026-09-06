@@ -1653,6 +1653,7 @@ select {
 
 /* Steps without an icon (e.g. "tap Add to confirm") still line up under
    the icon column, rather than sitting flush against the modal edge. */
+.install-steps li.install-step-no-icon,
 .install-steps li:not(:has(.install-step-icon)) {
   padding-left: 44px;
 }

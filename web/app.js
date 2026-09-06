@@ -575,13 +575,10 @@ class StashApp {
 
     // PWA: Install Prompt
     //
-    // On Chrome/Edge, the native install dialog auto-triggers the moment
-    // beforeinstallprompt fires (see below) — the Settings row and Home
-    // toast are a manual fallback for anyone who dismissed it, plus the
-    // only path at all on browsers like Safari that never fire
-    // beforeinstallprompt: promptInstall() falls back to a manual
-    // instructions modal there. The Settings row is always visible (unless
-    // the app is already installed). The Home toast (maybeShowInstallToast,
+    // The Settings row is always visible (unless the app is already
+    // installed) so there's always a way in, even on browsers like Safari
+    // that never fire beforeinstallprompt: promptInstall() falls back to a
+    // manual instructions modal there. The Home toast (maybeShowInstallToast,
     // called from showMainScreen) offers the same action for the first few
     // app opens.
     const installBtn = document.getElementById('install-app-settings-btn');
@@ -631,15 +628,6 @@ class StashApp {
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
-      // Auto-trigger the native install dialog the moment Chrome/Edge makes
-      // it available, rather than waiting for a tap on the Settings button
-      // or the Home banner — those stay as a manual fallback. Suppressed
-      // once someone's dismissed the native dialog once, so it doesn't nag
-      // on every visit; installing or dismissing the Settings/Home banner
-      // path doesn't set this, since that's a deliberate choice either way.
-      if (localStorage.getItem('stash-pwa-auto-prompt-declined') !== '1') {
-        this.promptInstall('auto');
-      }
     });
 
     installBtn?.addEventListener('click', () => {
@@ -684,7 +672,10 @@ class StashApp {
   }
 
   isIOS() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const ua = navigator.userAgent;
+    // iPadOS 13+ reports a desktop Mac UA by default; check touch points to distinguish from macOS.
+    const isIPadOS = (navigator.platform === 'MacIntel' || /Macintosh/.test(ua)) && navigator.maxTouchPoints > 1;
+    return (/iPad|iPhone|iPod/.test(ua) || isIPadOS) && !window.MSStream;
   }
 
   // Shared by the Settings row and the Home toast. Uses the native
@@ -698,15 +689,17 @@ class StashApp {
       this.pwaPromptSource = source;
       const prompt = this.deferredPrompt;
       this.deferredPrompt = null;
-      prompt.prompt();
-      prompt.userChoice.then((choiceResult) => {
-        window.StashAnalytics?.capture('pwa_install_prompted', { source, outcome: choiceResult.outcome });
-        // Only the auto-triggered dialog sets this — declining a prompt
-        // someone asked for (Settings/Home banner) isn't "leave me alone."
-        if (source === 'auto' && choiceResult.outcome === 'dismissed') {
-          localStorage.setItem('stash-pwa-auto-prompt-declined', '1');
-        }
-      });
+      try {
+        prompt.prompt();
+        prompt.userChoice.then((choiceResult) => {
+          window.StashAnalytics?.capture('pwa_install_prompted', { source, outcome: choiceResult?.outcome });
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('PWA install prompt failed:', err);
+        const platform = this.detectInstallPlatform();
+        window.StashAnalytics?.capture('pwa_install_instructions_shown', { source, platform });
+        this.showInstallInstructionsModal(platform);
+      }
     } else {
       const platform = this.detectInstallPlatform();
       window.StashAnalytics?.capture('pwa_install_instructions_shown', { source, platform });
@@ -763,7 +756,7 @@ class StashApp {
       case 'ios-safari':
         return {
           steps: steps(
-            ['share', 'Tap the Share button — the square with an arrow at the bottom of the screen.'],
+            ['share', 'Tap the Share button — the square with an arrow in your toolbar (bottom on iPhone, top on iPad).'],
             ['home', 'Scroll down and tap "Add to Home Screen."'],
             [null, 'Tap "Add" in the top right corner.']
           ),
@@ -773,7 +766,7 @@ class StashApp {
           note: 'On an iPhone or iPad, only Safari can install apps.',
           steps: steps(
             [null, 'Open this page in Safari.'],
-            ['share', 'Tap the Share button — the square with an arrow at the bottom of the screen.'],
+            ['share', 'Tap the Share button — the square with an arrow in your toolbar.'],
             ['home', 'Tap "Add to Home Screen," then tap "Add."']
           ),
         };
@@ -830,8 +823,11 @@ class StashApp {
       if (step.icon) {
         const iconSpan = document.createElement('span');
         iconSpan.className = 'install-step-icon';
+        iconSpan.setAttribute('aria-hidden', 'true');
         iconSpan.innerHTML = this.installStepIcon(step.icon);
         li.appendChild(iconSpan);
+      } else {
+        li.classList.add('install-step-no-icon');
       }
       const textSpan = document.createElement('span');
       textSpan.textContent = step.text;
