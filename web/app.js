@@ -575,13 +575,14 @@ class StashApp {
 
     // PWA: Install Prompt
     //
-    // On Chrome/Edge, the native install dialog auto-triggers the moment
-    // beforeinstallprompt fires (see below) — the Settings row and Home
-    // toast are a manual fallback for anyone who dismissed it, plus the
-    // only path at all on browsers like Safari that never fire
-    // beforeinstallprompt: promptInstall() falls back to a manual
-    // instructions modal there. The Settings row is always visible (unless
-    // the app is already installed). The Home toast (maybeShowInstallToast,
+    // The native install dialog can only be shown from a real click/tap —
+    // browsers require transient user activation for prompt(), which the
+    // automatic beforeinstallprompt firing doesn't have — so the Settings
+    // row and Home toast are the actual trigger, not a fallback for one.
+    // The Settings row is always visible (unless the app is already
+    // installed), even on browsers like Safari that never fire
+    // beforeinstallprompt at all: promptInstall() falls back to a manual
+    // instructions modal there. The Home toast (maybeShowInstallToast,
     // called from showMainScreen) offers the same action for the first few
     // app opens.
     const installBtn = document.getElementById('install-app-settings-btn');
@@ -628,18 +629,18 @@ class StashApp {
       }
     });
 
+    // Can't auto-trigger prompt() here: per spec (and confirmed by MDN),
+    // it "must be called in the event handler for a user action (such as
+    // a button click)" — beforeinstallprompt itself fires automatically on
+    // page load with no click behind it, so calling prompt() straight from
+    // this handler throws NotAllowedError in real Chrome/Edge (there's no
+    // transient user activation to satisfy). There's no way to show the
+    // native install dialog without a tap; capturing the event here for
+    // the Settings button / Home banner to use is the closest thing to
+    // "automatic" the API allows.
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.deferredPrompt = e;
-      // Auto-trigger the native install dialog the moment Chrome/Edge makes
-      // it available, rather than waiting for a tap on the Settings button
-      // or the Home banner — those stay as a manual fallback. Suppressed
-      // once someone's dismissed the native dialog once, so it doesn't nag
-      // on every visit; installing or dismissing the Settings/Home banner
-      // path doesn't set this, since that's a deliberate choice either way.
-      if (localStorage.getItem('stash-pwa-auto-prompt-declined') !== '1') {
-        this.promptInstall('auto');
-      }
     });
 
     installBtn?.addEventListener('click', () => {
@@ -683,8 +684,14 @@ class StashApp {
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   }
 
+  // Since iPadOS 13, Safari on iPad reports a desktop Mac user agent by
+  // default (no "iPad" token at all) to get non-mobile sites — the
+  // standard way to still catch it is a Mac UA with touch support, since
+  // no actual Mac has a touchscreen.
   isIOS() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const ua = navigator.userAgent;
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return true;
+    return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
   }
 
   // Shared by the Settings row and the Home toast. Uses the native
@@ -701,11 +708,6 @@ class StashApp {
       prompt.prompt();
       prompt.userChoice.then((choiceResult) => {
         window.StashAnalytics?.capture('pwa_install_prompted', { source, outcome: choiceResult.outcome });
-        // Only the auto-triggered dialog sets this — declining a prompt
-        // someone asked for (Settings/Home banner) isn't "leave me alone."
-        if (source === 'auto' && choiceResult.outcome === 'dismissed') {
-          localStorage.setItem('stash-pwa-auto-prompt-declined', '1');
-        }
       });
     } else {
       const platform = this.detectInstallPlatform();
