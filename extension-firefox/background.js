@@ -46,6 +46,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onStartup.addListener(async () => {
   await initSupabase();
+  setupContextMenu();
   await updateActionForSession();
 });
 
@@ -171,8 +172,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } else if (info.menuItemId === 'open-stash') {
     chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
   } else if (info.menuItemId === 'sign-out') {
-    await supabase.signOut();
+    const client = await getClient();
+    await client.signOut();
     await updateActionForSession();
+    if (tab && tab.id) {
+      showToast(tab.id, 'Signed out of Stash', false);
+    }
+    setBadge('✓', '#10b981');
+    clearBadgeSoon();
   } else if (info.menuItemId === 'report-bug') {
     await startBugReport(tab);
   }
@@ -446,6 +453,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         await client.signInWithGoogle();
         const user = await client.getUser();
+        if (user && client.session && (!client.session.user || !client.session.user.id)) {
+          client.session.user = user;
+          await chrome.storage.local.set({ stash_session: client.session });
+        }
         await updateActionForSession();
         sendResponse({ success: true, user });
       } catch (err) {
@@ -462,6 +473,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await updateActionForSession();
       sendResponse({ success: true });
     })();
+    return true;
+  }
+
+  if (request.action === 'openSettings') {
+    chrome.tabs.create({ url: `${CONFIG.WEB_APP_URL}/#settings` });
+    sendResponse({ ok: true });
     return true;
   }
 

@@ -65,18 +65,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   googleSigninBtn.addEventListener('click', async () => {
     googleSigninBtn.disabled = true;
     authError.textContent = '';
+    const originalContent = googleSigninBtn.innerHTML;
+    googleSigninBtn.textContent = 'Signing in...';
 
-    const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
 
-    if (response.success) {
-      // Same handoff as the password sign-in: get out of the way so the next
-      // toolbar click saves instead of reopening this popup.
-      window.close();
-      return;
+      if (response && response.success) {
+        // Same handoff as the password sign-in: get out of the way so the next
+        // toolbar click saves instead of reopening this popup.
+        window.close();
+        return;
+      }
+
+      authError.textContent = response?.error || 'Google sign-in failed';
+    } catch (err) {
+      authError.textContent = err.message || 'Google sign-in failed';
+    } finally {
+      googleSigninBtn.innerHTML = originalContent;
+      googleSigninBtn.disabled = false;
     }
-
-    authError.textContent = response.error;
-    googleSigninBtn.disabled = false;
   });
 
   // Sign up
