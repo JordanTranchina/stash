@@ -50,6 +50,17 @@ jobs:
           curl -fsSL https://antigravity.google/cli/install.sh | bash
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Configure Antigravity CLI for Headless API Key Auth
+        if: steps.prep.outputs.should_run == 'true'
+        run: |
+          mkdir -p "$HOME/.gemini" "$HOME/.gemini/antigravity-cli"
+          cat << 'EOF' > "$HOME/.gemini/settings.json"
+          {
+            "modelProvider": "gemini"
+          }
+          EOF
+          cp "$HOME/.gemini/settings.json" "$HOME/.gemini/antigravity-cli/settings.json"
+
       - name: Create Dedicated Branch
         if: steps.prep.outputs.should_run == 'true'
         id: branch
@@ -64,6 +75,7 @@ jobs:
         env:
           ANTIGRAVITY_API_KEY: ${{ secrets.ANTIGRAVITY_API_KEY || secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.ANTIGRAVITY_API_KEY || secrets.GEMINI_API_KEY }}
+          MODEL_PROVIDER: gemini
           PROMPT_FILE: ${{ runner.temp }}/prompt.txt
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
