@@ -83,7 +83,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add -A
-            COMMIT_MSG=$(printf "fix(issue-%s): automated resolution by Antigravity CLI\n\nAddresses #%s" "$ISSUE_NUM" "$ISSUE_NUM")
+            COMMIT_MSG=$(printf "fix(issue-%s): automated resolution by Antigravity CLI\n\nAddresses #%s\n\nCo-authored-by: Google Antigravity <antigravity@google.com>" "$ISSUE_NUM" "$ISSUE_NUM")
             git commit -m "$COMMIT_MSG"
             git push origin "$BRANCH_NAME"
 
