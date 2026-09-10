@@ -108,7 +108,16 @@ jobs:
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
           LOG_FILE="${{ runner.temp }}/agy.log"
-          agy --model gemini-3.8-flash-high --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+
+          echo "Invoking Antigravity CLI with model gemini-3.7-flash-high..."
+          agy --model gemini-3.7-flash-high --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+
+          # If 503 high demand or temporary unavailable, retry after 5s
+          if grep -qi "503" "$OUTPUT_FILE" 2>/dev/null || grep -qi "503" "$LOG_FILE" 2>/dev/null; then
+            echo "Model experienced temporary 503 high demand spike. Retrying with gemini-3.7-flash-medium in 5s..."
+            sleep 5
+            agy --model gemini-3.7-flash-medium --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+          fi
 
           # If there is an error, append log file details for debugging
           if [ -s "$LOG_FILE" ] && grep -qi "error:" "$OUTPUT_FILE" 2>/dev/null; then
