@@ -108,14 +108,14 @@ jobs:
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
           LOG_FILE="${{ runner.temp }}/agy.log"
-          MODELS=("gemini-3.7-flash-high" "gemini-3.6-flash-high" "gemini-3.6-flash-medium")
+          MODELS=("gemini-3.7-flash-low" "gemini-3.6-flash-low" "gemini-3.8-flash-low")
           SUCCESS=false
 
           for MODEL in "${MODELS[@]}"; do
-            echo "Invoking Antigravity CLI with model: $MODEL"
+            echo "Invoking Antigravity CLI with model: $MODEL (effort: low)"
             rm -f "$LOG_FILE"
             > "$OUTPUT_FILE"
-            agy --model "$MODEL" --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+            agy --model "$MODEL" --effort low --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
 
             # Check if execution succeeded without 503 capacity / 429 rate limit errors
             if ! grep -qi "503" "$OUTPUT_FILE" 2>/dev/null && ! grep -qi "503" "$LOG_FILE" 2>/dev/null && ! grep -qi "429" "$OUTPUT_FILE" 2>/dev/null && ! grep -qi "429" "$LOG_FILE" 2>/dev/null && ! grep -q "error: Agent execution terminated" "$OUTPUT_FILE" 2>/dev/null; then
@@ -124,8 +124,8 @@ jobs:
               break
             fi
 
-            echo "Model $MODEL hit temporary capacity or rate limit. Waiting 6s before trying next model..."
-            sleep 6
+            echo "Model $MODEL hit temporary quota limit. Waiting 35s for quota recovery before trying next model..."
+            sleep 35
           done
 
           # If there is an error, append log file details for debugging
