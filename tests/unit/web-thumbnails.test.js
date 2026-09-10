@@ -103,14 +103,19 @@ describe('cardThumb', () => {
     expect(html).toContain('save-card-thumb-fallback');
   });
 
-  test('a quote in the site name cannot break out of the data attribute', () => {
+  test('a quote in the site name cannot break out of the markup', () => {
     const html = app.cardThumb({
       image_url: 'https://example.com/a.jpg',
       site_name: '" onload="alert(1)',
     });
-    // The quote is escaped, so the injected text stays inside data-seed
-    // instead of becoming a new attribute.
-    expect(html).toContain('data-seed="&quot; onload=&quot;alert(1)"');
+    // The broken-image fallback path needs no site-derived text, so the
+    // <img> tag carries no site-name data at all for it to break out of.
     expect(html).not.toContain('onload="alert(1)"');
+  });
+
+  test('shows a broken-link icon, not the monogram tile, when the image URL fails to load', () => {
+    const html = app.cardThumb({ image_url: 'https://example.com/a.jpg', site_name: 'Example' });
+    expect(html).toContain('window.stashApp.brokenImageTile()');
+    expect(app.brokenImageTile()).toContain('save-card-thumb-broken');
   });
 });

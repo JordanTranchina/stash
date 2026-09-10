@@ -2847,21 +2847,29 @@ class StashApp {
   cardThumb(save) {
     const src = this.safeImageUrl(save.image_url);
     if (src) {
-      const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
-      const seed = this.escapeHtml(save.site_name || save.title || save.url || '');
-      const initial = this.escapeHtml((save.site_name || save.title || '?').trim().charAt(0) || '?');
+      // A load failure here means the image URL Stash stored could not
+      // actually be fetched (dead link, blocked host, etc.) - distinct from
+      // simply having no image_url at all - so it gets a broken-link icon
+      // rather than the colored monogram tile used for "no image".
+      const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.brokenImageTile()`;
       // loading/decoding keep a long list from fetching every og:image at once:
       // these are full-size article images rendered into a 96x96 tile, so an
       // eager list of a few hundred saves pulled down tens of megabytes and
       // pushed Largest Contentful Paint far out. width/height match the CSS box
       // so the browser can reserve the space before the image arrives.
-      return `<img src="${src}" alt="" width="96" height="96" loading="lazy" decoding="async" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
+      return `<img src="${src}" alt="" width="96" height="96" loading="lazy" decoding="async" onerror="${onerr}">`;
     }
     return this.fallbackTile(save.site_name || save.title || save.url || '', (save.site_name || save.title || '?').trim().charAt(0) || '?');
   }
 
   fallbackTile(seed, initial) {
     return `<div class="save-card-thumb-fallback" style="background:${this.fallbackGradient(seed)}">${this.escapeHtml(initial)}</div>`;
+  }
+
+  // Broken-link icon shown in place of the article thumbnail when the
+  // stored image URL fails to load (Stash could not fetch it).
+  brokenImageTile() {
+    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><line x1="3" y1="3" x2="21" y2="21"/></svg></div>`;
   }
 
   renderMarkdown(text) {
