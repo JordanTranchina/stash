@@ -106,13 +106,18 @@ def main():
         ])
 
     prompt_lines.extend([
+        "### Operational Constraint (Free Tier Rate Limit)",
+        "You are operating in an automated CI runner with a strict free-tier rate limit of 5 requests per minute.",
+        "Every tool call you execute consumes 1 request against this quota.",
+        "Therefore, you MUST be surgical and efficient: limit your tool calls to at most 1 or 2 essential calls total (e.g. one grep/find and one file inspection or edit), then immediately synthesize your final response and output it.",
+        "Do NOT perform wide exploratory searches or repetitive tool calls.",
+        "",
         "### Instructions",
         "1. Carefully analyze the issue, repository structure, and relevant files.",
-        "2. Be concise, targeted, and direct: inspect only the specific files relevant to this issue to resolve it efficiently.",
-        "3. If this issue requests a bug fix, feature, or code changes, implement the required changes directly by modifying the repository files.",
-        "4. Run appropriate verification/tests if available to ensure your changes work and do not introduce regressions.",
-        "5. Provide a clear, structured summary of your analysis, what changes you made (if any), and any considerations or follow-up recommendations.",
-        "6. You are strictly forbidden from attempting to merge pull requests or pushing directly to protected/default branches.",
+        "2. Stay strictly within your 1-2 tool call budget to prevent hitting the 5 RPM rate limit.",
+        "3. If this issue requests a bug fix, feature, or code changes, implement the required changes directly by modifying the repository files within your tool budget.",
+        "4. Provide a clear, structured summary of your analysis, what changes you made (if any), and any considerations or follow-up recommendations.",
+        "5. You are strictly forbidden from attempting to merge pull requests or pushing directly to protected/default branches.",
         "",
     ])
 
