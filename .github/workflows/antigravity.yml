@@ -67,7 +67,7 @@ jobs:
           PROMPT_FILE: ${{ runner.temp }}/prompt.txt
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
-          cat "$PROMPT_FILE" | agy -p --dangerously-skip-permissions > "$OUTPUT_FILE" 2>&1
+          agy --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1
 
       - name: Commit changes & Create Draft PR
         if: steps.prep.outputs.should_run == 'true'
