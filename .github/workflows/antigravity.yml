@@ -124,6 +124,7 @@ jobs:
             set +e
             agy --model "$MODEL" \
                 --effort low \
+                --disable-slash-commands \
                 --print-timeout 10m0s \
                 --log-file "$MODEL_LOG" \
                 --dangerously-skip-permissions \
