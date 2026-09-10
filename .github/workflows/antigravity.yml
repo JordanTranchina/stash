@@ -61,6 +61,34 @@ jobs:
           EOF
           cp "$HOME/.gemini/settings.json" "$HOME/.gemini/antigravity-cli/settings.json"
 
+      - name: Verify API Key & Model Access
+        if: steps.prep.outputs.should_run == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.ANTIGRAVITY_API_KEY }}
+          ANTIGRAVITY_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.ANTIGRAVITY_API_KEY }}
+          MODEL_PROVIDER: gemini
+        run: |
+          python3 -c "
+          import urllib.request, json, os
+          key = os.environ.get('GEMINI_API_KEY', '').strip()
+          if not key:
+              print('❌ GEMINI_API_KEY is empty or unset!')
+          else:
+              print(f'✓ GEMINI_API_KEY present (length: {len(key)})')
+              try:
+                  url = f'https://generativelanguage.googleapis.com/v1beta/models?key={key}'
+                  with urllib.request.urlopen(url, timeout=10) as resp:
+                      data = json.loads(resp.read())
+                      models = [m.get('name') for m in data.get('models', []) if 'gemini' in m.get('name', '')]
+                      print(f'✓ API Key is VALID! ({len(models)} Gemini models accessible)')
+              except Exception as e:
+                  print(f'❌ API Key validation error: {e}')
+          "
+          echo "=== Installed Antigravity CLI version ==="
+          agy --version || true
+          echo "=== Antigravity Available Models ==="
+          agy models || true
+
       - name: Create Dedicated Branch
         if: steps.prep.outputs.should_run == 'true'
         id: branch
@@ -79,7 +107,18 @@ jobs:
           PROMPT_FILE: ${{ runner.temp }}/prompt.txt
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
-          agy --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1
+          agy --verbose --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+
+          # If the agent terminated due to error, capture any internal log files
+          if grep -qi "error:" "$OUTPUT_FILE" 2>/dev/null; then
+            echo -e "\n\n--- CLI Internal Diagnostics ---" >> "$OUTPUT_FILE"
+            find "$HOME/.gemini" -type f -name "*.log" -exec echo "Log File: {}" \; -exec tail -n 50 {} \; >> "$OUTPUT_FILE" 2>/dev/null || true
+          fi
+
+          # Exit with code 1 if agy failed so subsequent steps know it failed
+          if grep -q "error: Agent execution terminated" "$OUTPUT_FILE" 2>/dev/null; then
+            exit 1
+          fi
 
       - name: Commit changes & Create Draft PR
         if: steps.prep.outputs.should_run == 'true'
