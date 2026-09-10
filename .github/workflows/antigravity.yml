@@ -107,39 +107,77 @@ jobs:
           PROMPT_FILE: ${{ runner.temp }}/prompt.txt
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
-          LOG_FILE="${{ runner.temp }}/agy.log"
-          MODELS=("gemini-3.7-flash-low" "gemini-3.6-flash-low" "gemini-3.8-flash-low")
           SUCCESS=false
+          MODELS=("gemini-3.6-flash-low" "gemini-3.7-flash-low" "gemini-3.8-flash-low")
+          TOTAL_MODELS=${#MODELS[@]}
+          CURRENT_INDEX=0
 
           for MODEL in "${MODELS[@]}"; do
-            echo "Invoking Antigravity CLI with model: $MODEL (effort: low)"
-            rm -f "$LOG_FILE"
-            > "$OUTPUT_FILE"
-            agy --model "$MODEL" --effort low --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+            CURRENT_INDEX=$((CURRENT_INDEX + 1))
+            MODEL_OUTPUT="${OUTPUT_FILE}.${MODEL}.txt"
+            MODEL_LOG="${{ runner.temp }}/agy_${MODEL}.log"
 
-            # Check if execution succeeded without 503 capacity / 429 rate limit errors
-            if ! grep -qi "503" "$OUTPUT_FILE" 2>/dev/null && ! grep -qi "503" "$LOG_FILE" 2>/dev/null && ! grep -qi "429" "$OUTPUT_FILE" 2>/dev/null && ! grep -qi "429" "$LOG_FILE" 2>/dev/null && ! grep -q "error: Agent execution terminated" "$OUTPUT_FILE" 2>/dev/null; then
-              echo "Model $MODEL completed successfully!"
+            echo "========================================================"
+            echo "Invoking Antigravity CLI with model: $MODEL (attempt $CURRENT_INDEX of $TOTAL_MODELS)"
+            echo "========================================================"
+
+            set +e
+            agy --model "$MODEL" \
+                --effort low \
+                --print-timeout 10m0s \
+                --log-file "$MODEL_LOG" \
+                --dangerously-skip-permissions \
+                -p "$(cat "$PROMPT_FILE")" < /dev/null > "$MODEL_OUTPUT" 2>&1
+            EXIT_CODE=$?
+            set -e
+
+            echo "Model $MODEL finished with exit code: $EXIT_CODE"
+
+            # Check for success:
+            # 1. Exit code must be 0
+            # 2. Output must not be empty
+            # 3. Output must not contain fatal CLI termination error
+            if [ $EXIT_CODE -eq 0 ] && [ -s "$MODEL_OUTPUT" ] && ! grep -q "error: Agent execution terminated" "$MODEL_OUTPUT" 2>/dev/null; then
+              echo "✓ Model $MODEL completed successfully!"
+              cp "$MODEL_OUTPUT" "$OUTPUT_FILE"
+              cp "$MODEL_LOG" "${{ runner.temp }}/agy.log" 2>/dev/null || true
               SUCCESS=true
               break
             fi
 
-            echo "Model $MODEL hit temporary quota limit. Waiting 35s for quota recovery before trying next model..."
-            sleep 35
+            echo "❌ Model $MODEL failed (exit code $EXIT_CODE)."
+            echo "--- Recent output snippet ---"
+            tail -n 25 "$MODEL_OUTPUT" || true
+
+            # If there are more models to try, wait for quota recovery
+            if [ $CURRENT_INDEX -lt $TOTAL_MODELS ]; then
+              echo "Waiting 35s for quota / rate-limit recovery before next model attempt..."
+              sleep 35
+            fi
           done
 
-          # If there is an error, append log file details for debugging
-          if [ -s "$LOG_FILE" ] && [ "$SUCCESS" != "true" ]; then
-            echo -e "\n\n--- CLI Internal Log ---" >> "$OUTPUT_FILE"
-            cat "$LOG_FILE" >> "$OUTPUT_FILE"
-          fi
-
           if [ "$SUCCESS" != "true" ]; then
+            echo "All model attempts failed. Compiling error report..."
+            > "$OUTPUT_FILE"
+            for MODEL in "${MODELS[@]}"; do
+              M_OUT="${OUTPUT_FILE}.${MODEL}.txt"
+              M_LOG="${{ runner.temp }}/agy_${MODEL}.log"
+              if [ -s "$M_OUT" ]; then
+                echo -e "### Attempt with model: $MODEL\n" >> "$OUTPUT_FILE"
+                cat "$M_OUT" >> "$OUTPUT_FILE"
+                echo -e "\n" >> "$OUTPUT_FILE"
+              fi
+              if [ -s "$M_LOG" ]; then
+                echo -e "--- Internal CLI Log ($MODEL) ---\n" >> "$OUTPUT_FILE"
+                cat "$M_LOG" >> "$OUTPUT_FILE"
+                echo -e "\n" >> "$OUTPUT_FILE"
+              fi
+            done
             exit 1
           fi
 
       - name: Commit changes & Create Draft PR
-        if: steps.prep.outputs.should_run == 'true'
+        if: steps.prep.outputs.should_run == 'true' && steps.agy-run.outcome == 'success'
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
