@@ -107,15 +107,15 @@ jobs:
           PROMPT_FILE: ${{ runner.temp }}/prompt.txt
           OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
         run: |
-          agy --verbose --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
+          LOG_FILE="${{ runner.temp }}/agy.log"
+          agy --model gemini-3.8-flash-high --log-file "$LOG_FILE" --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" < /dev/null > "$OUTPUT_FILE" 2>&1 || true
 
-          # If the agent terminated due to error, capture any internal log files
-          if grep -qi "error:" "$OUTPUT_FILE" 2>/dev/null; then
-            echo -e "\n\n--- CLI Internal Diagnostics ---" >> "$OUTPUT_FILE"
-            find "$HOME/.gemini" -type f -name "*.log" -exec echo "Log File: {}" \; -exec tail -n 50 {} \; >> "$OUTPUT_FILE" 2>/dev/null || true
+          # If there is an error, append log file details for debugging
+          if [ -s "$LOG_FILE" ] && grep -qi "error:" "$OUTPUT_FILE" 2>/dev/null; then
+            echo -e "\n\n--- CLI Internal Log ---" >> "$OUTPUT_FILE"
+            cat "$LOG_FILE" >> "$OUTPUT_FILE"
           fi
 
-          # Exit with code 1 if agy failed so subsequent steps know it failed
           if grep -q "error: Agent execution terminated" "$OUTPUT_FILE" 2>/dev/null; then
             exit 1
           fi
