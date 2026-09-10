@@ -108,10 +108,11 @@ def main():
     prompt_lines.extend([
         "### Instructions",
         "1. Carefully analyze the issue, repository structure, and relevant files.",
-        "2. If this issue requests a bug fix, feature, or code changes, implement the required changes directly by modifying the repository files.",
-        "3. Run appropriate verification/tests if available to ensure your changes work and do not introduce regressions.",
-        "4. Provide a clear, structured summary of your analysis, what changes you made (if any), and any considerations or follow-up recommendations.",
-        "5. You are strictly forbidden from attempting to merge pull requests or pushing directly to protected/default branches.",
+        "2. Be concise, targeted, and direct: inspect only the specific files relevant to this issue to resolve it efficiently.",
+        "3. If this issue requests a bug fix, feature, or code changes, implement the required changes directly by modifying the repository files.",
+        "4. Run appropriate verification/tests if available to ensure your changes work and do not introduce regressions.",
+        "5. Provide a clear, structured summary of your analysis, what changes you made (if any), and any considerations or follow-up recommendations.",
+        "6. You are strictly forbidden from attempting to merge pull requests or pushing directly to protected/default branches.",
         "",
     ])
 
