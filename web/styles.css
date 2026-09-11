@@ -69,10 +69,6 @@
   background: rgba(245, 158, 11, 0.2);
 }
 
-[data-theme="dark"] .reading-pane {
-  background: var(--bg);
-}
-
 /* Appearance (theme) row in Settings */
 .theme-toggle-row {
   cursor: default;
@@ -798,11 +794,33 @@ select {
   position: relative;
   z-index: 95;
   width: var(--reading-pane-width);
-  background: white;
+  background: var(--reading-bg, var(--bg));
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+}
+
+/* Reading-view theme: a swatch chosen from the footer's "Aa" popover,
+   independent of the app-wide Settings theme. "Auto" sets no attribute here,
+   so these fall back to var(--bg)/var(--text), i.e. whatever the app theme
+   already resolved to. */
+.reading-pane[data-reading-theme="light"] {
+  --reading-bg: #ffffff;
+  --reading-text: #1f2937;
+  --reading-border: #e5e7eb;
+}
+
+.reading-pane[data-reading-theme="sepia"] {
+  --reading-bg: #f4ecd8;
+  --reading-text: #433422;
+  --reading-border: #e3d5b8;
+}
+
+.reading-pane[data-reading-theme="dark"] {
+  --reading-bg: #111827;
+  --reading-text: #f9fafb;
+  --reading-border: #374151;
 }
 
 .reading-header {
@@ -810,7 +828,7 @@ select {
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--reading-border, var(--border));
 }
 
 .reading-progress-percent {
@@ -824,6 +842,7 @@ select {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+  color: var(--reading-text, var(--text));
 }
 
 .reading-footer {
@@ -832,8 +851,77 @@ select {
   justify-content: center;
   gap: 40px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--reading-border, var(--border));
   flex-shrink: 0;
+}
+
+/* Display-options control: the "Aa" trigger + its popover, in the reading footer */
+.reading-style-control {
+  position: relative;
+}
+
+.reading-style-btn {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.reading-style-btn[aria-expanded="true"] {
+  background: var(--bg-tertiary);
+  color: var(--primary);
+}
+
+.reading-style-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 12px);
+  width: 270px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+  z-index: 1;
+}
+
+.reading-style-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reading-style-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.reading-style-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 14px 0;
+}
+
+.reading-size-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reading-size-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 20px;
+  text-align: center;
+}
+
+.reading-size-reset-btn {
+  color: var(--text-muted);
 }
 
 .reading-meta {
@@ -994,8 +1082,9 @@ select {
 
 .reading-body {
   font-size: var(--reading-font-size, 16px);
+  font-family: var(--reading-font-family, inherit);
   line-height: 1.8;
-  color: var(--text);
+  color: inherit;
 }
 
 /* Font size controls in the reading pane footer */
@@ -1198,7 +1287,7 @@ select {
     left: 0;
     right: 0;
     z-index: 10;
-    background: var(--bg);
+    background: var(--reading-bg, var(--bg));
     transition: transform 0.25s ease;
   }
 
