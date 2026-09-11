@@ -677,6 +677,26 @@ select {
   text-transform: uppercase;
 }
 
+/* Shown instead of the article thumbnail when Stash never fetched any body
+   text for the save at all (word_count is 0/null) - a stray image_url from
+   a failed scrape isn't shown in that case, since there's no article behind
+   it. When there IS body text, a present image just falls back to the
+   colored monogram tile above if it fails to load. */
+.save-card-thumb-broken {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.save-card-thumb-broken svg {
+  width: 32px;
+  height: 32px;
+}
+
 .save-card-site {
   font-size: 12px;
   color: var(--text-muted);

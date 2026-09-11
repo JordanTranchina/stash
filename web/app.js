@@ -358,6 +358,16 @@ class StashApp {
     });
     this.updateOfflineStorageLabel();
 
+    // Hide articles with no body text (Settings → Article List)
+    const hideNoContentToggle = document.getElementById('hide-no-content-toggle');
+    if (hideNoContentToggle) {
+      hideNoContentToggle.checked = this.getHideNoContentEnabled();
+      hideNoContentToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-hide-no-content', e.target.checked ? '1' : '0');
+        if (this.currentView === 'all' || this.currentView === 'archived') this.loadSaves();
+      });
+    }
+
     // Search
     let searchTimeout;
     document.getElementById('search-input')?.addEventListener('input', (e) => {
@@ -1051,7 +1061,10 @@ class StashApp {
     if (!saves || saves.length === 0) return [];
 
     const wantArchived = this.currentView === 'archived';
-    const filtered = saves.filter(s => !!s.is_archived === wantArchived);
+    let filtered = saves.filter(s => !!s.is_archived === wantArchived);
+    if (this.getHideNoContentEnabled()) {
+      filtered = filtered.filter(s => !!this.wordCount(s));
+    }
 
     const sortValue = document.getElementById('sort-select').value;
     const [column, direction] = sortValue.split('.');
@@ -1126,6 +1139,12 @@ class StashApp {
       query = query.eq('is_archived', true);
     } else {
       query = query.eq('is_archived', false);
+    }
+    if (this.getHideNoContentEnabled()) {
+      // Nulls never satisfy gt(), so this also excludes saves whose
+      // word_count hasn't been computed yet - the same "no body text" set
+      // cardThumb shows the broken-link icon for.
+      query = query.gt('word_count', 0);
     }
 
     const { data, error } = await query;
@@ -1666,6 +1685,13 @@ class StashApp {
 
   getOfflineWifiOnly() {
     return localStorage.getItem('stash-offline-wifi-only') !== '0'; // on by default
+  }
+
+  // Settings → Article List → "Hide Articles With No Body Text". Off by
+  // default: a save with no extracted content still shows (with the
+  // broken-link icon, see cardThumb) unless the user opts into hiding it.
+  getHideNoContentEnabled() {
+    return localStorage.getItem('stash-hide-no-content') === '1'; // off by default
   }
 
   // Best-effort Wi-Fi check. The Network Information API (navigator.connection)
@@ -2873,9 +2899,16 @@ class StashApp {
     return this.escapeHtml(absolute.replace(/^http:\/\//i, 'https://'));
   }
 
-  // Thumbnail markup for an article card: the real og:image when present,
-  // otherwise a colored monogram tile using the source's first letter.
+  // Thumbnail markup for an article card: a broken-link icon when Stash
+  // never managed to fetch any body text for the save (regardless of
+  // whether an image_url happens to be present - a scrape failure often
+  // still carries stray metadata), otherwise the real og:image when
+  // present, or else a colored monogram tile using the source's first
+  // letter (also the fallback when a present image URL fails to load).
   cardThumb(save) {
+    if (!this.wordCount(save)) {
+      return this.brokenImageTile();
+    }
     const src = this.safeImageUrl(save.image_url);
     if (src) {
       const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
@@ -2893,6 +2926,12 @@ class StashApp {
 
   fallbackTile(seed, initial) {
     return `<div class="save-card-thumb-fallback" style="background:${this.fallbackGradient(seed)}">${this.escapeHtml(initial)}</div>`;
+  }
+
+  // Broken-link icon shown in place of the article thumbnail when Stash
+  // couldn't fetch the article's content (no body text was ever extracted).
+  brokenImageTile() {
+    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><line x1="3" y1="3" x2="21" y2="21"/></svg></div>`;
   }
 
   renderMarkdown(text) {

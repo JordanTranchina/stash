@@ -24,11 +24,20 @@ function loadStashApp() {
   if (index === -1) throw new Error('app.js no longer ends with the init block');
   const classOnly = `${source.slice(0, index)}\nglobalThis.StashApp = StashApp;`;
 
-  const sandbox = { console, window: {}, document: {}, navigator: {}, CONFIG: {} };
+  const sandbox = { console, window: {}, document: {}, navigator: {}, CONFIG: {}, localStorage };
   vm.createContext(sandbox);
   vm.runInContext(classOnly, sandbox);
   return sandbox.StashApp;
 }
+
+// Shared with the class itself (app.js reads the bare `localStorage` global),
+// so tests can seed/inspect the same store the class methods read from.
+const store = {};
+const localStorage = {
+  getItem: (k) => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); },
+  removeItem: (k) => { delete store[k]; },
+};
 
 const StashApp = loadStashApp();
 // Methods under test are pure string helpers, so a bare object is enough.
@@ -84,7 +93,11 @@ describe('safeImageUrl', () => {
 
 describe('cardThumb', () => {
   test('defers loading of the thumbnail and reserves its box', () => {
-    const html = app.cardThumb({ image_url: 'https://example.com/a.jpg', site_name: 'Example' });
+    const html = app.cardThumb({
+      image_url: 'https://example.com/a.jpg',
+      site_name: 'Example',
+      word_count: 400,
+    });
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('decoding="async"');
     expect(html).toContain('width="96"');
@@ -93,13 +106,17 @@ describe('cardThumb', () => {
   });
 
   test('falls back to a monogram tile when the URL is unusable', () => {
-    const html = app.cardThumb({ image_url: 'javascript:alert(1)', site_name: 'Example' });
+    const html = app.cardThumb({
+      image_url: 'javascript:alert(1)',
+      site_name: 'Example',
+      word_count: 400,
+    });
     expect(html).toContain('save-card-thumb-fallback');
     expect(html).not.toContain('<img');
   });
 
   test('falls back to a monogram tile when there is no image at all', () => {
-    const html = app.cardThumb({ site_name: 'Example' });
+    const html = app.cardThumb({ site_name: 'Example', word_count: 400 });
     expect(html).toContain('save-card-thumb-fallback');
   });
 
@@ -107,10 +124,56 @@ describe('cardThumb', () => {
     const html = app.cardThumb({
       image_url: 'https://example.com/a.jpg',
       site_name: '" onload="alert(1)',
+      word_count: 400,
     });
     // The quote is escaped, so the injected text stays inside data-seed
     // instead of becoming a new attribute.
     expect(html).toContain('data-seed="&quot; onload=&quot;alert(1)"');
     expect(html).not.toContain('onload="alert(1)"');
+  });
+
+  test('an <img> falls back to the monogram tile (not the broken-link icon) if it fails to load', () => {
+    const html = app.cardThumb({
+      image_url: 'https://example.com/a.jpg',
+      site_name: 'Example',
+      word_count: 400,
+    });
+    expect(html).toContain('window.stashApp.fallbackTile(');
+    expect(html).not.toContain('brokenImageTile');
+  });
+
+  test('shows the broken-link icon when Stash never fetched any body text, even with an image_url', () => {
+    const html = app.cardThumb({ image_url: 'https://example.com/a.jpg', site_name: 'Example' });
+    expect(html).toContain('save-card-thumb-broken');
+    expect(html).not.toContain('<img');
+  });
+
+  test('treats a zero word count the same as no content', () => {
+    const html = app.cardThumb({ site_name: 'Example', word_count: 0 });
+    expect(html).toContain('save-card-thumb-broken');
+  });
+
+  test('falls back to counting save.content when word_count is not a number yet', () => {
+    const withText = app.cardThumb({ site_name: 'Example', content: 'a full article body of real words' });
+    expect(withText).toContain('save-card-thumb-fallback');
+
+    const withoutText = app.cardThumb({ site_name: 'Example', content: '   ' });
+    expect(withoutText).toContain('save-card-thumb-broken');
+  });
+});
+
+describe('getHideNoContentEnabled (Settings → Article List)', () => {
+  afterEach(() => localStorage.removeItem('stash-hide-no-content'));
+
+  test('is off by default', () => {
+    expect(app.getHideNoContentEnabled()).toBe(false);
+  });
+
+  test('reflects the stored preference', () => {
+    localStorage.setItem('stash-hide-no-content', '1');
+    expect(app.getHideNoContentEnabled()).toBe(true);
+
+    localStorage.setItem('stash-hide-no-content', '0');
+    expect(app.getHideNoContentEnabled()).toBe(false);
   });
 });
