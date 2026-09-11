@@ -503,7 +503,9 @@ class StashApp {
     });
 
     document.addEventListener('click', (e) => {
-      if (!e.target.closest?.('.reading-style-control')) this.toggleReadingStylePopover(false);
+      if (!e.target.closest?.('.reading-style-btn, .reading-style-popover')) {
+        this.toggleReadingStylePopover(false);
+      }
     });
 
     document.addEventListener('keydown', (e) => {

@@ -794,7 +794,10 @@ select {
   position: relative;
   z-index: 95;
   width: var(--reading-pane-width);
-  background: var(--reading-bg, var(--bg));
+  background: var(--bg);
+  /* Set here, not inherited from body, so a reading theme's remapped --text
+     below actually reaches the article. */
+  color: var(--text);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -802,25 +805,41 @@ select {
 }
 
 /* Reading-view theme: a swatch chosen from the footer's "Aa" popover,
-   independent of the app-wide Settings theme. "Auto" sets no attribute here,
-   so these fall back to var(--bg)/var(--text), i.e. whatever the app theme
-   already resolved to. */
+   independent of the app-wide Settings theme. Each one re-maps the palette
+   inside the pane, so the article, the footer and the display-options popover
+   all follow the chosen paper colour rather than half-following the app theme.
+   "Auto" sets no attribute, leaving the app theme's palette in place. */
 .reading-pane[data-reading-theme="light"] {
-  --reading-bg: #ffffff;
-  --reading-text: #1f2937;
-  --reading-border: #e5e7eb;
+  --bg: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --text: #1f2937;
+  --text-secondary: #4b5563;
+  --text-muted: #666e7a;
+  --border: #e5e7eb;
+  --primary: #595bd8;
 }
 
 .reading-pane[data-reading-theme="sepia"] {
-  --reading-bg: #f4ecd8;
-  --reading-text: #433422;
-  --reading-border: #e3d5b8;
+  --bg: #f4ecd8;
+  --bg-secondary: #efe5cc;
+  --bg-tertiary: #e7dbbe;
+  --text: #433422;
+  --text-secondary: #5c4a33;
+  --text-muted: #6f5c44;
+  --border: #e0d0ae;
+  --primary: #595bd8;
 }
 
 .reading-pane[data-reading-theme="dark"] {
-  --reading-bg: #111827;
-  --reading-text: #f9fafb;
-  --reading-border: #374151;
+  --bg: #111827;
+  --bg-secondary: #1f2937;
+  --bg-tertiary: #374151;
+  --text: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #a8b0ba;
+  --border: #374151;
+  --primary: #818cf8;
 }
 
 .reading-header {
@@ -828,7 +847,7 @@ select {
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  border-bottom: 1px solid var(--reading-border, var(--border));
+  border-bottom: 1px solid var(--border);
 }
 
 .reading-progress-percent {
@@ -842,7 +861,6 @@ select {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
-  color: var(--reading-text, var(--text));
 }
 
 .reading-footer {
@@ -851,13 +869,13 @@ select {
   justify-content: center;
   gap: 40px;
   padding: 12px 16px;
-  border-top: 1px solid var(--reading-border, var(--border));
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
-}
-
-/* Display-options control: the "Aa" trigger + its popover, in the reading footer */
-.reading-style-control {
+  /* Keeps the footer (and the display-options popover inside it) above the
+     backdrop, which dims the rest of the pane while the popover is open.
+     Above the .reading-chrome-top's z-index: 10 for the same reason. */
   position: relative;
+  z-index: 12;
 }
 
 .reading-style-btn {
@@ -871,43 +889,33 @@ select {
 }
 
 .reading-style-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 2;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 11;
 }
 
+/* Anchored to the footer rather than to the off-centre "Aa" button, so the
+   card stays clear of both screen edges at any width. */
 .reading-style-popover {
   position: absolute;
-  left: 50%;
-  bottom: calc(100% + 12px);
-  transform: translateX(-50%);
-  width: 270px;
-  max-width: calc(100vw - 32px);
+  left: 16px;
+  right: 16px;
+  bottom: calc(100% + 10px);
+  margin-inline: auto;
+  max-width: 320px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 16px;
-  z-index: 3;
 }
 
-.reading-style-popover::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 7px solid transparent;
-  border-top-color: var(--bg);
-  filter: drop-shadow(0 1px 0 var(--border));
-}
-
+/* Label above a full-width control: the three controls hold different numbers
+   of options, so side-by-side label/control rows left them ragged. */
 .reading-style-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 8px;
 }
 
 .reading-style-label {
@@ -916,7 +924,6 @@ select {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--text-muted);
-  flex-shrink: 0;
 }
 
 .reading-style-divider {
@@ -925,10 +932,25 @@ select {
   margin: 14px 0;
 }
 
+/* Segments share the row evenly, so every control lines up edge to edge. */
+.reading-style-popover .theme-segment-btn {
+  flex: 1;
+  padding: 8px 4px;
+}
+
 .reading-size-stepper {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 2px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.reading-size-stepper .btn.icon {
+  flex: 1;
 }
 
 .reading-size-value {
@@ -1307,7 +1329,7 @@ select {
     left: 0;
     right: 0;
     z-index: 10;
-    background: var(--reading-bg, var(--bg));
+    background: var(--bg);
     transition: transform 0.25s ease;
   }
 
@@ -1317,6 +1339,9 @@ select {
 
   .reading-footer {
     bottom: 0;
+    /* Restores the base z-index the rule above overrides, so the footer and
+       its display-options popover stay above the backdrop. */
+    z-index: 12;
   }
 
   .reading-pane.chrome-hidden .reading-chrome-top {
