@@ -92,6 +92,17 @@ function showToast(tabId, message, isError, withReport, saveId) {
   );
 }
 
+// Sign-in happens in the popup, which closes itself right after — the page
+// toast is the only feedback the user actually sees. Best-effort: on a tab
+// where the content script can't run (chrome://, the Web Store), this is a
+// silent no-op rather than a failure worth surfacing.
+async function notifySignedIn() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id) showToast(tab.id, 'Signed in successfully!');
+  } catch (e) { /* best effort */ }
+}
+
 // Context menu for "Save highlight to Stash"
 function setupContextMenu() {
   chrome.contextMenus.removeAll(() => {
@@ -403,6 +414,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         await client.signIn(request.email, request.password);
         const user = await client.getUser();
+        await notifySignedIn();
         sendResponse({ success: true, user });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
@@ -421,6 +433,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           client.session.user = user;
           await chrome.storage.local.set({ stash_session: client.session });
         }
+        await notifySignedIn();
         sendResponse({ success: true, user });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
