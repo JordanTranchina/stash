@@ -677,8 +677,11 @@ select {
   text-transform: uppercase;
 }
 
-/* Shown when the article's stored image fails to load (e.g. Stash could
-   not fetch the article's content), instead of the colored monogram tile. */
+/* Shown instead of the article thumbnail when Stash never fetched any body
+   text for the save at all (word_count is 0/null) - a stray image_url from
+   a failed scrape isn't shown in that case, since there's no article behind
+   it. When there IS body text, a present image just falls back to the
+   colored monogram tile above if it fails to load. */
 .save-card-thumb-broken {
   width: 100%;
   height: 100%;

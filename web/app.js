@@ -2842,22 +2842,27 @@ class StashApp {
     return this.escapeHtml(absolute.replace(/^http:\/\//i, 'https://'));
   }
 
-  // Thumbnail markup for an article card: the real og:image when present,
-  // otherwise a colored monogram tile using the source's first letter.
+  // Thumbnail markup for an article card: a broken-link icon when Stash
+  // never managed to fetch any body text for the save (regardless of
+  // whether an image_url happens to be present - a scrape failure often
+  // still carries stray metadata), otherwise the real og:image when
+  // present, or else a colored monogram tile using the source's first
+  // letter (also the fallback when a present image URL fails to load).
   cardThumb(save) {
+    if (!this.wordCount(save)) {
+      return this.brokenImageTile();
+    }
     const src = this.safeImageUrl(save.image_url);
     if (src) {
-      // A load failure here means the image URL Stash stored could not
-      // actually be fetched (dead link, blocked host, etc.) - distinct from
-      // simply having no image_url at all - so it gets a broken-link icon
-      // rather than the colored monogram tile used for "no image".
-      const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.brokenImageTile()`;
+      const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
+      const seed = this.escapeHtml(save.site_name || save.title || save.url || '');
+      const initial = this.escapeHtml((save.site_name || save.title || '?').trim().charAt(0) || '?');
       // loading/decoding keep a long list from fetching every og:image at once:
       // these are full-size article images rendered into a 96x96 tile, so an
       // eager list of a few hundred saves pulled down tens of megabytes and
       // pushed Largest Contentful Paint far out. width/height match the CSS box
       // so the browser can reserve the space before the image arrives.
-      return `<img src="${src}" alt="" width="96" height="96" loading="lazy" decoding="async" onerror="${onerr}">`;
+      return `<img src="${src}" alt="" width="96" height="96" loading="lazy" decoding="async" data-seed="${seed}" data-initial="${initial}" onerror="${onerr}">`;
     }
     return this.fallbackTile(save.site_name || save.title || save.url || '', (save.site_name || save.title || '?').trim().charAt(0) || '?');
   }
@@ -2866,8 +2871,8 @@ class StashApp {
     return `<div class="save-card-thumb-fallback" style="background:${this.fallbackGradient(seed)}">${this.escapeHtml(initial)}</div>`;
   }
 
-  // Broken-link icon shown in place of the article thumbnail when the
-  // stored image URL fails to load (Stash could not fetch it).
+  // Broken-link icon shown in place of the article thumbnail when Stash
+  // couldn't fetch the article's content (no body text was ever extracted).
   brokenImageTile() {
     return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><line x1="3" y1="3" x2="21" y2="21"/></svg></div>`;
   }
