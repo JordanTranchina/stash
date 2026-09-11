@@ -218,6 +218,8 @@ class StashApp {
     this.updateThemeColorMeta(effective);
   }
 
+  // Keep these hex values in sync with the pre-paint inline script in
+  // index.html's <head>, which sets the same meta tag before app.js loads.
   updateThemeColorMeta(theme) {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) return;
