@@ -358,9 +358,11 @@ class StashApp {
   toggleReadingStylePopover(show) {
     const btn = document.getElementById('reading-style-btn');
     const popover = document.getElementById('reading-style-popover');
+    const backdrop = document.getElementById('reading-style-backdrop');
     if (!btn || !popover) return;
     const next = show ?? popover.classList.contains('hidden');
     popover.classList.toggle('hidden', !next);
+    backdrop?.classList.toggle('hidden', !next);
     btn.setAttribute('aria-expanded', String(next));
   }
 

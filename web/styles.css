@@ -870,17 +870,37 @@ select {
   color: var(--primary);
 }
 
+.reading-style-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2;
+}
+
 .reading-style-popover {
   position: absolute;
-  left: 0;
+  left: 50%;
   bottom: calc(100% + 12px);
+  transform: translateX(-50%);
   width: 270px;
+  max-width: calc(100vw - 32px);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 16px;
-  z-index: 1;
+  z-index: 3;
+}
+
+.reading-style-popover::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--bg);
+  filter: drop-shadow(0 1px 0 var(--border));
 }
 
 .reading-style-row {
