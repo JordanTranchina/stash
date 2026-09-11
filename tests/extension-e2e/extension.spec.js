@@ -62,14 +62,15 @@ test('popup opens on the sign-in form when there is no session', async () => {
   await page.close();
 });
 
-test('popup no longer carries a save button — the toolbar icon is the save', async () => {
+test('popup carries a Save Article button, gated behind the session like the rest of the main view', async () => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
-  // Saving moved to a single click on the toolbar icon, so neither the save
-  // button nor the post-save "View in Stash" shortcut exists any more.
-  await expect(page.locator('#save-page-btn')).toHaveCount(0);
-  await expect(page.locator('#view-in-stash-btn')).toHaveCount(0);
+  // Present in the DOM but hidden until a session exists — a fresh profile
+  // lands on the auth view, so #main-view (and its Save Article button) stays
+  // hidden rather than absent.
+  await expect(page.locator('#save-btn')).toHaveText('Save Article');
+  await expect(page.locator('#save-btn')).toBeHidden();
 
   await page.close();
 });
@@ -87,10 +88,10 @@ test('signed-in controls live in the main view, behind the session', async () =>
   await page.close();
 });
 
-test('the toolbar icon has no default popup, so a click saves', async () => {
+test('the toolbar icon opens the popup, where Save Article is a deliberate second click', async () => {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(EXTENSION_PATH, 'manifest.json'), 'utf8')
   );
-  expect(manifest.action.default_popup).toBeUndefined();
+  expect(manifest.action.default_popup).toBe('popup.html');
   expect(manifest.action.default_icon).toBeTruthy();
 });

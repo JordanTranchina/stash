@@ -133,6 +133,7 @@ class StashApp {
       window.StashAnalytics?.capture('signed_in');
       this.showMainScreen();
       this.loadData();
+      this.openDeepLinkSave();
       this.syncPendingShares();
       this.bugReporter.flushQueue();
       this.setupRealtime();
@@ -1015,6 +1016,32 @@ class StashApp {
 
   async loadData() {
     await this.loadSaves();
+  }
+
+  // Deep link from the extension's save toast ("Open" button): ?open=<save id>
+  // jumps straight into that article's reading pane instead of the list.
+  async openDeepLinkSave() {
+    const id = new URLSearchParams(window.location.search).get('open');
+    if (!id) return;
+
+    // Strip the param immediately so a reload or share of the URL doesn't
+    // reopen the same article.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('open');
+    history.replaceState({}, '', url);
+
+    try {
+      const { data, error } = await this.supabase
+        .from('saves')
+        .select(this.SAVES_LIST_COLUMNS)
+        .eq('id', id)
+        .single();
+      if (error || !data) return;
+      this.openReadingPane(data);
+    } catch (e) {
+      // Deep link failing silently just leaves the list open — not worth
+      // surfacing as an error toast.
+    }
   }
 
   // Filter + sort cached saves to match what the server query would return

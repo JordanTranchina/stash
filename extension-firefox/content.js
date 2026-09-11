@@ -504,7 +504,9 @@ function extractMainImage() {
 
 // Show save confirmation toast. When `withReport` is set (a real save failure,
 // not a sign-in prompt) it grows a "Report" button that opens the bug reporter.
-function showToast(message, isError = false, withReport = false) {
+// When `saveId` is set (a successful save) it grows an "Open" button that
+// deep-links into that article in Stash.
+function showToast(message, isError = false, withReport = false, saveId = null) {
   const existing = document.getElementById('stash-toast');
   if (existing) existing.remove();
 
@@ -558,10 +560,10 @@ function showToast(message, isError = false, withReport = false) {
     toast.appendChild(btn);
   }
 
-  if (!isError && message === 'Saved to Stash') {
-    dismissMs = 3500;
+  if (!isError && saveId) {
+    dismissMs = 4000;
     const btn = document.createElement('button');
-    btn.textContent = 'Settings';
+    btn.textContent = 'Open';
     btn.style.cssText = `
       flex-shrink: 0;
       background: rgba(255,255,255,0.2);
@@ -575,7 +577,7 @@ function showToast(message, isError = false, withReport = false) {
       cursor: pointer;
     `;
     btn.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ action: 'openSettings' });
+      chrome.runtime.sendMessage({ action: 'openSave', saveId });
       toast.remove();
     });
     toast.appendChild(btn);
@@ -600,7 +602,7 @@ function showToast(message, isError = false, withReport = false) {
 // Listen for save confirmations
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'showToast') {
-    showToast(request.message, request.isError, request.withReport);
+    showToast(request.message, request.isError, request.withReport, request.saveId);
   }
 });
 

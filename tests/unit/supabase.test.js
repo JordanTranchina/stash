@@ -252,7 +252,7 @@ describe('SupabaseClient session and user persistence', () => {
     expect(client.userId).toBe('google-user-777');
     expect(client.accessToken).toBe(mockAccessToken);
 
-    // Background updateActionForSession check:
+    // Popup's session check (shows the main view vs. the sign-in form):
     const token = await client.getAccessToken();
     const signedIn = Boolean(token && client.userId);
     expect(signedIn).toBe(true);

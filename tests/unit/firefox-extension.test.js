@@ -42,8 +42,8 @@ describe('extension-firefox/manifest.json', () => {
     expect(firefoxManifest.permissions).toContain('scripting');
   });
 
-  test('has no default_popup so the toolbar click saves in one action', () => {
-    expect(firefoxManifest.action.default_popup).toBeUndefined();
+  test('has a default_popup so the toolbar click opens the Save Article popup', () => {
+    expect(firefoxManifest.action.default_popup).toBe('popup.html');
     expect(firefoxManifest.action.default_icon).toBeDefined();
   });
 
@@ -85,8 +85,8 @@ describe('extension/manifest.json', () => {
     fs.readFileSync(path.join(CHROME_DIR, 'manifest.json'), 'utf8')
   );
 
-  test('has no default_popup so the toolbar click saves in one action', () => {
-    expect(chromeManifest.action.default_popup).toBeUndefined();
+  test('has a default_popup so the toolbar click opens the Save Article popup', () => {
+    expect(chromeManifest.action.default_popup).toBe('popup.html');
     expect(chromeManifest.action.default_icon).toBeDefined();
   });
 });
@@ -98,12 +98,8 @@ describe('extension/background.js', () => {
     expect(source).toMatch(/typeof importScripts === 'function'/);
   });
 
-  test('saves on a toolbar click', () => {
-    expect(source).toMatch(/chrome\.action\.onClicked\.addListener/);
-  });
-
-  test('restores the sign-in popup when there is no session', () => {
-    expect(source).toMatch(/chrome\.action\.setPopup/);
-    expect(source).toMatch(/popup\.html/);
+  test('saves via a message from the popup, not a toolbar click', () => {
+    expect(source).not.toMatch(/chrome\.action\.onClicked\.addListener/);
+    expect(source).toMatch(/request\.action === 'savePage'/);
   });
 });
