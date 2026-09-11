@@ -343,9 +343,9 @@ class StashApp {
   }
 
   applyReadingFontFamily(choice) {
-    const stack = choice === 'serif'
-      ? 'Georgia, "Times New Roman", serif'
-      : '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif';
+    // The stacks themselves live in styles.css, so the Font control's buttons
+    // can be set in the same faces they select.
+    const stack = choice === 'serif' ? 'var(--font-serif)' : 'var(--font-sans)';
     document.documentElement.style.setProperty('--reading-font-family', stack);
 
     document.querySelectorAll('#reading-font-family-segmented .theme-segment-btn').forEach(btn => {
