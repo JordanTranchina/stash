@@ -24,11 +24,20 @@ function loadStashApp() {
   if (index === -1) throw new Error('app.js no longer ends with the init block');
   const classOnly = `${source.slice(0, index)}\nglobalThis.StashApp = StashApp;`;
 
-  const sandbox = { console, window: {}, document: {}, navigator: {}, CONFIG: {} };
+  const sandbox = { console, window: {}, document: {}, navigator: {}, CONFIG: {}, localStorage };
   vm.createContext(sandbox);
   vm.runInContext(classOnly, sandbox);
   return sandbox.StashApp;
 }
+
+// Shared with the class itself (app.js reads the bare `localStorage` global),
+// so tests can seed/inspect the same store the class methods read from.
+const store = {};
+const localStorage = {
+  getItem: (k) => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); },
+  removeItem: (k) => { delete store[k]; },
+};
 
 const StashApp = loadStashApp();
 // Methods under test are pure string helpers, so a bare object is enough.
@@ -150,5 +159,21 @@ describe('cardThumb', () => {
 
     const withoutText = app.cardThumb({ site_name: 'Example', content: '   ' });
     expect(withoutText).toContain('save-card-thumb-broken');
+  });
+});
+
+describe('getHideNoContentEnabled (Settings → Article List)', () => {
+  afterEach(() => localStorage.removeItem('stash-hide-no-content'));
+
+  test('is off by default', () => {
+    expect(app.getHideNoContentEnabled()).toBe(false);
+  });
+
+  test('reflects the stored preference', () => {
+    localStorage.setItem('stash-hide-no-content', '1');
+    expect(app.getHideNoContentEnabled()).toBe(true);
+
+    localStorage.setItem('stash-hide-no-content', '0');
+    expect(app.getHideNoContentEnabled()).toBe(false);
   });
 });

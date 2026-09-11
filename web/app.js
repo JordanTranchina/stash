@@ -357,6 +357,16 @@ class StashApp {
     });
     this.updateOfflineStorageLabel();
 
+    // Hide articles with no body text (Settings → Article List)
+    const hideNoContentToggle = document.getElementById('hide-no-content-toggle');
+    if (hideNoContentToggle) {
+      hideNoContentToggle.checked = this.getHideNoContentEnabled();
+      hideNoContentToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-hide-no-content', e.target.checked ? '1' : '0');
+        if (this.currentView === 'all' || this.currentView === 'archived') this.loadSaves();
+      });
+    }
+
     // Search
     let searchTimeout;
     document.getElementById('search-input')?.addEventListener('input', (e) => {
@@ -1020,7 +1030,10 @@ class StashApp {
     if (!saves || saves.length === 0) return [];
 
     const wantArchived = this.currentView === 'archived';
-    const filtered = saves.filter(s => !!s.is_archived === wantArchived);
+    let filtered = saves.filter(s => !!s.is_archived === wantArchived);
+    if (this.getHideNoContentEnabled()) {
+      filtered = filtered.filter(s => !!this.wordCount(s));
+    }
 
     const sortValue = document.getElementById('sort-select').value;
     const [column, direction] = sortValue.split('.');
@@ -1095,6 +1108,12 @@ class StashApp {
       query = query.eq('is_archived', true);
     } else {
       query = query.eq('is_archived', false);
+    }
+    if (this.getHideNoContentEnabled()) {
+      // Nulls never satisfy gt(), so this also excludes saves whose
+      // word_count hasn't been computed yet - the same "no body text" set
+      // cardThumb shows the broken-link icon for.
+      query = query.gt('word_count', 0);
     }
 
     const { data, error } = await query;
@@ -1635,6 +1654,13 @@ class StashApp {
 
   getOfflineWifiOnly() {
     return localStorage.getItem('stash-offline-wifi-only') !== '0'; // on by default
+  }
+
+  // Settings → Article List → "Hide Articles With No Body Text". Off by
+  // default: a save with no extracted content still shows (with the
+  // broken-link icon, see cardThumb) unless the user opts into hiding it.
+  getHideNoContentEnabled() {
+    return localStorage.getItem('stash-hide-no-content') === '1'; // off by default
   }
 
   // Best-effort Wi-Fi check. The Network Information API (navigator.connection)
