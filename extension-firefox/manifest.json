@@ -30,6 +30,10 @@
   "background": {
     "scripts": ["logbuffer.js", "config.js", "supabase.js", "sentry-lite.js", "analytics.js", "background.js"]
   },
+  "options_ui": {
+    "page": "popup.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

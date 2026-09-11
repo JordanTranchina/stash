@@ -997,6 +997,10 @@ class StashApp {
   }
 
   async signOut() {
+    // Notify browser extension (if running via content script) to sign out as well
+    try {
+      window.postMessage({ type: 'stash:signOut' }, '*');
+    } catch (_) {}
     // No screen swap here -- onAuthStateChange fires with a null session and
     // handleAuthChange tears everything down in one place.
     await this.supabase.auth.signOut();

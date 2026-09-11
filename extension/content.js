@@ -558,6 +558,29 @@ function showToast(message, isError = false, withReport = false) {
     toast.appendChild(btn);
   }
 
+  if (!isError && message === 'Saved to Stash') {
+    dismissMs = 3500;
+    const btn = document.createElement('button');
+    btn.textContent = 'Settings';
+    btn.style.cssText = `
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    `;
+    btn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'openSettings' });
+      toast.remove();
+    });
+    toast.appendChild(btn);
+  }
+
   const style = document.createElement('style');
   style.textContent = `
     @keyframes stashSlideIn {
@@ -578,5 +601,13 @@ function showToast(message, isError = false, withReport = false) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'showToast') {
     showToast(request.message, request.isError, request.withReport);
+  }
+});
+
+// Listen for sign-out messages from the Stash web app
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  if (event.data && event.data.type === 'stash:signOut') {
+    chrome.runtime.sendMessage({ action: 'signOut' });
   }
 });
