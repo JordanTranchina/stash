@@ -1147,13 +1147,9 @@ select {
 
 /* Font size controls in the reading pane footer */
 .font-size-btn {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1;
-}
-
-.font-size-btn sup {
-  font-size: 10px;
 }
 
 #reading-font-reset-btn:disabled {
