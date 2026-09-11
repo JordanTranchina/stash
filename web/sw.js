@@ -6,6 +6,7 @@
 importScripts('/config.js', '/analytics.js', '/db.js', '/save-lib.js', '/offline-lib.js');
 
 const CACHE_NAME = 'stash-v9';
+const FONT_CACHE_NAME = 'stash-fonts-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -37,9 +38,9 @@ self.addEventListener('install', (event) => {
 
 // Activate
 self.addEventListener('activate', (event) => {
-  // Keep the article-image cache across app-shell cache version bumps —
+  // Keep the article-image cache and font cache across app-shell cache version bumps —
   // only stale app-shell caches from previous deploys get swept here.
-  const keepCaches = new Set([CACHE_NAME, self.StashOffline.IMAGE_CACHE_NAME]);
+  const keepCaches = new Set([CACHE_NAME, self.StashOffline.IMAGE_CACHE_NAME, FONT_CACHE_NAME]);
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
@@ -59,7 +60,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Navigation (HTML): Network First, fall back to Cache
+  // 2. Web Fonts (Google Fonts, Lexend, Merriweather, font files): Cache First, fallback to Network
+  const isFontRequest = url.hostname === 'fonts.googleapis.com' ||
+    url.hostname === 'fonts.gstatic.com' ||
+    url.pathname.endsWith('.woff2') ||
+    url.pathname.endsWith('.woff') ||
+    url.pathname.endsWith('.ttf');
+
+  if (isFontRequest) {
+    event.respondWith(
+      caches.open(FONT_CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          return fetch(event.request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  // 3. Navigation (HTML): Network First, fall back to Cache
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -70,7 +95,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Static Assets (JS/CSS/Images): Stale-While-Revalidate. Same-origin
+  // 4. Static Assets (JS/CSS/Images): Stale-While-Revalidate. Same-origin
   // assets (app shell) go in CACHE_NAME; cross-origin requests are article
   // images (the reading pane's <img src> tags point at the original site),
   // which land in the dedicated image cache that app.js's Wi-Fi prefetcher

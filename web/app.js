@@ -75,6 +75,9 @@ class StashApp {
     // Load default font size preference
     this.loadFontSize();
 
+    // Load reader preferences (typography, scale, theme, persistence)
+    this.loadReaderSettings();
+
     this.bindEvents();
     this.bugReporter.bindEvents();
     this.installErrorReporting();
@@ -133,6 +136,8 @@ class StashApp {
       window.StashAnalytics?.capture('signed_in');
       this.showMainScreen();
       this.loadData();
+      this.updateSettingsAccount();
+      this.loadReaderPreferencesFromSupabase();
       this.openDeepLinkSave();
       this.syncPendingShares();
       this.bugReporter.flushQueue();
@@ -294,6 +299,289 @@ class StashApp {
     });
   }
 
+  // ==========================================================================
+  // Reader Settings Management (Product Spec: Reading Mode & Customization)
+  // ==========================================================================
+
+  READER_FONT_STACKS = {
+    sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    serif: '"Merriweather", Georgia, Cambria, "Times New Roman", Times, serif',
+    mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    lexend: '"Lexend", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  };
+
+  READER_THEME_COLORS = {
+    white: {
+      bg: '#ffffff',
+      text: '#111827',
+      border: '#e5e7eb',
+      meta: '#6b7280',
+    },
+    sepia: {
+      bg: '#F5EADB',
+      text: '#2D241E',
+      border: '#dfd2be',
+      meta: '#7a6b58',
+    },
+    dark: {
+      bg: '#121212',
+      text: '#E4E4E7',
+      border: '#27272a',
+      meta: '#9ca3af',
+    },
+  };
+
+  READER_DEFAULTS = {
+    font: 'sans',
+    scale: 100,
+    theme: 'white',
+    syncAcrossArticles: true,
+  };
+
+  loadReaderSettings() {
+    let settings = { ...this.READER_DEFAULTS };
+    try {
+      const stored = localStorage.getItem('stash_reader_settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          if (this.READER_FONT_STACKS[parsed.font]) settings.font = parsed.font;
+          if (Number.isFinite(parsed.scale)) {
+            settings.scale = Math.min(175, Math.max(100, Math.round(parsed.scale)));
+          }
+          if (this.READER_THEME_COLORS[parsed.theme]) settings.theme = parsed.theme;
+          if (typeof parsed.syncAcrossArticles === 'boolean') {
+            settings.syncAcrossArticles = parsed.syncAcrossArticles;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error loading reader settings from localStorage:', e);
+    }
+    this.readerSettings = settings;
+    this.applyReaderSettings(this.readerSettings);
+  }
+
+  applyReaderSettings(settings) {
+    if (!settings) settings = this.readerSettings || this.READER_DEFAULTS;
+    const pane = document.getElementById('reading-pane');
+    const fontStack = this.READER_FONT_STACKS[settings.font] || this.READER_FONT_STACKS.sans;
+    const themeColors = this.READER_THEME_COLORS[settings.theme] || this.READER_THEME_COLORS.white;
+    const scale = Math.min(175, Math.max(100, settings.scale || 100));
+
+    // Reactive CSS custom properties on article container (#reading-pane)
+    if (pane) {
+      pane.style.setProperty('--reader-font', fontStack);
+      pane.style.setProperty('--reader-scale', `${scale}%`);
+      pane.style.setProperty('--reader-scale-num', String(scale / 100));
+      pane.style.setProperty('--reader-bg', themeColors.bg);
+      pane.style.setProperty('--reader-text', themeColors.text);
+      pane.style.setProperty('--reader-border', themeColors.border);
+      pane.style.setProperty('--reader-meta', themeColors.meta);
+    }
+
+    // 1. Font Family Pills
+    document.querySelectorAll('.font-pill-btn').forEach(btn => {
+      const isActive = btn.dataset.font === settings.font;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-checked', String(isActive));
+    });
+
+    // 2. Font Size Slider & Floating Tracking Badge
+    const slider = document.getElementById('reader-font-slider');
+    if (slider) {
+      slider.value = scale;
+      this.updateReaderSliderBadge(scale);
+    }
+
+    // 3. Theme Swatches
+    document.querySelectorAll('.theme-swatch-btn').forEach(btn => {
+      const isActive = btn.dataset.theme === settings.theme;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-checked', String(isActive));
+    });
+
+    // 4. Update Settings Tab display
+    this.updateReaderSettingsView();
+  }
+
+  updateReaderSliderBadge(val) {
+    const badge = document.getElementById('reader-font-badge');
+    const slider = document.getElementById('reader-font-slider');
+    if (!badge || !slider) return;
+    badge.textContent = `${val}%`;
+
+    const min = Number(slider.min) || 100;
+    const max = Number(slider.max) || 175;
+    const percent = (val - min) / (max - min);
+    const trackWidth = slider.offsetWidth || 200;
+    const thumbWidth = 20;
+    const left = percent * (trackWidth - thumbWidth) + (thumbWidth / 2);
+    badge.style.left = `${left}px`;
+  }
+
+  updateReaderSettingsView() {
+    if (!this.readerSettings) return;
+    const fontNames = {
+      sans: 'Sans serif',
+      serif: 'Serif',
+      mono: 'Mono',
+      lexend: 'Lexend',
+    };
+    const themeNames = {
+      white: 'White',
+      sepia: 'Sepia',
+      dark: 'Dark',
+    };
+
+    const fontVal = document.getElementById('settings-reader-font-val');
+    if (fontVal) fontVal.textContent = fontNames[this.readerSettings.font] || 'Sans serif';
+
+    const scaleVal = document.getElementById('settings-reader-scale-val');
+    if (scaleVal) scaleVal.textContent = `${this.readerSettings.scale}%`;
+
+    const themeVal = document.getElementById('settings-reader-theme-val');
+    if (themeVal) themeVal.textContent = themeNames[this.readerSettings.theme] || 'White';
+
+    const syncToggle = document.getElementById('settings-reader-sync-toggle');
+    if (syncToggle) syncToggle.checked = !!this.readerSettings.syncAcrossArticles;
+
+    this.updateSettingsAccount();
+  }
+
+  updateSettingsAccount() {
+    const nameEl = document.getElementById('settings-account-name');
+    const emailEl = document.getElementById('settings-account-email');
+    if (!nameEl || !emailEl) return;
+    if (this.user) {
+      nameEl.textContent = this.user.user_metadata?.full_name || this.user.user_metadata?.name || this.user.email?.split('@')[0] || 'Jordan Tranchina';
+      emailEl.textContent = this.user.email || 'jordan@...';
+    } else {
+      nameEl.textContent = 'Jordan Tranchina';
+      emailEl.textContent = 'jordan@...';
+    }
+  }
+
+  setReaderFont(font) {
+    if (!this.READER_FONT_STACKS[font]) return;
+    this.readerSettings.font = font;
+    this.saveReaderSettings();
+  }
+
+  setReaderScaleLive(scale) {
+    const clamped = Math.min(175, Math.max(100, Math.round(scale)));
+    this.readerSettings.scale = clamped;
+    const pane = document.getElementById('reading-pane');
+    if (pane) {
+      pane.style.setProperty('--reader-scale', `${clamped}%`);
+      pane.style.setProperty('--reader-scale-num', String(clamped / 100));
+    }
+    this.updateReaderSliderBadge(clamped);
+    const scaleVal = document.getElementById('settings-reader-scale-val');
+    if (scaleVal) scaleVal.textContent = `${clamped}%`;
+  }
+
+  setReaderScale(scale) {
+    const clamped = Math.min(175, Math.max(100, Math.round(scale)));
+    this.readerSettings.scale = clamped;
+    this.saveReaderSettings();
+  }
+
+  setReaderTheme(theme) {
+    if (!this.READER_THEME_COLORS[theme]) return;
+    this.readerSettings.theme = theme;
+    this.saveReaderSettings();
+  }
+
+  setReaderSync(sync) {
+    this.readerSettings.syncAcrossArticles = !!sync;
+    this.saveReaderSettings();
+  }
+
+  saveReaderSettings() {
+    try {
+      localStorage.setItem('stash_reader_settings', JSON.stringify(this.readerSettings));
+    } catch (e) {
+      console.error('Error saving reader settings to localStorage:', e);
+    }
+    this.applyReaderSettings(this.readerSettings);
+    if (this.readerSettings.syncAcrossArticles) {
+      this.syncReaderSettingsToSupabase();
+    }
+  }
+
+  async syncReaderSettingsToSupabase() {
+    if (!this.user || !this.supabase) return;
+    try {
+      await this.supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: this.user.id,
+          reader_font: this.readerSettings.font,
+          reader_scale: this.readerSettings.scale,
+          reader_theme: this.readerSettings.theme,
+          reader_sync_articles: this.readerSettings.syncAcrossArticles,
+        }, {
+          onConflict: 'user_id',
+        });
+    } catch (err) {
+      console.error('Error syncing reader settings to Supabase:', err);
+    }
+  }
+
+  async loadReaderPreferencesFromSupabase() {
+    if (!this.user || !this.supabase) return;
+    try {
+      const { data, error } = await this.supabase
+        .from('user_preferences')
+        .select('reader_font, reader_scale, reader_theme, reader_sync_articles')
+        .eq('user_id', this.user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      if (data) {
+        if (data.reader_font && this.READER_FONT_STACKS[data.reader_font]) {
+          this.readerSettings.font = data.reader_font;
+        }
+        if (Number.isFinite(data.reader_scale)) {
+          this.readerSettings.scale = Math.min(175, Math.max(100, data.reader_scale));
+        }
+        if (data.reader_theme && this.READER_THEME_COLORS[data.reader_theme]) {
+          this.readerSettings.theme = data.reader_theme;
+        }
+        if (typeof data.reader_sync_articles === 'boolean') {
+          this.readerSettings.syncAcrossArticles = data.reader_sync_articles;
+        }
+        localStorage.setItem('stash_reader_settings', JSON.stringify(this.readerSettings));
+        this.applyReaderSettings(this.readerSettings);
+      }
+    } catch (err) {
+      console.error('Error loading reader preferences from Supabase:', err);
+    }
+  }
+
+  openReaderModeSheet() {
+    const sheet = document.getElementById('reading-mode-sheet');
+    const backdrop = document.getElementById('reading-mode-backdrop');
+    if (backdrop) backdrop.classList.remove('hidden');
+    if (sheet) {
+      sheet.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        this.updateReaderSliderBadge(this.readerSettings.scale);
+      });
+    }
+  }
+
+  closeReaderModeSheet() {
+    const sheet = document.getElementById('reading-mode-sheet');
+    const backdrop = document.getElementById('reading-mode-backdrop');
+    if (sheet) sheet.classList.add('hidden');
+    if (backdrop) backdrop.classList.add('hidden');
+  }
+
   bindEvents() {
     // Every lookup below is optional-chained: a single renamed/missing element
     // ID used to throw here and abort the rest of bindEvents (and init()
@@ -415,6 +703,89 @@ class StashApp {
 
     document.getElementById('archive-btn')?.addEventListener('click', () => {
       this.toggleArchive();
+    });
+
+    // Reading Mode Bottom Sheet Modal (Product Spec)
+    document.getElementById('reading-mode-btn')?.addEventListener('click', () => {
+      this.openReaderModeSheet();
+    });
+
+    document.getElementById('close-reading-mode-sheet-btn')?.addEventListener('click', () => {
+      this.closeReaderModeSheet();
+    });
+
+    document.getElementById('reading-mode-backdrop')?.addEventListener('click', () => {
+      this.closeReaderModeSheet();
+    });
+
+    // Touch swipe down on bottom sheet drag handle to dismiss
+    const dragHandle = document.getElementById('sheet-drag-handle');
+    if (dragHandle) {
+      let startY = 0;
+      let currentY = 0;
+      dragHandle.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+      }, { passive: true });
+      dragHandle.addEventListener('touchmove', (e) => {
+        currentY = e.touches[0].clientY;
+        const deltaY = currentY - startY;
+        if (deltaY > 0) {
+          const sheet = document.getElementById('reading-mode-sheet');
+          if (sheet) sheet.style.transform = `translateY(${deltaY}px)`;
+        }
+      }, { passive: true });
+      dragHandle.addEventListener('touchend', () => {
+        const deltaY = currentY - startY;
+        const sheet = document.getElementById('reading-mode-sheet');
+        if (sheet) sheet.style.transform = '';
+        if (deltaY > 50) {
+          this.closeReaderModeSheet();
+        }
+        startY = 0;
+        currentY = 0;
+      });
+    }
+
+    // Font Family selection (4 pills: Sans, Serif, Mono, Lexend)
+    document.querySelectorAll('.font-pill-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.setReaderFont(btn.dataset.font);
+      });
+    });
+
+    // Font Size Slider (live drag + persist)
+    const fontSlider = document.getElementById('reader-font-slider');
+    if (fontSlider) {
+      fontSlider.addEventListener('input', (e) => {
+        this.setReaderScaleLive(Number(e.target.value));
+      });
+      fontSlider.addEventListener('change', (e) => {
+        this.setReaderScale(Number(e.target.value));
+      });
+    }
+
+    // Theme swatches (White, Sepia, Dark)
+    document.querySelectorAll('.theme-swatch-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.setReaderTheme(btn.dataset.theme);
+      });
+    });
+
+    // Settings Tab - Reading Preferences (Global Defaults)
+    document.getElementById('settings-reader-font-row')?.addEventListener('click', () => {
+      this.openReaderModeSheet();
+    });
+
+    document.getElementById('settings-reader-scale-row')?.addEventListener('click', () => {
+      this.openReaderModeSheet();
+    });
+
+    document.getElementById('settings-reader-theme-row')?.addEventListener('click', () => {
+      this.openReaderModeSheet();
+    });
+
+    document.getElementById('settings-reader-sync-toggle')?.addEventListener('change', (e) => {
+      this.setReaderSync(e.target.checked);
     });
 
     // Theme selection (Light / Dark / Auto)
@@ -2242,6 +2613,9 @@ class StashApp {
     this.currentSave = save;
     const pane = document.getElementById('reading-pane');
 
+    // Apply reader typography, scale, and theme
+    this.applyReaderSettings(this.readerSettings);
+
     // Stop any existing audio
     this.stopAudio();
 
@@ -2420,6 +2794,7 @@ class StashApp {
   }
 
   closeReadingPane({ fromPopState = false } = {}) {
+    this.closeReaderModeSheet();
     const pane = document.getElementById('reading-pane');
     pane.classList.remove('open');
     pane.classList.remove('chrome-hidden');

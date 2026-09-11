@@ -185,6 +185,19 @@ create table user_preferences (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references auth.users(id) on delete cascade not null unique,
 
+  -- Podcast host personality settings
+  podcast_host_a_name text,
+  podcast_host_a_persona text,
+  podcast_host_b_name text,
+  podcast_host_b_persona text,
+  podcast_tone text,
+
+  -- Reader settings (typography, scaling, theme)
+  reader_font text default 'sans',
+  reader_scale integer default 100,
+  reader_theme text default 'white',
+  reader_sync_articles boolean default true,
+
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );

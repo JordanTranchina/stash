@@ -26,6 +26,11 @@
     })();
   </script>
 
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap" rel="stylesheet">
+
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -156,6 +161,60 @@
           <!-- Settings View -->
           <div id="settings-view" class="hidden">
             <div id="settings-list">
+              <!-- Account Section (Fig 4) -->
+              <div class="settings-section" id="settings-account-section">
+                <h3>Account</h3>
+                <div class="settings-account-card">
+                  <div class="settings-account-name" id="settings-account-name">Account</div>
+                  <div class="settings-account-email" id="settings-account-email">user@example.com</div>
+                </div>
+              </div>
+
+              <!-- Reading Preferences (Global Defaults) Section (Fig 4) -->
+              <div class="settings-section">
+                <h3>Reading Preferences (Global Defaults)</h3>
+                <button type="button" class="settings-row" id="settings-reader-font-row">
+                  <span>Default Font</span>
+                  <div class="settings-value-with-chevron">
+                    <span id="settings-reader-font-val">Sans serif</span>
+                    <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </button>
+                <button type="button" class="settings-row" id="settings-reader-scale-row">
+                  <span>Font Scale</span>
+                  <div class="settings-value-with-chevron">
+                    <span id="settings-reader-scale-val">100%</span>
+                    <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </button>
+                <button type="button" class="settings-row" id="settings-reader-theme-row">
+                  <span>Reading Theme</span>
+                  <div class="settings-value-with-chevron">
+                    <span id="settings-reader-theme-val">White</span>
+                    <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </button>
+                <div class="settings-row settings-toggle-row">
+                  <span>Sync across articles</span>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="settings-reader-sync-toggle" checked aria-label="Sync reading preferences across articles">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div class="settings-callout-card">
+                  <div class="settings-callout-title">Universal Persistence Model:</div>
+                  <ul class="settings-callout-list">
+                    <li>Modifying Reading Mode from the bottom sheet in any article automatically updates these defaults.</li>
+                    <li>Preferences persist in localStorage &amp; Supabase user_preferences.</li>
+                  </ul>
+                </div>
+              </div>
               <div class="settings-section">
                 <h3>Appearance</h3>
                 <div class="settings-row theme-toggle-row">
@@ -432,29 +491,89 @@
           <div class="reading-progress-fill" id="reading-progress-fill"></div>
         </div>
         <div class="reading-footer">
-          <button class="btn icon font-size-btn" id="reading-font-decrease-btn" title="Decrease font size" aria-label="Decrease font size">A<sup>−</sup></button>
-          <button class="btn icon font-size-btn" id="reading-font-increase-btn" title="Increase font size" aria-label="Increase font size">A<sup>+</sup></button>
-          <button class="btn icon" id="reading-font-reset-btn" title="Reset font size to default" aria-label="Reset font size to default">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="1 4 1 10 7 10"></polyline>
-              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-            </svg>
-          </button>
-          <button class="btn icon" id="archive-btn" title="Archive" aria-label="Archive">
+          <button class="reading-mode-btn" id="reading-mode-btn" title="Reading mode" aria-label="Reading mode">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="21 8 21 21 3 21 3 8"></polyline>
-              <rect x="1" y="3" width="22" height="5"></rect>
+              <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+              <line x1="10" y1="4" x2="10" y2="20"></line>
             </svg>
+            <span>Reading mode</span>
           </button>
-          <a id="open-original-btn" href="#" target="_blank" class="btn icon" title="Open original">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
-          </a>
+          <div class="reading-footer-actions">
+            <button class="btn icon" id="archive-btn" title="Archive" aria-label="Archive">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                <rect x="1" y="3" width="22" height="5"></rect>
+              </svg>
+            </button>
+            <a id="open-original-btn" href="#" target="_blank" class="btn icon" title="Open original">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </a>
+          </div>
         </div>
       </aside>
+
+      <!-- Reading Mode Bottom Sheet Modal -->
+      <div id="reading-mode-backdrop" class="reading-mode-backdrop hidden" aria-hidden="true"></div>
+      <div id="reading-mode-sheet" class="reading-mode-sheet hidden" role="dialog" aria-modal="true" aria-label="Reading mode settings">
+        <div class="sheet-drag-handle" id="sheet-drag-handle" aria-hidden="true"></div>
+        <div class="sheet-header">
+          <div class="sheet-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+              <line x1="10" y1="4" x2="10" y2="20"></line>
+            </svg>
+            <span>Reading mode</span>
+          </div>
+          <button type="button" class="sheet-close-btn" id="close-reading-mode-sheet-btn" title="Close" aria-label="Close reading mode settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="sheet-body">
+          <!-- Font Family Selector (4 pill buttons) -->
+          <div class="font-family-selector" role="radiogroup" aria-label="Font family">
+            <button type="button" class="font-pill-btn active" data-font="sans" role="radio" aria-checked="true">
+              <span class="font-pill-glyph font-sans">Aa</span>
+              <span class="font-pill-name">Sans serif</span>
+            </button>
+            <button type="button" class="font-pill-btn" data-font="serif" role="radio" aria-checked="false">
+              <span class="font-pill-glyph font-serif">Aa</span>
+              <span class="font-pill-name">Serif</span>
+            </button>
+            <button type="button" class="font-pill-btn" data-font="mono" role="radio" aria-checked="false">
+              <span class="font-pill-glyph font-mono">Aa</span>
+              <span class="font-pill-name">Mono</span>
+            </button>
+            <button type="button" class="font-pill-btn" data-font="lexend" role="radio" aria-checked="false">
+              <span class="font-pill-glyph font-lexend">Aa</span>
+              <span class="font-pill-name">Lexend</span>
+            </button>
+          </div>
+
+          <!-- Font Size Slider (100% to 175%) with floating tracking badge -->
+          <div class="font-slider-container">
+            <span class="font-slider-bound bound-small" aria-hidden="true">A</span>
+            <div class="font-slider-track-wrap">
+              <div class="font-scale-floating-badge" id="reader-font-badge">100%</div>
+              <input type="range" id="reader-font-slider" class="reader-font-slider" min="100" max="175" step="1" value="100" aria-label="Font scale percentage">
+            </div>
+            <span class="font-slider-bound bound-large" aria-hidden="true">A</span>
+          </div>
+
+          <!-- Theme Swatches (White, Sepia, Dark) -->
+          <div class="theme-swatches-row" role="radiogroup" aria-label="Reading theme">
+            <button type="button" class="theme-swatch-btn swatch-white active" data-theme="white" role="radio" aria-checked="true" aria-label="White theme"></button>
+            <button type="button" class="theme-swatch-btn swatch-sepia" data-theme="sepia" role="radio" aria-checked="false" aria-label="Sepia theme"></button>
+            <button type="button" class="theme-swatch-btn swatch-dark" data-theme="dark" role="radio" aria-checked="false" aria-label="Dark theme"></button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Stats Screen -->
