@@ -2522,9 +2522,34 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
-.bottom-nav-item svg {
+/* Icon chip: every tab keeps this plain icon-above-label layout: only the
+   active tab's icon sits inside a small rounded chip, and its outline icon
+   swaps for a filled one. The label itself never gets a background - it
+   just recolors along with the rest of .bottom-nav-item.active below. */
+.bottom-nav-icon {
+  display: grid;
+  width: 50px;
+  height: 34px;
+  border-radius: 13px;
+  transition: background 0.15s;
+}
+
+.bottom-nav-icon svg {
+  grid-area: 1 / 1;
   width: 22px;
   height: 22px;
+  margin: auto;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.bottom-nav-icon .icon-filled {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.bottom-nav-icon .icon-outline {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .bottom-nav-item:hover {
@@ -2533,6 +2558,20 @@ select {
 
 .bottom-nav-item.active {
   color: var(--primary);
+}
+
+.bottom-nav-item.active .bottom-nav-icon {
+  background: color-mix(in srgb, var(--primary) 18%, var(--bg));
+}
+
+.bottom-nav-item.active .bottom-nav-icon .icon-outline {
+  opacity: 0;
+  transform: scale(1.15);
+}
+
+.bottom-nav-item.active .bottom-nav-icon .icon-filled {
+  opacity: 1;
+  transform: scale(1);
 }
 
 /* Give the tab bar a comfortable centered width on large screens */
