@@ -75,8 +75,9 @@ class StashApp {
     // Load default font size preference
     this.loadFontSize();
 
-    // Load reading-view display options (theme swatch + font family)
-    this.loadReadingStyle();
+    // Load the reading pane's own font-family preference (its theme swatch
+    // is just another entry point onto the app-wide theme loaded above)
+    this.loadReadingFontFamily();
 
     this.bindEvents();
     this.bugReporter.bindEvents();
@@ -214,18 +215,13 @@ class StashApp {
     document.documentElement.setAttribute('data-theme', effective);
     this.updateThemeToggle(choice);
     this.updateThemeColorMeta(effective);
-
-    // The reading-view theme swatch has its own "Auto" option, which means
-    // "follow the app theme above" rather than tracking prefers-color-scheme
-    // directly — so it needs to be re-applied whenever the app theme changes.
-    if ((localStorage.getItem('stash-reading-theme') || 'auto') === 'auto') {
-      this.applyReadingTheme('auto');
-    }
   }
 
   updateThemeColorMeta(theme) {
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#111827' : '#ffffff');
+    if (!meta) return;
+    const colors = { dark: '#111827', sepia: '#f4ecd8' };
+    meta.setAttribute('content', colors[theme] || '#ffffff');
   }
 
   // Font Size Management (applies to article reading text app-wide)
@@ -298,42 +294,21 @@ class StashApp {
     this.setDefaultFontSize(this.getDefaultFontSize() + delta);
   }
 
+  // The Settings toggle and the reading view's own Theme control (in the
+  // "Aa" popover) are two entry points onto the same app-wide setting, so
+  // both live under this one selector and stay in sync with each other.
   updateThemeToggle(choice) {
-    document.querySelectorAll('#theme-segmented .theme-segment-btn').forEach(btn => {
+    document.querySelectorAll('#theme-segmented .theme-segment-btn, #reading-theme-segmented .theme-segment-btn').forEach(btn => {
       const isActive = btn.dataset.themeChoice === choice;
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-checked', String(isActive));
     });
   }
 
-  // Reading-view display options: a theme swatch (Light/Sepia/Dark/Auto) and
-  // a font family, both scoped to the reading pane only — independent of the
-  // app-wide Settings theme, which the swatch's own "Auto" defers to.
-  loadReadingStyle() {
-    this.applyReadingTheme(localStorage.getItem('stash-reading-theme') || 'auto');
+  // Reading-view font family: scoped to the reading pane only, unlike the
+  // Theme control above.
+  loadReadingFontFamily() {
     this.applyReadingFontFamily(localStorage.getItem('stash-reading-font-family') || 'sans');
-  }
-
-  setReadingTheme(choice) {
-    localStorage.setItem('stash-reading-theme', choice);
-    this.applyReadingTheme(choice);
-    window.StashAnalytics?.capture('reading_theme_changed', { theme: choice });
-  }
-
-  applyReadingTheme(choice) {
-    const pane = document.getElementById('reading-pane');
-    if (pane) {
-      // "Auto" means "match the app theme" — leave no override so the
-      // reading pane's CSS vars fall back to the global --bg/--text.
-      if (choice === 'auto') pane.removeAttribute('data-reading-theme');
-      else pane.setAttribute('data-reading-theme', choice);
-    }
-
-    document.querySelectorAll('#reading-theme-segmented .theme-segment-btn').forEach(btn => {
-      const isActive = btn.dataset.readingThemeChoice === choice;
-      btn.classList.toggle('active', isActive);
-      btn.setAttribute('aria-checked', String(isActive));
-    });
   }
 
   setReadingFontFamily(choice) {
@@ -490,7 +465,9 @@ class StashApp {
     });
 
     // Theme selection (Light / Dark / Auto)
-    document.querySelectorAll('#theme-segmented .theme-segment-btn').forEach(btn => {
+    // Theme selection: the Settings toggle and the reading view's own Theme
+    // control both set the same app-wide theme (see updateThemeToggle).
+    document.querySelectorAll('#theme-segmented .theme-segment-btn, #reading-theme-segmented .theme-segment-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this.setTheme(btn.dataset.themeChoice);
       });
@@ -510,12 +487,6 @@ class StashApp {
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.toggleReadingStylePopover(false);
-    });
-
-    document.querySelectorAll('#reading-theme-segmented .theme-segment-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.setReadingTheme(btn.dataset.readingThemeChoice);
-      });
     });
 
     document.querySelectorAll('#reading-font-family-segmented .theme-segment-btn').forEach(btn => {

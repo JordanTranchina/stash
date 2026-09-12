@@ -74,6 +74,48 @@
   background: rgba(245, 158, 11, 0.2);
 }
 
+/* Sepia — a warm paper tone, selectable app-wide from Settings and from the
+   reading view's own Theme control (the two are the same setting; see
+   updateThemeToggle in app.js). */
+[data-theme="sepia"] {
+  --primary: #595bd8;
+  --primary-dark: #4f46e5;
+  --primary-light: #818cf8;
+  --bg: #f4ecd8;
+  --bg-secondary: #efe5cc;
+  --bg-tertiary: #e7dbbe;
+  --text: #433422;
+  --text-secondary: #5c4a33;
+  --text-muted: #6f5c44;
+  --border: #e0d0ae;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="sepia"] .save-card,
+[data-theme="sepia"] .stat-card,
+[data-theme="sepia"] .modal-content {
+  background: var(--bg-secondary);
+}
+
+[data-theme="sepia"] .nav-item.active {
+  background: var(--bg-tertiary);
+}
+
+[data-theme="sepia"] .auth-container {
+  background: var(--bg-secondary);
+}
+
+[data-theme="sepia"] .header-sort-btn,
+[data-theme="sepia"] .header-add-btn,
+[data-theme="sepia"] .header-bug-btn {
+  background: var(--bg-secondary);
+}
+
+[data-theme="sepia"] .save-card-highlight {
+  background: rgba(245, 158, 11, 0.2);
+}
+
 /* Appearance (theme) row in Settings */
 .theme-toggle-row {
   cursor: default;
@@ -800,51 +842,13 @@ select {
   z-index: 95;
   width: var(--reading-pane-width);
   background: var(--bg);
-  /* Set here, not inherited from body, so a reading theme's remapped --text
-     below actually reaches the article. */
+  /* Set here, not inherited from body, so the app-wide theme's --text
+     actually reaches the article. */
   color: var(--text);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-}
-
-/* Reading-view theme: a swatch chosen from the footer's "Aa" popover,
-   independent of the app-wide Settings theme. Each one re-maps the palette
-   inside the pane, so the article, the footer and the display-options popover
-   all follow the chosen paper colour rather than half-following the app theme.
-   "Auto" sets no attribute, leaving the app theme's palette in place. */
-.reading-pane[data-reading-theme="light"] {
-  --bg: #ffffff;
-  --bg-secondary: #f9fafb;
-  --bg-tertiary: #f3f4f6;
-  --text: #1f2937;
-  --text-secondary: #4b5563;
-  --text-muted: #666e7a;
-  --border: #e5e7eb;
-  --primary: #595bd8;
-}
-
-.reading-pane[data-reading-theme="sepia"] {
-  --bg: #f4ecd8;
-  --bg-secondary: #efe5cc;
-  --bg-tertiary: #e7dbbe;
-  --text: #433422;
-  --text-secondary: #5c4a33;
-  --text-muted: #6f5c44;
-  --border: #e0d0ae;
-  --primary: #595bd8;
-}
-
-.reading-pane[data-reading-theme="dark"] {
-  --bg: #111827;
-  --bg-secondary: #1f2937;
-  --bg-tertiary: #374151;
-  --text: #f9fafb;
-  --text-secondary: #d1d5db;
-  --text-muted: #a8b0ba;
-  --border: #374151;
-  --primary: #818cf8;
 }
 
 .reading-header {
