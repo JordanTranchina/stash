@@ -152,6 +152,11 @@ input:focus {
   margin-top: 8px;
 }
 
+.save-btn {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
 /* Recent Saves */
 .recent h2 {
   font-size: 13px;

@@ -1,0 +1,241 @@
+name: Antigravity Agent
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  antigravity:
+    name: Antigravity Agent Trigger
+    if: |
+      (github.event_name == 'issue_comment' && github.event.comment.user.type != 'Bot' && (contains(github.event.comment.body, '/gemini') || contains(github.event.comment.body, '/agy'))) ||
+      (github.event_name == 'issues' && github.event.issue.user.type != 'Bot' && (contains(github.event.issue.body, '/gemini') || contains(github.event.issue.title, '/gemini') || contains(github.event.issue.body, '/agy') || contains(github.event.issue.title, '/agy')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Prepare Prompt & Check Permissions
+        id: prep
+        env:
+          PROMPT_FILE: ${{ runner.temp }}/prompt.txt
+          ALLOWED_ASSOCIATIONS: 'OWNER,MEMBER,COLLABORATOR'
+        run: python3 .github/scripts/prepare_agy_prompt.py
+
+      - name: Acknowledge command with reaction
+        if: steps.prep.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/${{ steps.prep.outputs.reaction_target }}/reactions" \
+            -f content="eyes" || true
+
+      - name: Install Antigravity CLI
+        if: steps.prep.outputs.should_run == 'true'
+        run: |
+          curl -fsSL https://antigravity.google/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Configure Antigravity CLI for Headless API Key Auth
+        if: steps.prep.outputs.should_run == 'true'
+        run: |
+          mkdir -p "$HOME/.gemini" "$HOME/.gemini/antigravity-cli"
+          cat << 'EOF' > "$HOME/.gemini/settings.json"
+          {
+            "modelProvider": "gemini"
+          }
+          EOF
+          cp "$HOME/.gemini/settings.json" "$HOME/.gemini/antigravity-cli/settings.json"
+
+      - name: Verify API Key & Model Access
+        if: steps.prep.outputs.should_run == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.ANTIGRAVITY_API_KEY }}
+          ANTIGRAVITY_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.ANTIGRAVITY_API_KEY }}
+          MODEL_PROVIDER: gemini
+        run: |
+          python3 -c "
+          import urllib.request, json, os
+          key = os.environ.get('GEMINI_API_KEY', '').strip()
+          if not key:
+              print('❌ GEMINI_API_KEY is empty or unset!')
+          else:
+              print(f'✓ GEMINI_API_KEY present (length: {len(key)})')
+              try:
+                  url = f'https://generativelanguage.googleapis.com/v1beta/models?key={key}'
+                  with urllib.request.urlopen(url, timeout=10) as resp:
+                      data = json.loads(resp.read())
+                      models = [m.get('name') for m in data.get('models', []) if 'gemini' in m.get('name', '')]
+                      print(f'✓ API Key is VALID! ({len(models)} Gemini models accessible)')
+              except Exception as e:
+                  print(f'❌ API Key validation error: {e}')
+          "
+          echo "=== Installed Antigravity CLI version ==="
+          agy --version || true
+          echo "=== Antigravity Available Models ==="
+          agy models || true
+
+      - name: Create Dedicated Branch
+        if: steps.prep.outputs.should_run == 'true'
+        id: branch
+        run: |
+          BRANCH_NAME="agy/issue-${{ steps.prep.outputs.issue_number }}-${{ steps.prep.outputs.clean_title }}-${{ github.run_id }}"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Run Antigravity CLI
+        if: steps.prep.outputs.should_run == 'true'
+        id: agy-run
+        env:
+          ANTIGRAVITY_API_KEY: ${{ secrets.ANTIGRAVITY_API_KEY || secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.ANTIGRAVITY_API_KEY || secrets.GEMINI_API_KEY }}
+          MODEL_PROVIDER: gemini
+          PROMPT_FILE: ${{ runner.temp }}/prompt.txt
+          OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
+        run: |
+          SUCCESS=false
+          MODELS=("gemini-3.6-flash-low" "gemini-3.7-flash-low" "gemini-3.8-flash-low")
+          TOTAL_MODELS=${#MODELS[@]}
+          CURRENT_INDEX=0
+
+          for MODEL in "${MODELS[@]}"; do
+            CURRENT_INDEX=$((CURRENT_INDEX + 1))
+            MODEL_OUTPUT="${OUTPUT_FILE}.${MODEL}.txt"
+            MODEL_LOG="${{ runner.temp }}/agy_${MODEL}.log"
+
+            echo "========================================================"
+            echo "Invoking Antigravity CLI with model: $MODEL (attempt $CURRENT_INDEX of $TOTAL_MODELS)"
+            echo "========================================================"
+
+            set +e
+            agy --model "$MODEL" \
+                --effort low \
+                --disable-slash-commands \
+                --print-timeout 10m0s \
+                --log-file "$MODEL_LOG" \
+                --dangerously-skip-permissions \
+                -p "$(cat "$PROMPT_FILE")" < /dev/null > "$MODEL_OUTPUT" 2>&1
+            EXIT_CODE=$?
+            set -e
+
+            echo "Model $MODEL finished with exit code: $EXIT_CODE"
+
+            # Check for success:
+            # 1. Exit code must be 0
+            # 2. Output must not be empty
+            # 3. Output must not contain fatal CLI termination error
+            if [ $EXIT_CODE -eq 0 ] && [ -s "$MODEL_OUTPUT" ] && ! grep -q "error: Agent execution terminated" "$MODEL_OUTPUT" 2>/dev/null; then
+              echo "✓ Model $MODEL completed successfully!"
+              cp "$MODEL_OUTPUT" "$OUTPUT_FILE"
+              cp "$MODEL_LOG" "${{ runner.temp }}/agy.log" 2>/dev/null || true
+              SUCCESS=true
+              break
+            fi
+
+            echo "❌ Model $MODEL failed (exit code $EXIT_CODE)."
+            echo "--- Recent output snippet ---"
+            tail -n 25 "$MODEL_OUTPUT" || true
+
+            # If there are more models to try, wait for quota recovery
+            if [ $CURRENT_INDEX -lt $TOTAL_MODELS ]; then
+              echo "Waiting 35s for quota / rate-limit recovery before next model attempt..."
+              sleep 35
+            fi
+          done
+
+          if [ "$SUCCESS" != "true" ]; then
+            echo "All model attempts failed. Compiling error report..."
+            > "$OUTPUT_FILE"
+            for MODEL in "${MODELS[@]}"; do
+              M_OUT="${OUTPUT_FILE}.${MODEL}.txt"
+              M_LOG="${{ runner.temp }}/agy_${MODEL}.log"
+              if [ -s "$M_OUT" ]; then
+                echo -e "### Attempt with model: $MODEL\n" >> "$OUTPUT_FILE"
+                cat "$M_OUT" >> "$OUTPUT_FILE"
+                echo -e "\n" >> "$OUTPUT_FILE"
+              fi
+              if [ -s "$M_LOG" ]; then
+                echo -e "--- Internal CLI Log ($MODEL) ---\n" >> "$OUTPUT_FILE"
+                cat "$M_LOG" >> "$OUTPUT_FILE"
+                echo -e "\n" >> "$OUTPUT_FILE"
+              fi
+            done
+            exit 1
+          fi
+
+      - name: Commit changes & Create Draft PR
+        if: steps.prep.outputs.should_run == 'true' && steps.agy-run.outcome == 'success'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ steps.branch.outputs.branch_name }}
+          ISSUE_NUM: ${{ steps.prep.outputs.issue_number }}
+          ISSUE_TITLE: ${{ steps.prep.outputs.issue_title }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Repository modifications detected. Creating draft PR..."
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            COMMIT_MSG=$(printf "fix(issue-%s): automated resolution by Antigravity CLI\n\nAddresses #%s\n\nCo-authored-by: Google Antigravity <antigravity@google.com>" "$ISSUE_NUM" "$ISSUE_NUM")
+            git commit -m "$COMMIT_MSG"
+            git push origin "$BRANCH_NAME"
+
+            PR_BODY=$(printf "Automated draft pull request generated by Antigravity CLI to resolve #%s.\n\nCloses #%s" "$ISSUE_NUM" "$ISSUE_NUM")
+            PR_URL=$(gh pr create \
+              --draft \
+              --title "Fix #${ISSUE_NUM}: ${ISSUE_TITLE}" \
+              --body "$PR_BODY" \
+              --head "$BRANCH_NAME" \
+              --base "main")
+
+            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          else
+            echo "No file changes detected."
+          fi
+
+      - name: Format Comment
+        if: always() && steps.prep.outputs.should_run != ''
+        env:
+          RUN_STATUS: ${{ steps.agy-run.outcome || 'success' }}
+          AUTHORIZED: ${{ steps.prep.outputs.authorized }}
+          AUTHOR: ${{ steps.prep.outputs.author }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+          ISSUE_NUMBER: ${{ steps.prep.outputs.issue_number }}
+          OUTPUT_FILE: ${{ runner.temp }}/agy_output.txt
+          COMMENT_FILE: ${{ runner.temp }}/comment_body.md
+        run: |
+          python3 .github/scripts/post_agy_result.py
+
+      - name: Post Comment to Issue
+        if: always() && steps.prep.outputs.should_run != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUM: ${{ steps.prep.outputs.issue_number }}
+          COMMENT_FILE: ${{ runner.temp }}/comment_body.md
+        run: |
+          if [ -f "$COMMENT_FILE" ] && [ -n "$ISSUE_NUM" ]; then
+            gh issue comment "$ISSUE_NUM" --body-file "$COMMENT_FILE"
+          fi
+
+      - name: Add completion reaction
+        if: steps.prep.outputs.should_run == 'true' && steps.agy-run.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/${{ steps.prep.outputs.reaction_target }}/reactions" \
+            -f content="rocket" || true

@@ -75,6 +75,10 @@ class StashApp {
     // Load default font size preference
     this.loadFontSize();
 
+    // Load the reading pane's own font-family preference (its theme swatch
+    // is just another entry point onto the app-wide theme loaded above)
+    this.loadReadingFontFamily();
+
     this.bindEvents();
     this.bugReporter.bindEvents();
     this.installErrorReporting();
@@ -133,6 +137,7 @@ class StashApp {
       window.StashAnalytics?.capture('signed_in');
       this.showMainScreen();
       this.loadData();
+      this.openDeepLinkSave();
       this.syncPendingShares();
       this.bugReporter.flushQueue();
       this.setupRealtime();
@@ -215,7 +220,9 @@ class StashApp {
 
   updateThemeColorMeta(theme) {
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#111827' : '#ffffff');
+    if (!meta) return;
+    const colors = { dark: '#111827', sepia: '#f4ecd8' };
+    meta.setAttribute('content', colors[theme] || '#ffffff');
   }
 
   // Font Size Management (applies to article reading text app-wide)
@@ -257,6 +264,9 @@ class StashApp {
     document.documentElement.style.setProperty('--reading-font-size', `${clamped}px`);
     localStorage.setItem('stash-font-size', clamped);
 
+    const valueEl = document.getElementById('reading-font-size-value');
+    if (valueEl) valueEl.textContent = clamped;
+
     const resetBtn = document.getElementById('reading-font-reset-btn');
     if (resetBtn) resetBtn.disabled = clamped === this.getDefaultFontSize();
   }
@@ -285,12 +295,55 @@ class StashApp {
     this.setDefaultFontSize(this.getDefaultFontSize() + delta);
   }
 
+  // The Settings toggle and the reading view's own Theme control (in the
+  // "Aa" popover) are two entry points onto the same app-wide setting, so
+  // both live under this one selector and stay in sync with each other.
   updateThemeToggle(choice) {
-    document.querySelectorAll('.theme-segment-btn').forEach(btn => {
+    document.querySelectorAll('#theme-segmented .theme-segment-btn, #reading-theme-segmented .theme-segment-btn').forEach(btn => {
       const isActive = btn.dataset.themeChoice === choice;
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-checked', String(isActive));
     });
+  }
+
+  // Reading-view font family: scoped to the reading pane only, unlike the
+  // Theme control above.
+  loadReadingFontFamily() {
+    this.applyReadingFontFamily(localStorage.getItem('stash-reading-font-family') || 'sans');
+  }
+
+  setReadingFontFamily(choice) {
+    localStorage.setItem('stash-reading-font-family', choice);
+    this.applyReadingFontFamily(choice);
+    window.StashAnalytics?.capture('reading_font_family_changed', { font: choice });
+  }
+
+  applyReadingFontFamily(choice) {
+    // The stacks themselves live in styles.css, so the Font control's buttons
+    // can be set in the same faces they select.
+    const FONT_STACKS = {
+      serif: 'var(--font-serif)',
+      'new-yorker': 'var(--font-new-yorker)',
+    };
+    const stack = FONT_STACKS[choice] || 'var(--font-sans)';
+    document.documentElement.style.setProperty('--reading-font-family', stack);
+
+    document.querySelectorAll('#reading-font-family-segmented .theme-segment-btn').forEach(btn => {
+      const isActive = btn.dataset.readingFontChoice === choice;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-checked', String(isActive));
+    });
+  }
+
+  toggleReadingStylePopover(show) {
+    const btn = document.getElementById('reading-style-btn');
+    const popover = document.getElementById('reading-style-popover');
+    const backdrop = document.getElementById('reading-style-backdrop');
+    if (!btn || !popover) return;
+    const next = show ?? popover.classList.contains('hidden');
+    popover.classList.toggle('hidden', !next);
+    backdrop?.classList.toggle('hidden', !next);
+    btn.setAttribute('aria-expanded', String(next));
   }
 
   bindEvents() {
@@ -357,6 +410,16 @@ class StashApp {
     });
     this.updateOfflineStorageLabel();
 
+    // Hide articles with no body text (Settings → Article List)
+    const hideNoContentToggle = document.getElementById('hide-no-content-toggle');
+    if (hideNoContentToggle) {
+      hideNoContentToggle.checked = this.getHideNoContentEnabled();
+      hideNoContentToggle.addEventListener('change', (e) => {
+        localStorage.setItem('stash-hide-no-content', e.target.checked ? '1' : '0');
+        if (this.currentView === 'all' || this.currentView === 'archived') this.loadSaves();
+      });
+    }
+
     // Search
     let searchTimeout;
     document.getElementById('search-input')?.addEventListener('input', (e) => {
@@ -417,9 +480,33 @@ class StashApp {
     });
 
     // Theme selection (Light / Dark / Auto)
-    document.querySelectorAll('.theme-segment-btn').forEach(btn => {
+    // Theme selection: the Settings toggle and the reading view's own Theme
+    // control both set the same app-wide theme (see updateThemeToggle).
+    document.querySelectorAll('#theme-segmented .theme-segment-btn, #reading-theme-segmented .theme-segment-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this.setTheme(btn.dataset.themeChoice);
+      });
+    });
+
+    // Reading-view display options popover ("Aa" trigger in the footer)
+    document.getElementById('reading-style-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleReadingStylePopover();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest?.('.reading-style-btn, .reading-style-popover')) {
+        this.toggleReadingStylePopover(false);
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.toggleReadingStylePopover(false);
+    });
+
+    document.querySelectorAll('#reading-font-family-segmented .theme-segment-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.setReadingFontFamily(btn.dataset.readingFontChoice);
       });
     });
 
@@ -997,6 +1084,10 @@ class StashApp {
   }
 
   async signOut() {
+    // Notify browser extension (if running via content script) to sign out as well
+    try {
+      window.postMessage({ type: 'stash:signOut' }, '*');
+    } catch (_) {}
     // No screen swap here -- onAuthStateChange fires with a null session and
     // handleAuthChange tears everything down in one place.
     await this.supabase.auth.signOut();
@@ -1013,6 +1104,32 @@ class StashApp {
     await this.loadSaves();
   }
 
+  // Deep link from the extension's save toast ("Open" button): ?open=<save id>
+  // jumps straight into that article's reading pane instead of the list.
+  async openDeepLinkSave() {
+    const id = new URLSearchParams(window.location.search).get('open');
+    if (!id) return;
+
+    // Strip the param immediately so a reload or share of the URL doesn't
+    // reopen the same article.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('open');
+    history.replaceState({}, '', url);
+
+    try {
+      const { data, error } = await this.supabase
+        .from('saves')
+        .select(this.SAVES_LIST_COLUMNS)
+        .eq('id', id)
+        .single();
+      if (error || !data) return;
+      this.openReadingPane(data);
+    } catch (e) {
+      // Deep link failing silently just leaves the list open — not worth
+      // surfacing as an error toast.
+    }
+  }
+
   // Filter + sort cached saves to match what the server query would return
   // for the current view and sort selection. Used to render the offline cache
   // instantly without flashing the wrong items/order before the fresh fetch.
@@ -1020,7 +1137,10 @@ class StashApp {
     if (!saves || saves.length === 0) return [];
 
     const wantArchived = this.currentView === 'archived';
-    const filtered = saves.filter(s => !!s.is_archived === wantArchived);
+    let filtered = saves.filter(s => !!s.is_archived === wantArchived);
+    if (this.getHideNoContentEnabled()) {
+      filtered = filtered.filter(s => !!this.wordCount(s));
+    }
 
     const sortValue = document.getElementById('sort-select').value;
     const [column, direction] = sortValue.split('.');
@@ -1095,6 +1215,12 @@ class StashApp {
       query = query.eq('is_archived', true);
     } else {
       query = query.eq('is_archived', false);
+    }
+    if (this.getHideNoContentEnabled()) {
+      // Nulls never satisfy gt(), so this also excludes saves whose
+      // word_count hasn't been computed yet - the same "no body text" set
+      // cardThumb shows the broken-link icon for.
+      query = query.gt('word_count', 0);
     }
 
     const { data, error } = await query;
@@ -1635,6 +1761,13 @@ class StashApp {
 
   getOfflineWifiOnly() {
     return localStorage.getItem('stash-offline-wifi-only') !== '0'; // on by default
+  }
+
+  // Settings → Article List → "Hide Articles With No Body Text". Off by
+  // default: a save with no extracted content still shows (with the
+  // broken-link icon, see cardThumb) unless the user opts into hiding it.
+  getHideNoContentEnabled() {
+    return localStorage.getItem('stash-hide-no-content') === '1'; // off by default
   }
 
   // Best-effort Wi-Fi check. The Network Information API (navigator.connection)
@@ -2392,6 +2525,7 @@ class StashApp {
     const pane = document.getElementById('reading-pane');
     pane.classList.remove('open');
     pane.classList.remove('chrome-hidden');
+    this.toggleReadingStylePopover(false);
     this.lastReadingScrollTop = 0;
     // Stop audio when closing
     this.stopAudio();
@@ -2842,9 +2976,16 @@ class StashApp {
     return this.escapeHtml(absolute.replace(/^http:\/\//i, 'https://'));
   }
 
-  // Thumbnail markup for an article card: the real og:image when present,
-  // otherwise a colored monogram tile using the source's first letter.
+  // Thumbnail markup for an article card: a broken-link icon when Stash
+  // never managed to fetch any body text for the save (regardless of
+  // whether an image_url happens to be present - a scrape failure often
+  // still carries stray metadata), otherwise the real og:image when
+  // present, or else a colored monogram tile using the source's first
+  // letter (also the fallback when a present image URL fails to load).
   cardThumb(save) {
+    if (!this.wordCount(save)) {
+      return this.brokenImageTile();
+    }
     const src = this.safeImageUrl(save.image_url);
     if (src) {
       const onerr = `this.closest('.save-card-thumb').innerHTML = window.stashApp.fallbackTile(this.dataset.seed, this.dataset.initial)`;
@@ -2862,6 +3003,12 @@ class StashApp {
 
   fallbackTile(seed, initial) {
     return `<div class="save-card-thumb-fallback" style="background:${this.fallbackGradient(seed)}">${this.escapeHtml(initial)}</div>`;
+  }
+
+  // Broken-link icon shown in place of the article thumbnail when Stash
+  // couldn't fetch the article's content (no body text was ever extracted).
+  brokenImageTile() {
+    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><line x1="3" y1="3" x2="21" y2="21"/></svg></div>`;
   }
 
   renderMarkdown(text) {

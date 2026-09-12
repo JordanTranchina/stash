@@ -1,3 +1,36 @@
+// Decode and parse JWT payload (browser & worker safe)
+function parseJwtPayload(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return null;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
+function userFromToken(token) {
+  try {
+    const payload = parseJwtPayload(token);
+    if (!payload || !payload.sub) return null;
+    return {
+      id: payload.sub,
+      email: payload.email || null,
+      user_metadata: payload.user_metadata || {},
+      app_metadata: payload.app_metadata || {},
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Minimal Supabase client for Chrome extension
 class SupabaseClient {
   constructor(url, anonKey) {
@@ -11,6 +44,14 @@ class SupabaseClient {
   async init() {
     const stored = await chrome.storage.local.get(['stash_session']);
     this.session = stored.stash_session || null;
+    // Heal session if user object is missing
+    if (this.session && (!this.session.user || !this.session.user.id) && this.session.access_token) {
+      const user = userFromToken(this.session.access_token);
+      if (user) {
+        this.session.user = user;
+        await chrome.storage.local.set({ stash_session: this.session });
+      }
+    }
     return this.session;
   }
 
@@ -36,11 +77,12 @@ class SupabaseClient {
   }
 
   // Supabase returns expires_at (unix seconds) on token responses, but fall
-  // back to expires_in in case it's missing.
+  // back to expires_in in case it's missing. Preserves user across refreshes.
   async storeSession(data) {
     const expiresAt = data.expires_at
       || Math.floor(Date.now() / 1000) + (data.expires_in || 3600);
-    this.session = { ...data, expires_at: expiresAt };
+    const user = data.user || this.session?.user || (data.access_token ? userFromToken(data.access_token) : null);
+    this.session = { ...data, expires_at: expiresAt, user };
     await chrome.storage.local.set({ stash_session: this.session });
     return this.session;
   }
@@ -155,12 +197,23 @@ class SupabaseClient {
       throw new Error('Google sign-in did not return a session');
     }
 
-    return await this.storeSession({
+    const user = userFromToken(accessToken);
+    await this.storeSession({
       access_token: accessToken,
       refresh_token: refreshToken,
       expires_in: params.get('expires_in') ? Number(params.get('expires_in')) : undefined,
       token_type: params.get('token_type') || 'bearer',
+      user,
     });
+
+    // Also fetch full user details from /auth/v1/user
+    try {
+      await this.getUser();
+    } catch {
+      // Non-fatal: JWT fallback user is already stored
+    }
+
+    return this.session;
   }
 
   async signUp(email, password) {
@@ -195,7 +248,12 @@ class SupabaseClient {
     });
 
     if (!res.ok) return null;
-    return await res.json();
+    const user = await res.json();
+    if (this.session && user && user.id) {
+      this.session.user = user;
+      await chrome.storage.local.set({ stash_session: this.session });
+    }
+    return user;
   }
 
   // Call a Supabase Edge Function. `body` may be a FormData (multipart, for the

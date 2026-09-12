@@ -504,7 +504,9 @@ function extractMainImage() {
 
 // Show save confirmation toast. When `withReport` is set (a real save failure,
 // not a sign-in prompt) it grows a "Report" button that opens the bug reporter.
-function showToast(message, isError = false, withReport = false) {
+// When `saveId` is set (a successful save) it grows an "Open" button that
+// deep-links into that article in Stash.
+function showToast(message, isError = false, withReport = false, saveId = null) {
   const existing = document.getElementById('stash-toast');
   if (existing) existing.remove();
 
@@ -558,6 +560,29 @@ function showToast(message, isError = false, withReport = false) {
     toast.appendChild(btn);
   }
 
+  if (!isError && saveId) {
+    dismissMs = 4000;
+    const btn = document.createElement('button');
+    btn.textContent = 'Open';
+    btn.style.cssText = `
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    `;
+    btn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'openSave', saveId });
+      toast.remove();
+    });
+    toast.appendChild(btn);
+  }
+
   const style = document.createElement('style');
   style.textContent = `
     @keyframes stashSlideIn {
@@ -577,6 +602,14 @@ function showToast(message, isError = false, withReport = false) {
 // Listen for save confirmations
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'showToast') {
-    showToast(request.message, request.isError, request.withReport);
+    showToast(request.message, request.isError, request.withReport, request.saveId);
+  }
+});
+
+// Listen for sign-out messages from the Stash web app
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  if (event.data && event.data.type === 'stash:signOut') {
+    chrome.runtime.sendMessage({ action: 'signOut' });
   }
 });

@@ -83,6 +83,7 @@ interface ReportInput {
   expected: string;
   observed: string;
   email: string;
+  userId?: string;
   source: string;
   env: Record<string, unknown>;
   logs: Array<{ t?: string; level?: string; msg?: string }>;
@@ -123,7 +124,8 @@ function buildIssueBody(input: ReportInput): string {
     ? `${input.lastError.message || ""}\n${input.lastError.stack || ""}`.trim()
     : "";
 
-  const reporter = `_Reported by ${input.email || "unknown"} · ${input.source || "web"} · ${new Date().toISOString()}_`;
+  const userTag = input.userId ? ` (user ID: \`${input.userId}\`)` : "";
+  const reporter = `_Reported by ${input.email || "unknown"}${userTag} · ${input.source || "web"} · ${new Date().toISOString()}_`;
 
   return [
     reporter,
@@ -244,6 +246,7 @@ serve(async (req) => {
       expected: clip(form.get("expected")),
       observed: clip(form.get("observed")),
       email: clip(form.get("email"), 200) || user.email || "unknown",
+      userId: user.id || clip(form.get("userId"), 100) || "",
       source,
       env,
       logs,

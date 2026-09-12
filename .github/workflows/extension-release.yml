@@ -1,0 +1,61 @@
+name: Extension release
+
+# Publishes the browser extensions as a GitHub Release whenever
+# extension/manifest.json's version is bumped on main — not on every merge,
+# since nothing else about the extension changes version automatically (see
+# CLAUDE.md's "Two extension builds" section: extension-firefox/ is a synced
+# copy of extension/, so both builds ship under the one version number).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extension/manifest.json'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check whether the version actually changed
+        id: check
+        run: |
+          NEW=$(node -p "require('./extension/manifest.json').version")
+          OLD=$(git show HEAD~1:extension/manifest.json 2>/dev/null | node -e "
+            let d = '';
+            process.stdin.on('data', c => d += c);
+            process.stdin.on('end', () => { try { console.log(JSON.parse(d).version); } catch { console.log(''); } });
+          ")
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" != "$OLD" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Zip Chrome extension
+        if: steps.check.outputs.changed == 'true'
+        run: (cd extension && zip -r "../stash-chrome-extension-v${{ steps.check.outputs.version }}.zip" . -x '.*')
+
+      - name: Zip Firefox extension
+        if: steps.check.outputs.changed == 'true'
+        run: (cd extension-firefox && zip -r "../stash-firefox-extension-v${{ steps.check.outputs.version }}.zip" . -x '.*')
+
+      - name: Create GitHub release
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          gh release create "extension-v${VERSION}" \
+            "stash-chrome-extension-v${VERSION}.zip" \
+            "stash-firefox-extension-v${VERSION}.zip" \
+            --title "Extension v${VERSION}" \
+            --generate-notes

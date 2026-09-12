@@ -11,10 +11,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsBtn = document.getElementById('settings-btn');
   const savesList = document.getElementById('saves-list');
   const openAppLink = document.getElementById('open-app-link');
+  const saveBtn = document.getElementById('save-btn');
+  const saveStatus = document.getElementById('save-status');
 
-  // Saving happens on the toolbar click now, so this popup exists to get the
-  // user signed in. It only opens at all while there is no session, but the
-  // background worker can lag a click behind, so keep the signed-in view.
   const session = await chrome.runtime.sendMessage({ action: 'getUser' });
   if (session && session.user) {
     showMainView();
@@ -65,18 +64,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   googleSigninBtn.addEventListener('click', async () => {
     googleSigninBtn.disabled = true;
     authError.textContent = '';
+    const originalContent = googleSigninBtn.innerHTML;
+    googleSigninBtn.textContent = 'Signing in...';
 
-    const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'signInWithGoogle' });
 
-    if (response.success) {
-      // Same handoff as the password sign-in: get out of the way so the next
-      // toolbar click saves instead of reopening this popup.
-      window.close();
-      return;
+      if (response && response.success) {
+        // Same handoff as the password sign-in: get out of the way so the next
+        // toolbar click saves instead of reopening this popup.
+        window.close();
+        return;
+      }
+
+      authError.textContent = response?.error || 'Google sign-in failed';
+    } catch (err) {
+      authError.textContent = err.message || 'Google sign-in failed';
+    } finally {
+      googleSigninBtn.innerHTML = originalContent;
+      googleSigninBtn.disabled = false;
     }
-
-    authError.textContent = response.error;
-    googleSigninBtn.disabled = false;
   });
 
   // Sign up
@@ -101,6 +108,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     signupBtn.disabled = false;
     signupBtn.textContent = 'Sign Up';
+  });
+
+  // Save the active tab. The background worker does the extraction/insert and
+  // shows its own toast on the page; this button just triggers it and reports
+  // failures the popup is actually open to see (a closed popup would miss them).
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    saveStatus.textContent = '';
+    saveStatus.classList.add('hidden');
+
+    const response = await chrome.runtime.sendMessage({ action: 'savePage' });
+
+    if (response && response.success) {
+      saveBtn.textContent = response.duplicate ? 'Already saved' : 'Saved!';
+      loadRecentSaves();
+      setTimeout(() => window.close(), 700);
+      return;
+    }
+
+    if (response && response.needsAuth) {
+      showAuthView();
+      return;
+    }
+
+    saveStatus.textContent = (response && response.error) || 'Failed to save';
+    saveStatus.classList.remove('hidden');
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Article';
   });
 
   // Sign out

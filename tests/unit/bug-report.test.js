@@ -67,7 +67,7 @@ function loadBugReporter() {
 function fakeApp() {
   return {
     currentView: 'all',
-    user: { email: 'reader@example.com' },
+    user: { email: 'reader@example.com', id: 'user-uuid-123' },
     getAccessToken: async () => 'fake-token',
     showToast: () => {},
   };
@@ -157,7 +157,21 @@ describe('BugReporter', () => {
     expect(reporter.gatherFiles()).toEqual([]);
   });
 
-  test('submit() posts only the description and manual attachments, with no screenshot', async () => {
+  test('collectFields() includes userId and email from app.user', () => {
+    const reporter = new BugReporter(fakeApp());
+    const fields = reporter.collectFields();
+    expect(fields.email).toBe('reader@example.com');
+    expect(fields.userId).toBe('user-uuid-123');
+  });
+
+  test('collectFields() handles missing user gracefully', () => {
+    const reporter = new BugReporter({ currentView: 'all', user: null });
+    const fields = reporter.collectFields();
+    expect(fields.email).toBe('');
+    expect(fields.userId).toBe('');
+  });
+
+  test('submit() posts description, userId, and manual attachments', async () => {
     const reporter = new BugReporter(fakeApp());
     document.getElementById('bug-report-text').value = 'Something broke';
     const blob = new Blob(['x'], { type: 'image/png' });
@@ -173,5 +187,23 @@ describe('BugReporter', () => {
 
     expect(posted.files).toEqual([{ blob, name: 'shot.png' }]);
     expect(posted.fields.description).toBe('Something broke');
+    expect(posted.fields.userId).toBe('user-uuid-123');
+  });
+});
+
+describe('report-bug reporter header formatting', () => {
+  function formatReporterLine(email, userId, source, dateIso) {
+    const userTag = userId ? ` (user ID: \`${userId}\`)` : '';
+    return `_Reported by ${email || 'unknown'}${userTag} · ${source || 'web'} · ${dateIso}_`;
+  }
+
+  test('includes user ID in header when present', () => {
+    const line = formatReporterLine('user@example.com', 'uuid-1234', 'web', '2026-09-06T15:00:00.000Z');
+    expect(line).toBe('_Reported by user@example.com (user ID: `uuid-1234`) · web · 2026-09-06T15:00:00.000Z_');
+  });
+
+  test('omits user ID tag cleanly when userId is empty or undefined', () => {
+    const line = formatReporterLine('user@example.com', '', 'extension', '2026-09-06T15:00:00.000Z');
+    expect(line).toBe('_Reported by user@example.com · extension · 2026-09-06T15:00:00.000Z_');
   });
 });

@@ -26,6 +26,14 @@
   --sidebar-width: 260px;
   --reading-pane-width: 500px;
   --reading-font-size: 16px;
+  /* The reading pane's font choices. Shared by the article body, which
+     app.js points --reading-font-family at, and by the Font control's own
+     buttons, which are set in the face they select. --font-new-yorker uses
+     Google Fonts' PT Serif as a free lookalike for the magazine's body
+     text — it is not the magazine's actual proprietary typeface. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-new-yorker: "PT Serif", Georgia, "Times New Roman", serif;
 }
 
 /* Dark Mode */
@@ -69,8 +77,46 @@
   background: rgba(245, 158, 11, 0.2);
 }
 
-[data-theme="dark"] .reading-pane {
-  background: var(--bg);
+/* Sepia — a warm paper tone, selectable app-wide from Settings and from the
+   reading view's own Theme control (the two are the same setting; see
+   updateThemeToggle in app.js). */
+[data-theme="sepia"] {
+  --primary: #595bd8;
+  --primary-dark: #4f46e5;
+  --primary-light: #818cf8;
+  --bg: #f4ecd8;
+  --bg-secondary: #efe5cc;
+  --bg-tertiary: #e7dbbe;
+  --text: #433422;
+  --text-secondary: #5c4a33;
+  --text-muted: #6f5c44;
+  --border: #e0d0ae;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="sepia"] .save-card,
+[data-theme="sepia"] .stat-card,
+[data-theme="sepia"] .modal-content {
+  background: var(--bg-secondary);
+}
+
+[data-theme="sepia"] .nav-item.active {
+  background: var(--bg-tertiary);
+}
+
+[data-theme="sepia"] .auth-container {
+  background: var(--bg-secondary);
+}
+
+[data-theme="sepia"] .header-sort-btn,
+[data-theme="sepia"] .header-add-btn,
+[data-theme="sepia"] .header-bug-btn {
+  background: var(--bg-secondary);
+}
+
+[data-theme="sepia"] .save-card-highlight {
+  background: rgba(245, 158, 11, 0.2);
 }
 
 /* Appearance (theme) row in Settings */
@@ -126,7 +172,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: var(--font-sans);
   font-size: 15px;
   color: var(--text);
   background: var(--bg);
@@ -687,6 +733,26 @@ select {
   text-transform: uppercase;
 }
 
+/* Shown instead of the article thumbnail when Stash never fetched any body
+   text for the save at all (word_count is 0/null) - a stray image_url from
+   a failed scrape isn't shown in that case, since there's no article behind
+   it. When there IS body text, a present image just falls back to the
+   colored monogram tile above if it fails to load. */
+.save-card-thumb-broken {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.save-card-thumb-broken svg {
+  width: 32px;
+  height: 32px;
+}
+
 .save-card-site {
   font-size: 12px;
   color: var(--text-muted);
@@ -808,7 +874,10 @@ select {
   position: relative;
   z-index: 95;
   width: var(--reading-pane-width);
-  background: white;
+  background: var(--bg);
+  /* Set here, not inherited from body, so the app-wide theme's --text
+     actually reaches the article. */
+  color: var(--text);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -847,6 +916,115 @@ select {
   padding: 12px 16px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  /* Keeps the footer (and the display-options popover inside it) above the
+     backdrop, which dims the rest of the pane while the popover is open.
+     Above the .reading-chrome-top's z-index: 10 for the same reason. */
+  position: relative;
+  z-index: 12;
+}
+
+.reading-style-btn {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.reading-style-btn[aria-expanded="true"] {
+  background: var(--bg-tertiary);
+  color: var(--primary);
+}
+
+.reading-style-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 11;
+}
+
+/* Anchored to the footer rather than to the off-centre "Aa" button, so the
+   card stays clear of both screen edges at any width. */
+.reading-style-popover {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(100% + 10px);
+  margin-inline: auto;
+  max-width: 320px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+}
+
+/* Label above a full-width control: the three controls hold different numbers
+   of options, so side-by-side label/control rows left them ragged. */
+.reading-style-row {
+  display: grid;
+  gap: 8px;
+}
+
+.reading-style-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.reading-style-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 14px 0;
+}
+
+/* Segments share the row evenly, so every control lines up edge to edge. */
+.reading-style-popover .theme-segment-btn {
+  flex: 1;
+  padding: 8px 4px;
+}
+
+/* Each font option is set in the face it selects, so the control previews
+   the choice rather than just naming it. */
+#reading-font-family-segmented [data-reading-font-choice="sans"] {
+  font-family: var(--font-sans);
+}
+
+#reading-font-family-segmented [data-reading-font-choice="serif"] {
+  font-family: var(--font-serif);
+  font-size: 14px;
+}
+
+#reading-font-family-segmented [data-reading-font-choice="new-yorker"] {
+  font-family: var(--font-new-yorker);
+  font-size: 14px;
+}
+
+.reading-size-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 2px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.reading-size-stepper .btn.icon {
+  flex: 1;
+}
+
+.reading-size-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 20px;
+  text-align: center;
+}
+
+.reading-size-reset-btn {
+  color: var(--text-muted);
 }
 
 .reading-meta {
@@ -1007,19 +1185,16 @@ select {
 
 .reading-body {
   font-size: var(--reading-font-size, 16px);
+  font-family: var(--reading-font-family, inherit);
   line-height: 1.8;
-  color: var(--text);
+  color: inherit;
 }
 
 /* Font size controls in the reading pane footer */
 .font-size-btn {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1;
-}
-
-.font-size-btn sup {
-  font-size: 10px;
 }
 
 #reading-font-reset-btn:disabled {
@@ -1221,6 +1396,9 @@ select {
 
   .reading-footer {
     bottom: 0;
+    /* Restores the base z-index the rule above overrides, so the footer and
+       its display-options popover stay above the backdrop. */
+    z-index: 12;
   }
 
   .reading-pane.chrome-hidden .reading-chrome-top {
@@ -2536,9 +2714,34 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
-.bottom-nav-item svg {
+/* Icon chip: every tab keeps this plain icon-above-label layout: only the
+   active tab's icon sits inside a small rounded chip, and its outline icon
+   swaps for a filled one. The label itself never gets a background - it
+   just recolors along with the rest of .bottom-nav-item.active below. */
+.bottom-nav-icon {
+  display: grid;
+  width: 50px;
+  height: 34px;
+  border-radius: 13px;
+  transition: background 0.15s;
+}
+
+.bottom-nav-icon svg {
+  grid-area: 1 / 1;
   width: 22px;
   height: 22px;
+  margin: auto;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.bottom-nav-icon .icon-filled {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.bottom-nav-icon .icon-outline {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .bottom-nav-item:hover {
@@ -2547,6 +2750,20 @@ select {
 
 .bottom-nav-item.active {
   color: var(--primary);
+}
+
+.bottom-nav-item.active .bottom-nav-icon {
+  background: color-mix(in srgb, var(--primary) 18%, var(--bg));
+}
+
+.bottom-nav-item.active .bottom-nav-icon .icon-outline {
+  opacity: 0;
+  transform: scale(1.15);
+}
+
+.bottom-nav-item.active .bottom-nav-icon .icon-filled {
+  opacity: 1;
+  transform: scale(1);
 }
 
 /* Give the tab bar a comfortable centered width on large screens */

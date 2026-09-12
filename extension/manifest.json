@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stash",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Save articles, highlights, and bookmarks to your personal stash",
   "permissions": [
     "activeTab",
@@ -14,6 +14,7 @@
     "<all_urls>"
   ],
   "action": {
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -23,6 +24,10 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "popup.html",
+    "open_in_tab": true
   },
   "content_scripts": [
     {

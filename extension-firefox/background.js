@@ -32,29 +32,20 @@ const SIGN_IN_MESSAGE = 'Sign in to Stash to save';
 // like SIGN_IN_MESSAGE it's kept out of Sentry.
 const UNREADABLE_PAGE_MESSAGE = "Can't save this page — open the article in a tab and try again";
 
-// Clicking the toolbar icon saves immediately, so the badge is the only
-// feedback the user is guaranteed to see. Keep the text to 1-2 characters,
-// which is all that fits.
+// The badge is secondary feedback to the toast shown on the page itself. Keep
+// the text to 1-2 characters, which is all that fits.
 const BADGE_CLEAR_MS = 2000;
 
 // Initialize on startup
 chrome.runtime.onInstalled.addListener(async () => {
   await initSupabase();
   setupContextMenu();
-  await updateActionForSession();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await initSupabase();
-  await updateActionForSession();
+  setupContextMenu();
 });
-
-// MV3 tears the service worker down when idle and revives it on the next
-// event (including the toolbar click itself). onInstalled/onStartup don't fire
-// on a bare wake, so reconcile the toolbar action here too: if the stored
-// session has gone away since the last check, this flips the icon back to
-// opening the sign-in popup instead of firing an unauthenticated save.
-updateActionForSession().catch(() => {});
 
 async function initSupabase() {
   supabase = new SupabaseClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
@@ -81,16 +72,6 @@ async function requireUserId() {
   return client.userId;
 }
 
-// The popup is now only the sign-in form. With a session we clear it so a
-// toolbar click fires onClicked and saves in one action; without one we put it
-// back so the click opens the sign-in form instead of failing.
-async function updateActionForSession() {
-  const client = await getClient();
-  const token = await client.getAccessToken();
-  const signedIn = Boolean(token && client.userId);
-  await chrome.action.setPopup({ popup: signedIn ? '' : 'popup.html' });
-}
-
 function setBadge(text, color) {
   chrome.action.setBadgeText({ text });
   chrome.action.setBadgeBackgroundColor({ color });
@@ -103,23 +84,24 @@ function clearBadgeSoon() {
 // The content script can't run on chrome:// pages, the Web Store, or the PDF
 // viewer, so this call fails there. Use the callback form and read
 // runtime.lastError so the rejection can't escape and mask the save result.
-function showToast(tabId, message, isError, withReport) {
+function showToast(tabId, message, isError, withReport, saveId) {
   chrome.tabs.sendMessage(
     tabId,
-    { action: 'showToast', message, isError, withReport: !!withReport },
+    { action: 'showToast', message, isError, withReport: !!withReport, saveId: saveId || null },
     () => { void chrome.runtime.lastError; },
   );
 }
 
-// One-click save from the toolbar icon
-chrome.action.onClicked.addListener(async (tab) => {
-  const result = await savePage(tab);
-  // The session can expire between the last check and this click; put the
-  // sign-in popup back so the next click has somewhere to go.
-  if (result && result.needsAuth) {
-    await updateActionForSession();
-  }
-});
+// Sign-in happens in the popup, which closes itself right after — the page
+// toast is the only feedback the user actually sees. Best-effort: on a tab
+// where the content script can't run (chrome://, the Web Store), this is a
+// silent no-op rather than a failure worth surfacing.
+async function notifySignedIn() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id) showToast(tab.id, 'Signed in successfully!');
+  } catch (e) { /* best effort */ }
+}
 
 // Context menu for "Save highlight to Stash"
 function setupContextMenu() {
@@ -171,8 +153,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   } else if (info.menuItemId === 'open-stash') {
     chrome.tabs.create({ url: CONFIG.WEB_APP_URL });
   } else if (info.menuItemId === 'sign-out') {
-    await supabase.signOut();
-    await updateActionForSession();
+    const client = await getClient();
+    await client.signOut();
+    if (tab && tab.id) {
+      showToast(tab.id, 'Signed out of Stash', false);
+    }
+    setBadge('✓', '#10b981');
+    clearBadgeSoon();
   } else if (info.menuItemId === 'report-bug') {
     await startBugReport(tab);
   }
@@ -239,6 +226,7 @@ async function submitBugReport(payload) {
   fd.append('observed', payload.observed || '');
   fd.append('source', 'extension');
   fd.append('email', payload.email || '');
+  fd.append('userId', payload.userId || '');
   fd.append('env', JSON.stringify(payload.env || {}));
   fd.append('logs', JSON.stringify(payload.logs || []));
   fd.append('lastError', JSON.stringify(payload.lastError || null));
@@ -270,15 +258,17 @@ async function saveHighlight(tab, selectionText) {
       source: 'extension',
     });
 
-    showToast(tab.id, 'Highlight saved!');
+    // save_id lets the save→open→read funnel join on a per-article key
+    // (article_opened / article_read_progress both carry it), and also lets
+    // the toast's "Open" button deep-link straight to the saved row. insert()
+    // returns the representation array, so the row id is result[0].id.
+    const saveId = Array.isArray(result) ? result[0]?.id : result?.id;
+    showToast(tab.id, 'Highlight saved!', false, false, saveId);
     if (typeof StashAnalytics !== 'undefined') {
-      // save_id lets the save→open→read funnel join on a per-article key
-      // (article_opened / article_read_progress both carry it). insert()
-      // returns the representation array, so the row id is result[0].id.
       StashAnalytics.capture('save_created', {
         source: 'extension',
         type: 'highlight',
-        save_id: Array.isArray(result) ? result[0]?.id : result?.id,
+        save_id: saveId,
       });
     }
     return { success: true };
@@ -291,9 +281,6 @@ async function saveHighlight(tab, selectionText) {
       SentryLite.captureException(err, { tags: { action: 'saveHighlight' } });
     }
     showToast(tab.id, needsAuth ? SIGN_IN_MESSAGE : 'Failed to save: ' + err.message, true, !needsAuth);
-    // The session went away — restore the sign-in popup so the next toolbar
-    // click has somewhere to go instead of erroring again.
-    if (needsAuth) await updateActionForSession();
     return { success: false, error: err.message, needsAuth };
   }
 }
@@ -394,9 +381,6 @@ async function savePage(tab) {
     showToast(tab.id, expected ? err.message : 'Failed to save: ' + err.message, true, !expected);
     setBadge('!', '#dc2626');
     clearBadgeSoon();
-    // The session went away — restore the sign-in popup so the next toolbar
-    // click opens the form instead of firing another failing save.
-    if (needsAuth) await updateActionForSession();
     return { success: false, error: err.message, needsAuth };
   }
 }
@@ -430,7 +414,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         await client.signIn(request.email, request.password);
         const user = await client.getUser();
-        await updateActionForSession();
+        await notifySignedIn();
         sendResponse({ success: true, user });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
@@ -445,7 +429,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         await client.signInWithGoogle();
         const user = await client.getUser();
-        await updateActionForSession();
+        if (user && client.session && (!client.session.user || !client.session.user.id)) {
+          client.session.user = user;
+          await chrome.storage.local.set({ stash_session: client.session });
+        }
+        await notifySignedIn();
         sendResponse({ success: true, user });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
@@ -458,9 +446,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       const client = await getClient();
       await client.signOut();
-      await updateActionForSession();
       sendResponse({ success: true });
     })();
+    return true;
+  }
+
+  if (request.action === 'openSettings') {
+    chrome.tabs.create({ url: `${CONFIG.WEB_APP_URL}/#settings` });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  // "Open" button on the save toast — deep-links straight into that article's
+  // reading pane instead of just landing on the library.
+  if (request.action === 'openSave') {
+    const url = request.saveId
+      ? `${CONFIG.WEB_APP_URL}/?open=${encodeURIComponent(request.saveId)}`
+      : CONFIG.WEB_APP_URL;
+    chrome.tabs.create({ url });
+    sendResponse({ ok: true });
     return true;
   }
 
