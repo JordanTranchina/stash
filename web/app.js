@@ -299,7 +299,7 @@ class StashApp {
   }
 
   updateThemeToggle(choice) {
-    document.querySelectorAll('.theme-segment-btn').forEach(btn => {
+    document.querySelectorAll('#theme-segmented .theme-segment-btn').forEach(btn => {
       const isActive = btn.dataset.themeChoice === choice;
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-checked', String(isActive));
@@ -490,7 +490,7 @@ class StashApp {
     });
 
     // Theme selection (Light / Dark / Auto)
-    document.querySelectorAll('.theme-segment-btn').forEach(btn => {
+    document.querySelectorAll('#theme-segmented .theme-segment-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this.setTheme(btn.dataset.themeChoice);
       });

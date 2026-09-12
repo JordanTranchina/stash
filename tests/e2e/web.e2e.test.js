@@ -175,3 +175,65 @@ describe('Stash Web App — reading display options on a phone viewport', () => 
     expect(hidden).toBe(true);
   });
 });
+
+describe('Stash Web App — reading vs. app-wide theme controls stay independent', () => {
+  beforeEach(async () => {
+    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+    await page.goto(INDEX_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    // localStorage persists across goto() on the same origin, so each test
+    // would otherwise inherit the previous test's theme/font choice.
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+    await new Promise((r) => setTimeout(r, 500));
+    await page.evaluate(() => {
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('main-screen').classList.remove('hidden');
+      document.getElementById('reading-body').innerHTML = '<p>body</p>'.repeat(20);
+      const pane = document.getElementById('reading-pane');
+      pane.classList.remove('hidden');
+      pane.classList.add('open');
+    });
+    await page.click('#reading-style-btn');
+  });
+
+  afterAll(async () => {
+    await page.setViewport({ width: 800, height: 600, isMobile: false, hasTouch: false });
+  });
+
+  test('clicking a reading theme option checks only that option', async () => {
+    await page.click('#reading-theme-segmented [data-reading-theme-choice="dark"]');
+    const checked = await page.$$eval(
+      '#reading-theme-segmented .theme-segment-btn[aria-checked="true"]',
+      (els) => els.map((e) => e.dataset.readingThemeChoice)
+    );
+    expect(checked).toEqual(['dark']);
+  });
+
+  test('clicking a reading theme option does not check every font option', async () => {
+    await page.click('#reading-theme-segmented [data-reading-theme-choice="sepia"]');
+    const checked = await page.$$eval(
+      '#reading-font-family-segmented .theme-segment-btn[aria-checked="true"]',
+      (els) => els.map((e) => e.dataset.readingFontChoice)
+    );
+    expect(checked).toEqual(['sans']);
+  });
+
+  test('clicking a reading font option does not check every theme option', async () => {
+    await page.click('#reading-font-family-segmented [data-reading-font-choice="serif"]');
+    const checked = await page.$$eval(
+      '#reading-theme-segmented .theme-segment-btn[aria-checked="true"]',
+      (els) => els.map((e) => e.dataset.readingThemeChoice)
+    );
+    expect(checked).toEqual(['auto']);
+  });
+
+  test('the app-wide Settings theme toggle is unaffected by reading controls', async () => {
+    await page.click('#reading-theme-segmented [data-reading-theme-choice="dark"]');
+    await page.click('#reading-font-family-segmented [data-reading-font-choice="serif"]');
+    const checked = await page.$$eval(
+      '#theme-segmented .theme-segment-btn[aria-checked="true"]',
+      (els) => els.map((e) => e.dataset.themeChoice)
+    );
+    expect(checked).toEqual(['auto']);
+  });
+});
