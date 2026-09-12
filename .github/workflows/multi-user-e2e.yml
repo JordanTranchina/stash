@@ -1,11 +1,10 @@
 name: Multi-user E2E
 
-# Exercises the multi-user isolation added by the auth lockdown (RLS on
-# saves/tags/folders/podcast_feeds) and the per-user podcast feed
-# (podcast_feeds + podcast-rss) against a real, ephemeral local Supabase
-# stack — not mocks, and never production. `supabase start` spins up
-# disposable local Postgres/Auth/Functions containers that are destroyed
-# when the job ends; nothing here can affect the real database.
+# Exercises multi-user isolation across all 6 key flows (Log In, Share Sheet Ingestion,
+# + Button In-App Ingestion, Reading Article, Archiving Article, and Daily Podcast Generation)
+# against a real, ephemeral local Supabase stack — not mocks, and never production.
+# `supabase start` spins up disposable local Postgres/Auth/Functions containers that are
+# destroyed when the job ends; nothing here can affect the real database.
 
 on:
   pull_request:
@@ -14,7 +13,7 @@ on:
 
 jobs:
   multi-user-e2e:
-    name: Multi-user isolation (RLS + podcast feeds)
+    name: Multi-user Key Flows E2E
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -25,7 +24,8 @@ jobs:
         with:
           python-version: "3.10"
 
-      - run: pip install requests
+      - name: Install test dependencies
+        run: pip install requests python-dotenv
 
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v1
@@ -72,13 +72,15 @@ jobs:
             psql "${{ steps.stack.outputs.db_url }}" -v ON_ERROR_STOP=1 -q -f "$f"
           done
 
-      - name: Run multi-user isolation tests
+      - name: Run multi-user key flows E2E tests
         env:
           SUPABASE_URL: ${{ steps.stack.outputs.api_url }}
           SUPABASE_ANON_KEY: ${{ steps.stack.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.stack.outputs.service_role_key }}
+          PYTHONPATH: .
         run: python3 .github/scripts/multi_user_e2e.py
 
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup
+
