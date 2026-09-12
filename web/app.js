@@ -321,7 +321,11 @@ class StashApp {
   applyReadingFontFamily(choice) {
     // The stacks themselves live in styles.css, so the Font control's buttons
     // can be set in the same faces they select.
-    const stack = choice === 'serif' ? 'var(--font-serif)' : 'var(--font-sans)';
+    const FONT_STACKS = {
+      serif: 'var(--font-serif)',
+      'new-yorker': 'var(--font-new-yorker)',
+    };
+    const stack = FONT_STACKS[choice] || 'var(--font-sans)';
     document.documentElement.style.setProperty('--reading-font-family', stack);
 
     document.querySelectorAll('#reading-font-family-segmented .theme-segment-btn').forEach(btn => {

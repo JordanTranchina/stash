@@ -26,11 +26,14 @@
   --sidebar-width: 260px;
   --reading-pane-width: 500px;
   --reading-font-size: 16px;
-  /* The reading pane's two font choices. Shared by the article body, which
+  /* The reading pane's font choices. Shared by the article body, which
      app.js points --reading-font-family at, and by the Font control's own
-     buttons, which are set in the face they select. */
+     buttons, which are set in the face they select. --font-new-yorker uses
+     Google Fonts' PT Serif as a free lookalike for the magazine's body
+     text — it is not the magazine's actual proprietary typeface. */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;
+  --font-new-yorker: "PT Serif", Georgia, "Times New Roman", serif;
 }
 
 /* Dark Mode */
@@ -975,6 +978,11 @@ select {
 
 #reading-font-family-segmented [data-reading-font-choice="serif"] {
   font-family: var(--font-serif);
+  font-size: 14px;
+}
+
+#reading-font-family-segmented [data-reading-font-choice="new-yorker"] {
+  font-family: var(--font-new-yorker);
   font-size: 14px;
 }
 
