@@ -2890,6 +2890,17 @@ select {
   cursor: pointer;
 }
 
+/* Sign Out ends the session, unlike everything else in Account — give it
+   its own weight instead of blending into the same gray row as Stats. */
+.settings-row-signout {
+  margin-top: 4px;
+  color: #dc2626;
+}
+
+.settings-row-signout svg {
+  color: #dc2626;
+}
+
 .offline-storage-row #offline-storage-label {
   font-size: 13px;
   color: var(--text-secondary);
