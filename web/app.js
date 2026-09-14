@@ -455,8 +455,13 @@ class StashApp {
     document.getElementById('saves-container')?.addEventListener('click', (e) => {
       const card = e.target.closest('.save-card');
       if (!card) return;
+      // Cards are real <a href="?open=..."> links now (keyboard + Cmd/Ctrl/
+      // middle-click support) but a plain click still opens in the in-page
+      // reading pane instead of navigating — only hijack the plain case.
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
       const swipeEl = card.closest('.save-card-swipe');
       if (swipeEl && swipeEl._suppressClick) return;
+      e.preventDefault();
       const save = this._savesById?.get(card.dataset.id);
       if (save) this.openReadingPane(save);
     });
@@ -501,7 +506,19 @@ class StashApp {
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') this.toggleReadingStylePopover(false);
+      if (e.key !== 'Escape') return;
+      // Close the innermost thing open: the display-options popover first,
+      // then the reading pane itself. (Modals have their own Escape handling
+      // via openModal(), which stops the event before it gets here.)
+      const popover = document.getElementById('reading-style-popover');
+      if (popover && !popover.classList.contains('hidden')) {
+        this.toggleReadingStylePopover(false);
+        return;
+      }
+      const pane = document.getElementById('reading-pane');
+      if (pane && pane.classList.contains('open')) {
+        this.closeReadingPane();
+      }
     });
 
     document.querySelectorAll('#reading-font-family-segmented .theme-segment-btn').forEach(btn => {
@@ -923,11 +940,13 @@ class StashApp {
     }
     stepsEl.classList.toggle('hidden', steps.length === 0);
 
-    document.getElementById('install-app-modal').classList.remove('hidden');
+    this.openModal(document.getElementById('install-app-modal'), {
+      onClose: () => this.hideInstallInstructionsModal(),
+    });
   }
 
   hideInstallInstructionsModal() {
-    document.getElementById('install-app-modal').classList.add('hidden');
+    this.closeModal(document.getElementById('install-app-modal'));
   }
 
   // Home toast nudging the user to install, for the first few app opens
@@ -1234,7 +1253,7 @@ class StashApp {
         // Already showing cached/previous data (rendered above, or from an
         // earlier page) — let it stand rather than blanking a working view,
         // but say so since it's now stale.
-        this.showToast("Couldn't refresh — showing saved data");
+        this.showToast("Couldn't refresh — showing saved data", null, true);
       } else if (reset) {
         // No cache and the fetch failed: previously this left the screen
         // totally blank (empty of any message) because neither the loading
@@ -1329,10 +1348,14 @@ class StashApp {
     const isHighlight = !!save.highlight;
     const date = new Date(save.created_at).toLocaleDateString();
 
+    // Real links, not click-handler divs: reachable and activatable from the
+    // keyboard, and Cmd/Ctrl/middle-click opens the same article in a new tab
+    // via the ?open=<id> deep link openDeepLinkSave() already understands
+    // (see the extension's "Open" toast, which uses the same param).
     let cardHtml;
     if (isHighlight) {
       cardHtml = `
-        <div class="save-card highlight" data-id="${save.id}">
+        <a class="save-card highlight" href="?open=${encodeURIComponent(save.id)}" data-id="${save.id}">
           <div class="save-card-content">
             <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
             <div class="save-card-highlight">"${this.escapeHtml(save.highlight)}"</div>
@@ -1341,7 +1364,7 @@ class StashApp {
               <span class="save-card-date">${date}</span>
             </div>
           </div>
-        </div>
+        </a>
       `;
     } else {
       // Reading time comes from the word_count column (see the
@@ -1360,7 +1383,7 @@ class StashApp {
                 </svg>${minutes} min read${publishedSuffix}
               </span>`;
       cardHtml = `
-        <div class="save-card" data-id="${save.id}">
+        <a class="save-card" href="?open=${encodeURIComponent(save.id)}" data-id="${save.id}">
           <div class="save-card-content">
             <div class="save-card-body">
               <div class="save-card-site">${this.escapeHtml(save.site_name || this.hostFromUrl(save.url))}</div>
@@ -1369,7 +1392,7 @@ class StashApp {
             </div>
             <div class="save-card-thumb">${this.cardThumb(save)}</div>
           </div>
-        </div>
+        </a>
       `;
     }
 
@@ -1654,17 +1677,22 @@ class StashApp {
 
   // Lightweight toast helper. Pass an optional action ({ label, onClick }) to
   // render a tappable button (e.g. "Undo") alongside the message.
-  showToast(message, action = null) {
+  // `persist` keeps the toast up until the user dismisses it instead of
+  // auto-hiding — used for errors, which shouldn't vanish before they're
+  // read. A toast with an action button always persists, whether or not
+  // `persist` is passed explicitly.
+  showToast(message, action = null, persist = false) {
     const toast = document.getElementById('toast');
     const msg = document.getElementById('toast-message');
     if (!toast || !msg) return;
     msg.textContent = message;
 
-    // Clear any action button left over from a previous toast
-    const prev = toast.querySelector('.toast-action');
-    if (prev) prev.remove();
+    // Clear any action/close button left over from a previous toast
+    toast.querySelector('.toast-action')?.remove();
+    toast.querySelector('.toast-close')?.remove();
 
-    if (action && action.label && typeof action.onClick === 'function') {
+    const hasAction = !!(action && action.label && typeof action.onClick === 'function');
+    if (hasAction) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'toast-action';
@@ -1677,10 +1705,80 @@ class StashApp {
       toast.appendChild(btn);
     }
 
+    const shouldPersist = persist || hasAction;
+    if (shouldPersist) {
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'toast-close';
+      closeBtn.setAttribute('aria-label', 'Dismiss');
+      closeBtn.innerHTML = '&times;';
+      closeBtn.addEventListener('click', () => {
+        clearTimeout(this._toastTimer);
+        toast.classList.add('hidden');
+      });
+      toast.appendChild(closeBtn);
+    }
+
     toast.classList.remove('hidden');
     clearTimeout(this._toastTimer);
-    // Give a little longer to react when there's an action to take
-    this._toastTimer = setTimeout(() => toast.classList.add('hidden'), action ? 6000 : 2500);
+    if (!shouldPersist) {
+      this._toastTimer = setTimeout(() => toast.classList.add('hidden'), 2500);
+    }
+  }
+
+  // Shared open/close for every `.modal` (Add URL, Podcast, Share Token,
+  // Import, Install, and — via BugReporter, which holds its own reference to
+  // this app — Bug Report). Adds the three things a click-driven show/hide
+  // pair doesn't get for free: a focus trap so Tab can't land on whatever is
+  // behind the modal, Escape-to-close, and returning focus to whatever
+  // opened it. `onClose` should be the modal's own hideXModal()/close(), so
+  // any guard it has (e.g. "not while a request is in flight") still applies
+  // to Escape and still owns actually calling closeModal().
+  openModal(modal, { focusEl, onClose } = {}) {
+    if (!modal) return;
+    this._modalTrigger = document.activeElement;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.classList.remove('hidden');
+    (focusEl || this.modalFocusables(modal)[0])?.focus();
+
+    this._modalKeydownHandler = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose?.();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const focusable = this.modalFocusables(modal);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', this._modalKeydownHandler);
+  }
+
+  closeModal(modal) {
+    if (!modal) return;
+    modal.classList.add('hidden');
+    if (this._modalKeydownHandler) {
+      document.removeEventListener('keydown', this._modalKeydownHandler);
+      this._modalKeydownHandler = null;
+    }
+    this._modalTrigger?.focus?.();
+    this._modalTrigger = null;
+  }
+
+  modalFocusables(modal) {
+    return Array.from(
+      modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    ).filter((el) => el.offsetParent !== null && !el.disabled);
   }
 
   // Ask the Service Worker to retry the pending-save queue when connectivity
@@ -1996,7 +2094,7 @@ class StashApp {
       }
       this.showToast('Offline images cleared');
     } catch (e) {
-      this.showToast('Could not clear offline images');
+      this.showToast('Could not clear offline images', null, true);
     }
     this.updateOfflineStorageLabel();
   }
@@ -2234,7 +2332,7 @@ class StashApp {
 
     if (error) {
       console.error('Failed to subscribe to podcast:', error);
-      this.showToast("Couldn't turn on your podcast. Try again?");
+      this.showToast("Couldn't turn on your podcast. Try again?", null, true);
       return;
     }
 
@@ -2278,9 +2376,9 @@ class StashApp {
       }
 
       if (res.status === 429) {
-        this.showToast(body.error || "You've hit the limit for on-demand episodes. Try again later.");
+        this.showToast(body.error || "You've hit the limit for on-demand episodes. Try again later.", null, true);
       } else {
-        this.showToast(body.error || "Couldn't start an episode just now — try again in a bit.");
+        this.showToast(body.error || "Couldn't start an episode just now — try again in a bit.", null, true);
       }
     } catch (e) {
       console.error('requestPodcastNow failed:', e);
@@ -2288,6 +2386,8 @@ class StashApp {
         e && e.message === 'no-session'
           ? 'Please sign in again to make an episode.'
           : "Couldn't start an episode — check your connection and try again.",
+        null,
+        true,
       );
     } finally {
       if (btn && !succeeded) {
@@ -2307,7 +2407,7 @@ class StashApp {
       // gesture; this button click is one, but fail safe either way rather
       // than leaving the tap silently do nothing.
       console.error('Could not copy feed link:', e);
-      this.showToast("Couldn't copy — long-press the link above to copy it manually.");
+      this.showToast("Couldn't copy — long-press the link above to copy it manually.", null, true);
     }
   }
 
@@ -3036,15 +3136,16 @@ class StashApp {
 
   // Add URL Methods (manually ingest a single link from the home page)
   showAddUrlModal() {
-    const modal = document.getElementById('add-url-modal');
-    modal.classList.remove('hidden');
     this.resetAddUrlModal();
-    document.getElementById('add-url-url').focus();
+    this.openModal(document.getElementById('add-url-modal'), {
+      focusEl: document.getElementById('add-url-url'),
+      onClose: () => this.hideAddUrlModal(),
+    });
   }
 
   hideAddUrlModal() {
     if (this.addUrlRunning) return;
-    document.getElementById('add-url-modal').classList.add('hidden');
+    this.closeModal(document.getElementById('add-url-modal'));
   }
 
   async pasteUrlFromClipboard() {
@@ -3156,7 +3257,7 @@ class StashApp {
   // on its own.
   showShareTokenModal() {
     const modal = document.getElementById('share-token-modal');
-    modal.classList.remove('hidden');
+    this.openModal(modal, { onClose: () => this.hideShareTokenModal() });
     this.loadSaveToken();
 
     const getShortcut = document.getElementById('share-token-get-shortcut');
@@ -3172,7 +3273,7 @@ class StashApp {
   }
 
   hideShareTokenModal() {
-    document.getElementById('share-token-modal').classList.add('hidden');
+    this.closeModal(document.getElementById('share-token-modal'));
     document.getElementById('share-token-status').classList.add('hidden');
   }
 
@@ -3243,13 +3344,13 @@ class StashApp {
   // Podcast Settings Methods (custom host personalities, #13)
   showPodcastModal() {
     const modal = document.getElementById('podcast-modal');
-    modal.classList.remove('hidden');
+    this.openModal(modal, { onClose: () => this.hidePodcastModal() });
     this.loadPodcastPreferences();
   }
 
   hidePodcastModal() {
     const modal = document.getElementById('podcast-modal');
-    modal.classList.add('hidden');
+    this.closeModal(modal);
     document.getElementById('podcast-status').classList.add('hidden');
   }
 
@@ -3321,15 +3422,15 @@ class StashApp {
   // Import Methods (CSV from Pocket/Instapaper/etc.)
   showImportModal() {
     const modal = document.getElementById('import-modal');
-    modal.classList.remove('hidden');
     this.resetImportModal();
+    this.openModal(modal, { onClose: () => this.hideImportModal() });
   }
 
   hideImportModal() {
     // Don't let the modal be dismissed mid-import — that would orphan the
     // in-flight scrape requests with no feedback.
     if (this.importRunning) return;
-    document.getElementById('import-modal').classList.add('hidden');
+    this.closeModal(document.getElementById('import-modal'));
   }
 
   // Reset the modal back to its initial "choose a file" state.
