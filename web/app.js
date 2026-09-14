@@ -2001,31 +2001,28 @@ class StashApp {
     this.updateOfflineStorageLabel();
   }
 
-  formatBytes(bytes) {
-    if (!bytes) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    const units = ['KB', 'MB', 'GB'];
-    let value = bytes / 1024;
-    let i = 0;
-    while (value >= 1024 && i < units.length - 1) {
-      value /= 1024;
-      i++;
-    }
-    return `${value.toFixed(1)} ${units[i]}`;
-  }
-
+  // Reports how many images are actually sitting in the offline image
+  // cache, not overall site storage. navigator.storage.estimate() would
+  // count the app shell and all of IndexedDB (article text, metadata,
+  // pending shares) too, which doesn't match what "Clear" below removes —
+  // and image bytes aren't readable anyway, since prefetchOfflineImages
+  // fetches them with mode: 'no-cors' (opaque responses), so a cache.keys()
+  // count is the only accurate, measurable number here.
   async updateOfflineStorageLabel() {
     const el = document.getElementById('offline-storage-label');
     if (!el) return;
-    if (!navigator.storage || !navigator.storage.estimate) {
-      el.textContent = 'Offline storage: unavailable';
+    if (!('caches' in window) || !window.StashOffline) {
+      el.textContent = 'Offline images: unavailable';
       return;
     }
     try {
-      const { usage } = await navigator.storage.estimate();
-      el.textContent = `Offline storage used: ${this.formatBytes(usage)}`;
+      const cache = await caches.open(window.StashOffline.IMAGE_CACHE_NAME);
+      const keys = await cache.keys();
+      el.textContent = keys.length
+        ? `${keys.length} image${keys.length === 1 ? '' : 's'} downloaded for offline`
+        : 'No images downloaded yet';
     } catch (e) {
-      el.textContent = 'Offline storage: unavailable';
+      el.textContent = 'Offline images: unavailable';
     }
   }
 
