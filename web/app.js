@@ -2919,7 +2919,7 @@ class StashApp {
   // Broken-link icon shown in place of the article thumbnail when Stash
   // couldn't fetch the article's content (no body text was ever extracted).
   brokenImageTile() {
-    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><line x1="3" y1="3" x2="21" y2="21"/></svg></div>`;
+    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><path d="M15 9l-2 2"/><path d="M11 13l-2 2"/></svg></div>`;
   }
 
   renderMarkdown(text) {
