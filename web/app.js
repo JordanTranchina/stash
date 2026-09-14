@@ -387,29 +387,6 @@ class StashApp {
       this.showStats();
     });
 
-    // Offline image downloads (Settings → Offline Reading)
-    const offlineImagesToggle = document.getElementById('offline-images-toggle');
-    if (offlineImagesToggle) {
-      offlineImagesToggle.checked = this.getOfflineImagesEnabled();
-      offlineImagesToggle.addEventListener('change', (e) => {
-        localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
-        if (e.target.checked) this.prefetchOfflineImages(this.saves);
-      });
-    }
-
-    const offlineWifiOnlyToggle = document.getElementById('offline-wifi-only-toggle');
-    if (offlineWifiOnlyToggle) {
-      offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
-      offlineWifiOnlyToggle.addEventListener('change', (e) => {
-        localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
-      });
-    }
-
-    document.getElementById('offline-clear-btn')?.addEventListener('click', () => {
-      this.clearOfflineImageCache();
-    });
-    this.updateOfflineStorageLabel();
-
     // Hide articles with no body text (Settings → Article List)
     const hideNoContentToggle = document.getElementById('hide-no-content-toggle');
     if (hideNoContentToggle) {
@@ -1747,22 +1724,6 @@ class StashApp {
     }
   }
 
-  // --- Offline image downloads -------------------------------------------
-  // Proactively caches every unarchived save's article images (into
-  // stash-images-v1 via the Cache API) so the reading pane still renders
-  // them with no network, not just the article text that STORE_ARTICLES
-  // already caches. Only unarchived saves stay offline-ready — archiving a
-  // save evicts its images (see evictOfflineImages, called from
-  // archiveSaveById).
-
-  getOfflineImagesEnabled() {
-    return localStorage.getItem('stash-offline-images-enabled') !== '0'; // on by default
-  }
-
-  getOfflineWifiOnly() {
-    return localStorage.getItem('stash-offline-wifi-only') !== '0'; // on by default
-  }
-
   // Settings → Article List → "Hide Articles With No Body Text". Off by
   // default: a save with no extracted content still shows (with the
   // broken-link icon, see cardThumb) unless the user opts into hiding it.
@@ -1770,19 +1731,15 @@ class StashApp {
     return localStorage.getItem('stash-hide-no-content') === '1'; // off by default
   }
 
-  // Best-effort Wi-Fi check. The Network Information API (navigator.connection)
-  // isn't available on iOS Safari at all — the platform "at least on mobile"
-  // most needs this for — so when it's undetectable we proceed rather than
-  // silently never prefetching there; the Wi-Fi-only toggle only takes effect
-  // where the browser can actually report the connection type.
+  // --- Offline image downloads -------------------------------------------
+  // Proactively caches every unarchived save's article images (into
+  // stash-images-v1 via the Cache API) so the reading pane still renders
+  // them with no network, not just the article text that STORE_ARTICLES
+  // already caches. Only unarchived saves stay offline-ready — archiving a
+  // save evicts its images (see evictOfflineImages, called from
+  // archiveSaveById). Always on — no per-user setting for it.
   shouldPrefetchOfflineImagesNow() {
-    if (!this.getOfflineImagesEnabled()) return false;
-    if (!navigator.onLine) return false;
-    if (this.getOfflineWifiOnly()) {
-      const conn = navigator.connection || navigator.webkitConnection || navigator.mozConnection;
-      if (conn && conn.type && conn.type !== 'wifi' && conn.type !== 'ethernet') return false;
-    }
-    return true;
+    return navigator.onLine;
   }
 
   async hasOfflineStorageHeadroom() {
@@ -1835,7 +1792,7 @@ class StashApp {
       const worker = async () => {
         while (next < queue.length) {
           const save = queue[next++];
-          if (!this.shouldPrefetchOfflineImagesNow()) return; // network/setting changed mid-pass
+          if (!this.shouldPrefetchOfflineImagesNow()) return; // went offline mid-pass
 
           const urls = window.StashOffline.extractImageUrls(save);
           const existing = await window.StashDB.getOfflineStatus(save.id);
@@ -1869,7 +1826,6 @@ class StashApp {
       };
 
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
-      this.updateOfflineStorageLabel();
     } finally {
       this.offlinePrefetchInFlight = false;
     }
@@ -1881,8 +1837,8 @@ class StashApp {
   // recently saved — see OFFLINE_PRELOAD_DAYS / OFFLINE_PRELOAD_COUNT —
   // rather than the whole stash, so this stays a background nice-to-have and
   // never turns back into "download everything". Reuses the same
-  // enabled/Wi-Fi-only/storage-headroom gating as prefetchOfflineImages, via
-  // the same settings. Fire-and-forget: callers don't await this.
+  // storage-headroom gating as prefetchOfflineImages. Fire-and-forget:
+  // callers don't await this.
   //
   // `pageIndex` is this page's position in the paginated list (0 for the
   // first page loaded this session) — the "most recently saved" check only
@@ -1979,50 +1935,8 @@ class StashApp {
         }
       }
       await window.StashDB.deleteOfflineStatus(id);
-      this.updateOfflineStorageLabel();
     } catch (e) {
       // Best-effort; a leftover cached image just ages out under quota pressure.
-    }
-  }
-
-  async clearOfflineImageCache() {
-    try {
-      if ('caches' in window && window.StashOffline) {
-        await caches.delete(window.StashOffline.IMAGE_CACHE_NAME);
-      }
-      if (window.StashDB) {
-        const statuses = await window.StashDB.getAllOfflineStatuses();
-        for (const s of statuses) await window.StashDB.deleteOfflineStatus(s.id);
-      }
-      this.showToast('Offline images cleared');
-    } catch (e) {
-      this.showToast('Could not clear offline images');
-    }
-    this.updateOfflineStorageLabel();
-  }
-
-  // Reports how many images are actually sitting in the offline image
-  // cache, not overall site storage. navigator.storage.estimate() would
-  // count the app shell and all of IndexedDB (article text, metadata,
-  // pending shares) too, which doesn't match what "Clear" below removes —
-  // and image bytes aren't readable anyway, since prefetchOfflineImages
-  // fetches them with mode: 'no-cors' (opaque responses), so a cache.keys()
-  // count is the only accurate, measurable number here.
-  async updateOfflineStorageLabel() {
-    const el = document.getElementById('offline-storage-label');
-    if (!el) return;
-    if (!('caches' in window) || !window.StashOffline) {
-      el.textContent = 'Offline images: unavailable';
-      return;
-    }
-    try {
-      const cache = await caches.open(window.StashOffline.IMAGE_CACHE_NAME);
-      const keys = await cache.keys();
-      el.textContent = keys.length
-        ? `${keys.length} image${keys.length === 1 ? '' : 's'} downloaded for offline`
-        : 'No images downloaded yet';
-    } catch (e) {
-      el.textContent = 'Offline images: unavailable';
     }
   }
 
