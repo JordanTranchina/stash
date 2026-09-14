@@ -1693,6 +1693,26 @@ select {
   border-top: 1px solid var(--border);
 }
 
+/* Regenerate-token confirmation (share-token-modal): swaps in for the
+   regular footer instead of a native confirm(), so the consequence is
+   spelled out and the buttons name it instead of a generic OK/Cancel. */
+.modal-footer-confirm {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.confirm-footer-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.confirm-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 /* Shared settings modal (digest/podcast/import/add-url) */
 .digest-modal-content {
   max-width: 420px;
