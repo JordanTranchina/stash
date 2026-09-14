@@ -26,6 +26,29 @@
   --sidebar-width: 260px;
   --reading-pane-width: 500px;
   --reading-font-size: 16px;
+  /* Type scale. Replaces what used to be 18 near-random hard-coded sizes
+     (e.g. 13px and 14px both showing up ~25 times each with no reason to
+     pick one over the other) with one named ladder every font-size in this
+     file now points at. A few of those 18 were only 1-2px apart with no
+     distinct role (10/11, 12.5/13, 22/24, 34/36) and are folded into the
+     nearest step below — nothing else changes size. --text-base matches
+     the body's own default (15px); --reading-font-size above is the
+     reading pane's independent, user-adjustable article font size and
+     deliberately isn't part of this scale. */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 20px;
+  --text-3xl: 24px;
+  --text-4xl: 28px;
+  --text-5xl: 32px;
+  --text-6xl: 36px;
+  --text-7xl: 48px;
+  --text-8xl: 64px;
   /* The reading pane's font choices. Shared by the article body, which
      app.js points --reading-font-family at, and by the Font control's own
      buttons, which are set in the face they select. --font-new-yorker uses
@@ -144,7 +167,7 @@
   border: none;
   background: none;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 500;
   padding: 6px 12px;
   border-radius: calc(var(--radius) - 2px);
@@ -173,7 +196,7 @@
 
 body {
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--text-base);
   color: var(--text);
   background: var(--bg);
   line-height: 1.5;
@@ -247,7 +270,7 @@ select {
   height: 64px;
   background: var(--primary);
   color: white;
-  font-size: 32px;
+  font-size: var(--text-5xl);
   font-weight: 700;
   border-radius: 16px;
   display: inline-flex;
@@ -257,7 +280,7 @@ select {
 }
 
 .logo h1 {
-  font-size: 28px;
+  font-size: var(--text-4xl);
   font-weight: 700;
   color: var(--text);
 }
@@ -277,7 +300,9 @@ select {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 15px;
+  /* 16px, not the --text-base (15px) used elsewhere: iOS Safari zooms the
+     whole page in on any input whose text renders under 16px. */
+  font-size: var(--text-lg);
   transition: border-color 0.15s;
 }
 
@@ -289,14 +314,14 @@ select {
 
 .error {
   color: var(--danger);
-  font-size: 14px;
+  font-size: var(--text-md);
   margin-top: 12px;
   text-align: center;
 }
 
 .message {
   color: var(--success);
-  font-size: 14px;
+  font-size: var(--text-md);
   margin-top: 12px;
   text-align: center;
 }
@@ -320,7 +345,7 @@ select {
   gap: 12px;
   margin: 20px 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .auth-divider::before,
@@ -340,7 +365,7 @@ select {
   padding: 12px 20px;
   border: none;
   border-radius: var(--radius);
-  font-size: 15px;
+  font-size: var(--text-base);
   font-weight: 500;
   transition: all 0.15s;
 }
@@ -402,7 +427,7 @@ select {
 }
 
 .sidebar-header span {
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 600;
 }
 
@@ -423,7 +448,7 @@ select {
   background: none;
   width: 100%;
   text-align: left;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .nav-item:hover {
@@ -443,7 +468,7 @@ select {
 }
 
 .nav-section h3 {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -459,7 +484,7 @@ select {
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-sm);
   margin-top: 8px;
   transition: all 0.15s;
 }
@@ -481,7 +506,7 @@ select {
   padding: 4px 10px;
   background: var(--bg-tertiary);
   border-radius: 20px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s;
@@ -520,7 +545,7 @@ select {
 }
 
 .app-brand-text {
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 700;
   color: var(--text);
   flex-shrink: 0;
@@ -611,7 +636,8 @@ select {
   flex: 1;
   border: none;
   background: none;
-  font-size: 15px;
+  /* 16px, not --text-base (15px) — see #auth-form input above. */
+  font-size: var(--text-lg);
   color: var(--text);
 }
 
@@ -697,7 +723,7 @@ select {
   padding: 0 24px;
   background: var(--success);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
   opacity: 0.5;
 }
@@ -759,7 +785,7 @@ select {
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 34px;
+  font-size: var(--text-6xl);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -785,7 +811,7 @@ select {
 }
 
 .save-card-site {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -795,7 +821,7 @@ select {
 }
 
 .save-card-title {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text);
   line-height: 1.3;
@@ -806,7 +832,7 @@ select {
 }
 
 .save-card-readtime {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
@@ -826,7 +852,7 @@ select {
 }
 
 .save-card-highlight {
-  font-size: 15px;
+  font-size: var(--text-base);
   color: var(--text);
   font-style: italic;
   background: #fef3c7;
@@ -845,7 +871,7 @@ select {
 }
 
 .save-card-date {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -883,12 +909,12 @@ select {
 }
 
 .empty-icon {
-  font-size: 64px;
+  font-size: var(--text-8xl);
   margin-bottom: 16px;
 }
 
 .empty-state h3 {
-  font-size: 20px;
+  font-size: var(--text-2xl);
   margin-bottom: 8px;
 }
 
@@ -927,7 +953,7 @@ select {
 }
 
 .reading-progress-percent {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-muted);
   white-space: nowrap;
@@ -955,7 +981,7 @@ select {
 }
 
 .reading-style-btn {
-  font-size: 15px;
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
@@ -995,7 +1021,7 @@ select {
 }
 
 .reading-style-label {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1022,12 +1048,12 @@ select {
 
 #reading-font-family-segmented [data-reading-font-choice="serif"] {
   font-family: var(--font-serif);
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 #reading-font-family-segmented [data-reading-font-choice="new-yorker"] {
   font-family: var(--font-new-yorker);
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .reading-size-stepper {
@@ -1046,7 +1072,7 @@ select {
 }
 
 .reading-size-value {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -1059,7 +1085,7 @@ select {
 }
 
 .reading-meta {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   margin-bottom: 16px;
 }
@@ -1143,7 +1169,7 @@ select {
 }
 
 .audio-time {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   min-width: 36px;
@@ -1154,7 +1180,7 @@ select {
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: var(--radius);
   background: white;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -1167,7 +1193,7 @@ select {
   background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
   border-radius: var(--radius-lg);
   margin-bottom: 20px;
-  font-size: 14px;
+  font-size: var(--text-md);
   color: #92400e;
 }
 
@@ -1197,18 +1223,18 @@ select {
   }
 
   .audio-time {
-    font-size: 11px;
+    font-size: var(--text-2xs);
     min-width: 32px;
   }
 
   .audio-speed {
     padding: 3px 6px;
-    font-size: 11px;
+    font-size: var(--text-2xs);
   }
 }
 
 #reading-title {
-  font-size: 28px;
+  font-size: var(--text-4xl);
   font-weight: 700;
   line-height: 1.3;
   margin-bottom: 24px;
@@ -1223,7 +1249,7 @@ select {
 
 /* Font size controls in the reading pane footer */
 .font-size-btn {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
   line-height: 1;
 }
@@ -1261,7 +1287,7 @@ select {
   border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -1277,7 +1303,7 @@ select {
 }
 
 .font-size-value {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   min-width: 34px;
@@ -1310,7 +1336,7 @@ select {
   padding: 2px 6px;
   border-radius: 4px;
   font-family: "SF Mono", Monaco, Consolas, monospace;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .reading-body pre {
@@ -1356,13 +1382,13 @@ select {
 }
 
 .reading-body h1 {
-  font-size: 24px;
+  font-size: var(--text-3xl);
 }
 .reading-body h2 {
-  font-size: 20px;
+  font-size: var(--text-2xl);
 }
 .reading-body h3 {
-  font-size: 18px;
+  font-size: var(--text-xl);
 }
 
 .reading-body img {
@@ -1390,7 +1416,7 @@ select {
   background: none;
   border: 1px dashed var(--border);
   border-radius: 20px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -1533,7 +1559,7 @@ select {
   }
 
   .save-card-title {
-    font-size: 15px;
+    font-size: var(--text-base);
   }
 
   /* Full screen reading pane on mobile */
@@ -1580,7 +1606,7 @@ select {
   }
 
   #reading-title {
-    font-size: 22px;
+    font-size: var(--text-3xl);
     margin-bottom: 16px;
   }
 
@@ -1609,11 +1635,11 @@ select {
   .logo-icon {
     width: 56px;
     height: 56px;
-    font-size: 28px;
+    font-size: var(--text-4xl);
   }
 
   .logo h1 {
-    font-size: 24px;
+    font-size: var(--text-3xl);
   }
 }
 
@@ -1632,7 +1658,7 @@ select {
   }
 
   #reading-title {
-    font-size: 20px;
+    font-size: var(--text-2xl);
   }
 }
 
@@ -1665,13 +1691,13 @@ select {
 }
 
 .stat-card-value {
-  font-size: 36px;
+  font-size: var(--text-6xl);
   font-weight: 700;
   color: var(--primary);
 }
 
 .stat-card-label {
-  font-size: 14px;
+  font-size: var(--text-md);
   color: var(--text-secondary);
   margin-top: 4px;
 }
@@ -1685,7 +1711,7 @@ select {
 }
 
 .stats-section h3 {
-  font-size: 18px;
+  font-size: var(--text-xl);
   margin-bottom: 16px;
 }
 
@@ -1739,7 +1765,7 @@ select {
 }
 
 .modal-header h2 {
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 600;
 }
 
@@ -1763,7 +1789,7 @@ select {
 
 .digest-description {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-md);
   margin-bottom: 24px;
   line-height: 1.5;
 }
@@ -1781,7 +1807,7 @@ select {
 }
 
 .digest-form label {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--text);
 }
@@ -1793,7 +1819,9 @@ select {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 14px;
+  /* 16px, not --text-md (14px) — see #auth-form input above. Covers every
+     modal built on .digest-form: Add URL, Podcast, Import, Bug Report. */
+  font-size: var(--text-lg);
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
@@ -1832,7 +1860,7 @@ select {
 .digest-status {
   padding: 12px;
   border-radius: var(--radius);
-  font-size: 13px;
+  font-size: var(--text-sm);
   text-align: center;
 }
 
@@ -1850,7 +1878,7 @@ select {
    beforeinstallprompt) */
 .install-app-note {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.5;
   margin: 0 0 16px;
 }
@@ -1877,7 +1905,7 @@ select {
   align-items: center;
   gap: 12px;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.4;
 }
 
@@ -1903,14 +1931,14 @@ select {
 /* Share Sheet Setup modal (iOS Shortcut save token) */
 .share-token-steps {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.6;
   margin: 0 0 20px;
   padding-left: 20px;
 }
 
 .share-token-steps code {
-  font-size: 13px;
+  font-size: var(--text-sm);
   background: var(--bg-tertiary);
   padding: 1px 5px;
   border-radius: 4px;
@@ -1925,7 +1953,7 @@ select {
   flex: 1;
   min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .share-token-row .btn {
@@ -1949,7 +1977,7 @@ select {
 
 .share-token-manual summary {
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -1981,7 +2009,7 @@ select {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   max-width: 100%;
 }
 
@@ -2003,7 +2031,7 @@ select {
   border: none;
   background: none;
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: var(--text-lg);
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
@@ -2011,7 +2039,7 @@ select {
 
 .bug-report-detail > summary {
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--primary);
   list-style: none;
@@ -2034,7 +2062,7 @@ select {
   padding: 10px 12px;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
-  font-size: 14px;
+  font-size: var(--text-md);
   background: var(--bg);
   color: var(--text);
   cursor: pointer;
@@ -2048,13 +2076,13 @@ select {
   border-radius: var(--radius);
   background: var(--primary);
   color: white;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
 }
 
 .import-summary {
-  font-size: 14px;
+  font-size: var(--text-md);
   color: var(--text-secondary);
 }
 
@@ -2080,7 +2108,7 @@ select {
 }
 
 .import-progress-label {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   text-align: center;
 }
@@ -2118,17 +2146,17 @@ select {
 
 .dropzone-content p {
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--text-base);
 }
 
 .dropzone-hint {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
 .import-help {
   margin-top: 16px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   text-align: center;
 }
@@ -2138,7 +2166,7 @@ select {
   padding: 2px 6px;
   border-radius: 4px;
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* Import Preview */
@@ -2161,13 +2189,13 @@ select {
 
 .import-stat-value {
   display: block;
-  font-size: 28px;
+  font-size: var(--text-4xl);
   font-weight: 700;
   color: var(--primary);
 }
 
 .import-stat-label {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
@@ -2191,18 +2219,18 @@ select {
 }
 
 .import-book-title {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--text);
 }
 
 .import-book-author {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
 .import-book-count {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   padding: 4px 10px;
@@ -2251,7 +2279,7 @@ select {
   }
 
   .import-stat-value {
-    font-size: 24px;
+    font-size: var(--text-3xl);
   }
 }
 
@@ -2272,7 +2300,7 @@ select {
 /* Credits */
 .credits {
   padding: 12px 16px;
-  font-size: 11px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   text-align: center;
   line-height: 1.5;
@@ -2298,7 +2326,7 @@ select {
 
 .app-version {
   margin-top: 8px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.02em;
   opacity: 0.7;
 }
@@ -2313,14 +2341,14 @@ select {
 }
 
 .weekly-header h3 {
-  font-size: 28px;
+  font-size: var(--text-4xl);
   font-weight: 700;
   margin-bottom: 4px;
 }
 
 .weekly-dates {
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--text-base);
 }
 
 .weekly-stats {
@@ -2340,14 +2368,14 @@ select {
 
 .weekly-stat-value {
   display: block;
-  font-size: 36px;
+  font-size: var(--text-6xl);
   font-weight: 700;
   line-height: 1;
   margin-bottom: 4px;
 }
 
 .weekly-stat-label {
-  font-size: 13px;
+  font-size: var(--text-sm);
   opacity: 0.9;
 }
 
@@ -2356,7 +2384,7 @@ select {
 }
 
 .weekly-section h4 {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
   margin-bottom: 12px;
   color: var(--text);
@@ -2372,7 +2400,7 @@ select {
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border-radius: 20px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
@@ -2399,7 +2427,7 @@ select {
 }
 
 .rediscovery-meta {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: #92400e;
   margin-bottom: 8px;
 }
@@ -2409,7 +2437,7 @@ select {
 }
 
 .rediscovery-title {
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 600;
   color: #78350f;
   margin-bottom: 8px;
@@ -2434,7 +2462,7 @@ select {
 }
 
 .rediscovery-source {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: #a16207;
 }
 
@@ -2453,11 +2481,11 @@ select {
   }
 
   .weekly-stat-value {
-    font-size: 28px;
+    font-size: var(--text-4xl);
   }
 
   .weekly-header h3 {
-    font-size: 24px;
+    font-size: var(--text-3xl);
   }
 }
 
@@ -2476,7 +2504,7 @@ select {
   color: var(--bg);
   padding: 12px 20px;
   border-radius: 99px;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 500;
   z-index: 1000;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -2492,7 +2520,7 @@ select {
   padding: 2px 4px;
   margin: -2px -4px;
   color: var(--primary-light);
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -2567,7 +2595,7 @@ select {
 
 .install-banner-message {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
   color: var(--primary-dark);
 }
@@ -2579,7 +2607,7 @@ select {
   border: none;
   border-radius: var(--radius);
   padding: 6px 14px;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 700;
   cursor: pointer;
 }
@@ -2626,7 +2654,7 @@ select {
 
 .podcasts-intro {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .podcast-generate-btn {
@@ -2646,7 +2674,7 @@ select {
 .podcasts-feed-error,
 .podcasts-feed-note {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .podcasts-list {
@@ -2687,20 +2715,20 @@ select {
 }
 
 .podcast-episode-title {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text);
 }
 
 .podcast-episode-meta {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .podcast-episode-desc {
   margin-top: 8px;
-  font-size: 14px;
+  font-size: var(--text-md);
   color: var(--text-secondary);
 }
 
@@ -2711,7 +2739,7 @@ select {
 
 .podcast-episode-pending {
   margin-top: 16px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
@@ -2722,7 +2750,7 @@ select {
 }
 
 .podcasts-empty .empty-icon {
-  font-size: 48px;
+  font-size: var(--text-7xl);
   margin-bottom: 12px;
 }
 
@@ -2763,7 +2791,7 @@ select {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 500;
   cursor: pointer;
   transition: color 0.15s;
@@ -2848,7 +2876,7 @@ select {
 }
 
 .settings-section h3 {
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -2868,7 +2896,7 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--text-base);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -2963,7 +2991,7 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 400;
   line-height: 1.5;
 }
