@@ -64,8 +64,10 @@
         <div class="auth-divider"><span>or continue with email</span></div>
 
         <form id="auth-form">
-          <input type="email" id="email" placeholder="Email" required>
-          <input type="password" id="password" placeholder="Password" required>
+          <label class="sr-only" for="email">Email</label>
+          <input type="email" id="email" placeholder="Email" autocomplete="email" required>
+          <label class="sr-only" for="password">Password</label>
+          <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
           <button type="submit" class="btn primary" id="signin-btn">Sign In</button>
           <button type="button" class="btn secondary" id="signup-btn">Create Account</button>
         </form>
@@ -86,7 +88,7 @@
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <input type="text" id="search-input" placeholder="Search your stash...">
+            <input type="text" id="search-input" placeholder="Search your stash..." aria-label="Search your stash">
           </div>
           <!-- Sort: an icon button that opens the native menu (transparent select overlay).
                Hidden by setView() on Podcasts/Settings, where sorting doesn't apply. -->
@@ -793,7 +795,7 @@
     </div>
 
     <!-- Toast / Notification -->
-    <div id="toast" class="toast hidden">
+    <div id="toast" class="toast hidden" role="status" aria-live="polite">
       <span id="toast-message"></span>
     </div>
   </div>
