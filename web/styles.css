@@ -2884,34 +2884,36 @@ select {
 
 .settings-checkbox {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  accent-color: var(--primary);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.offline-storage-row #offline-storage-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
-.offline-clear-btn {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.offline-clear-btn:hover {
+.settings-checkbox:checked {
+  background: var(--primary);
   border-color: var(--primary);
-  color: var(--primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4 12 9 17 20 6'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 15px;
+}
+
+/* Sign Out ends the session, unlike everything else in Account — give it
+   its own weight instead of blending into the same gray row as Stats. */
+.settings-row-signout {
+  margin-top: 4px;
+  color: #dc2626;
+}
+
+.settings-row-signout svg {
+  color: #dc2626;
 }
 
 /* Stats sub-panel back button aligns left, not spaced apart */

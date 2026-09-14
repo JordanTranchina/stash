@@ -162,6 +162,42 @@
           <div id="settings-view" class="hidden">
             <div id="settings-list">
               <div class="settings-section">
+                <h3>General</h3>
+                <div class="settings-row install-app-row">
+                  <button type="button" class="install-app-main-btn" id="install-app-settings-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Install Stash</span>
+                  </button>
+                  <button type="button" class="settings-info-btn" id="install-app-info-btn" aria-label="What is a PWA?" aria-expanded="false" aria-describedby="install-app-tooltip">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                  </button>
+                </div>
+                <div class="settings-tooltip hidden" id="install-app-tooltip" role="tooltip">
+                  Stash is a Progressive Web App, or PWA. A PWA is a website that works like an app. When you install it, Stash gets its own icon on your home screen. Tap the icon to open Stash right away — you don't need to open a browser first.
+                </div>
+                <button class="settings-row" id="bug-report-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="6" r="2"></circle>
+                    <path d="M10.6 4.3L9 2M13.4 4.3L15 2"></path>
+                    <rect x="7" y="8.5" width="10" height="11.5" rx="5"></rect>
+                    <path d="M12 8.5v11.5M7 11l-4-2M17 11l4-2M6 14H2M18 14h4M7 17l-4 2M17 17l4 2"></path>
+                  </svg>
+                  <span>Report a Bug</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="settings-section">
                 <h3>Appearance</h3>
                 <div class="settings-row theme-toggle-row">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -200,17 +236,40 @@
               </div>
 
               <div class="settings-section">
-                <h3>Article List</h3>
-                <div class="settings-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 15l6-6"></path>
-                    <path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"></path>
-                    <path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"></path>
-                    <line x1="3" y1="3" x2="21" y2="21"></line>
+                <h3>Reading &amp; Content</h3>
+                <label class="settings-row">
+                  <svg width="18" height="18" viewBox="0 0 96 96" fill="currentColor">
+                    <path d="M24.2499 87.0563L28.0499 88.3563C29.1499 88.7563 30.3499 88.9563 31.4499 88.9563C36.1499 88.9563 40.4499 85.9563 41.9499 81.3563L48.2499 62.1563C49.8499 57.3563 47.9499 52.0563 43.6499 49.3563C42.2499 48.4563 40.3499 48.8563 39.5499 50.2563C38.6499 51.6563 39.0499 53.5563 40.4499 54.3563C42.4499 55.5563 43.2499 58.0563 42.5499 60.2563L36.2499 79.4563C35.3499 82.1563 32.5499 83.5563 29.8499 82.6563L26.0499 81.3563C23.3499 80.4563 21.9499 77.6563 22.7499 74.9563L29.0499 55.7563C29.7499 53.5563 31.8499 52.1563 34.2499 52.2563C35.9499 52.3563 37.3499 51.1563 37.4499 49.4563C37.5499 47.7563 36.3499 46.3563 34.6499 46.2563C29.5499 45.9563 24.9499 49.0563 23.4499 53.8563L17.1499 73.0563C15.2499 78.8563 18.4499 85.1563 24.2499 87.0563Z"></path>
+                    <path d="M77.15 10.3563C72.85 5.95631 65.85 5.95631 61.45 10.2563L47.25 24.5563C43.65 28.1563 42.95 33.6563 45.55 38.0563C46.35 39.4563 48.25 39.9563 49.65 39.1563C51.05 38.3563 51.55 36.4563 50.75 35.0563C49.55 33.0563 49.85 30.5563 51.55 28.8563L65.85 14.5563C67.85 12.5563 71.05 12.5563 73.05 14.5563L75.95 17.4563C76.95 18.4563 77.45 19.6563 77.45 21.0563C77.45 22.4563 76.95 23.6563 75.95 24.6563L61.55 38.9563C59.95 40.5563 57.35 40.9563 55.35 39.7563C53.95 38.9563 52.05 39.3563 51.25 40.8563C50.45 42.2563 50.85 44.1563 52.35 44.9563C54.15 45.9563 56.05 46.4563 57.95 46.4563C60.85 46.4563 63.65 45.3563 65.75 43.2563L80.05 28.8563C82.15 26.7563 83.25 23.9563 83.25 21.0563C83.25 18.0563 82.05 15.3563 79.95 13.2563L77.15 10.3563Z"></path>
+                    <path d="M21.95 14.4563C20.75 13.2563 18.85 13.2563 17.75 14.4563C16.55 15.6563 16.55 17.5563 17.75 18.6563L31.25 32.1563C31.85 32.7563 32.65 33.0563 33.35 33.0563C34.05 33.0563 34.85 32.7563 35.45 32.1563C36.65 30.9563 36.65 29.0563 35.45 27.9563L21.95 14.4563Z"></path>
+                    <path d="M36.75 12.5563V25.5563C36.75 27.2563 38.05 28.5563 39.75 28.5563C41.45 28.5563 42.75 27.2563 42.75 25.5563V12.5563C42.75 10.8563 41.45 9.5563 39.75 9.5563C38.05 9.5563 36.75 10.9563 36.75 12.5563Z"></path>
+                    <path d="M31.75 35.5563C31.75 33.8563 30.45 32.5563 28.75 32.5563H15.75C14.05 32.5563 12.75 33.8563 12.75 35.5563C12.75 37.2563 14.05 38.5563 15.75 38.5563H28.75C30.45 38.5563 31.75 37.2563 31.75 35.5563Z"></path>
                   </svg>
                   <span>Hide Articles With No Body Text</span>
                   <input type="checkbox" class="settings-checkbox" id="hide-no-content-toggle" aria-label="Hide articles with no body text">
-                </div>
+                </label>
+                <button class="settings-row" id="import-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                  <span>Import from CSV</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+                <button class="settings-row" id="share-token-settings-btn">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                    <polyline points="16 6 12 2 8 6"></polyline>
+                    <line x1="12" y1="2" x2="12" y2="15"></line>
+                  </svg>
+                  <span>Set Up Share Sheet Save</span>
+                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
               </div>
 
               <div class="settings-section">
@@ -230,89 +289,7 @@
               </div>
 
               <div class="settings-section">
-                <h3>iOS Share Sheet</h3>
-                <button class="settings-row" id="share-token-settings-btn">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
-                    <polyline points="16 6 12 2 8 6"></polyline>
-                    <line x1="12" y1="2" x2="12" y2="15"></line>
-                  </svg>
-                  <span>Set Up Share Sheet Save</span>
-                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
-              </div>
-
-              <div class="settings-section">
-                <h3>Offline Reading</h3>
-                <div class="settings-row offline-toggle-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                  <span>Download Images for Offline</span>
-                  <input type="checkbox" class="settings-checkbox" id="offline-images-toggle" aria-label="Download images for offline reading">
-                </div>
-                <div class="settings-row offline-toggle-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
-                    <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
-                    <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-                    <line x1="12" y1="20" x2="12.01" y2="20"></line>
-                  </svg>
-                  <span>Only on Wi-Fi</span>
-                  <input type="checkbox" class="settings-checkbox" id="offline-wifi-only-toggle" aria-label="Only download offline images on Wi-Fi">
-                </div>
-                <div class="settings-row offline-storage-row">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-                  </svg>
-                  <span id="offline-storage-label">Offline storage: calculating…</span>
-                  <button type="button" class="offline-clear-btn" id="offline-clear-btn">Clear</button>
-                </div>
-              </div>
-
-              <div class="settings-section">
-                <h3>Add Content</h3>
-                <button class="settings-row" id="import-settings-btn">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                  </svg>
-                  <span>Import from CSV</span>
-                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
-              </div>
-
-              <div class="settings-section">
-                <h3>General</h3>
-                <div class="settings-row install-app-row">
-                  <button type="button" class="install-app-main-btn" id="install-app-settings-btn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                      <polyline points="7 10 12 15 17 10"></polyline>
-                      <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    <span>Install Stash</span>
-                  </button>
-                  <button type="button" class="settings-info-btn" id="install-app-info-btn" aria-label="What is a PWA?" aria-expanded="false" aria-describedby="install-app-tooltip">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                  </button>
-                </div>
-                <div class="settings-tooltip hidden" id="install-app-tooltip" role="tooltip">
-                  Stash is a Progressive Web App, or PWA. A PWA is a website that works like an app. When you install it, Stash gets its own icon on your home screen. Tap the icon to open Stash right away — you don't need to open a browser first.
-                </div>
+                <h3>Account</h3>
                 <button class="settings-row" id="view-stats-btn">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -324,19 +301,7 @@
                     <polyline points="9 18 15 12 9 6"></polyline>
                   </svg>
                 </button>
-                <button class="settings-row" id="bug-report-settings-btn">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="6" r="2"></circle>
-                    <path d="M10.6 4.3L9 2M13.4 4.3L15 2"></path>
-                    <rect x="7" y="8.5" width="10" height="11.5" rx="5"></rect>
-                    <path d="M12 8.5v11.5M7 11l-4-2M17 11l4-2M6 14H2M18 14h4M7 17l-4 2M17 17l4 2"></path>
-                  </svg>
-                  <span>Report a Bug</span>
-                  <svg class="settings-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
-                <button class="settings-row" id="signout-btn">
+                <button class="settings-row settings-row-signout" id="signout-btn">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                     <polyline points="16 17 21 12 16 7"></polyline>
@@ -349,7 +314,8 @@
               <div class="credits">
                 Made by <a href="https://www.jordantranchina.com" target="_blank">Jordan Tranchina</a><br>
                 Forked from <a href="https://kevinroose.com" target="_blank">Kevin Roose</a><br>
-                Built with <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a>, <a href="https://vercel.com" target="_blank">Vercel</a>, and <a href="https://supabase.com" target="_blank">Supabase</a>
+                Built with <a href="https://claude.ai/claude-code" target="_blank">Claude Code</a>, <a href="https://vercel.com" target="_blank">Vercel</a>, and <a href="https://supabase.com" target="_blank">Supabase</a><br>
+                Broken link icon by <a href="https://thenounproject.com/creator/drishyasri1/" target="_blank">Drishya</a> from Noun Project
                 <div class="legal-links">
                   <a href="/privacy.html" target="_blank">Privacy Policy</a>
                   <span aria-hidden="true">&middot;</span>

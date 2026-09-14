@@ -387,29 +387,6 @@ class StashApp {
       this.showStats();
     });
 
-    // Offline image downloads (Settings → Offline Reading)
-    const offlineImagesToggle = document.getElementById('offline-images-toggle');
-    if (offlineImagesToggle) {
-      offlineImagesToggle.checked = this.getOfflineImagesEnabled();
-      offlineImagesToggle.addEventListener('change', (e) => {
-        localStorage.setItem('stash-offline-images-enabled', e.target.checked ? '1' : '0');
-        if (e.target.checked) this.prefetchOfflineImages(this.saves);
-      });
-    }
-
-    const offlineWifiOnlyToggle = document.getElementById('offline-wifi-only-toggle');
-    if (offlineWifiOnlyToggle) {
-      offlineWifiOnlyToggle.checked = this.getOfflineWifiOnly();
-      offlineWifiOnlyToggle.addEventListener('change', (e) => {
-        localStorage.setItem('stash-offline-wifi-only', e.target.checked ? '1' : '0');
-      });
-    }
-
-    document.getElementById('offline-clear-btn')?.addEventListener('click', () => {
-      this.clearOfflineImageCache();
-    });
-    this.updateOfflineStorageLabel();
-
     // Hide articles with no body text (Settings → Article List)
     const hideNoContentToggle = document.getElementById('hide-no-content-toggle');
     if (hideNoContentToggle) {
@@ -1747,22 +1724,6 @@ class StashApp {
     }
   }
 
-  // --- Offline image downloads -------------------------------------------
-  // Proactively caches every unarchived save's article images (into
-  // stash-images-v1 via the Cache API) so the reading pane still renders
-  // them with no network, not just the article text that STORE_ARTICLES
-  // already caches. Only unarchived saves stay offline-ready — archiving a
-  // save evicts its images (see evictOfflineImages, called from
-  // archiveSaveById).
-
-  getOfflineImagesEnabled() {
-    return localStorage.getItem('stash-offline-images-enabled') !== '0'; // on by default
-  }
-
-  getOfflineWifiOnly() {
-    return localStorage.getItem('stash-offline-wifi-only') !== '0'; // on by default
-  }
-
   // Settings → Article List → "Hide Articles With No Body Text". Off by
   // default: a save with no extracted content still shows (with the
   // broken-link icon, see cardThumb) unless the user opts into hiding it.
@@ -1770,19 +1731,15 @@ class StashApp {
     return localStorage.getItem('stash-hide-no-content') === '1'; // off by default
   }
 
-  // Best-effort Wi-Fi check. The Network Information API (navigator.connection)
-  // isn't available on iOS Safari at all — the platform "at least on mobile"
-  // most needs this for — so when it's undetectable we proceed rather than
-  // silently never prefetching there; the Wi-Fi-only toggle only takes effect
-  // where the browser can actually report the connection type.
+  // --- Offline image downloads -------------------------------------------
+  // Proactively caches every unarchived save's article images (into
+  // stash-images-v1 via the Cache API) so the reading pane still renders
+  // them with no network, not just the article text that STORE_ARTICLES
+  // already caches. Only unarchived saves stay offline-ready — archiving a
+  // save evicts its images (see evictOfflineImages, called from
+  // archiveSaveById). Always on — no per-user setting for it.
   shouldPrefetchOfflineImagesNow() {
-    if (!this.getOfflineImagesEnabled()) return false;
-    if (!navigator.onLine) return false;
-    if (this.getOfflineWifiOnly()) {
-      const conn = navigator.connection || navigator.webkitConnection || navigator.mozConnection;
-      if (conn && conn.type && conn.type !== 'wifi' && conn.type !== 'ethernet') return false;
-    }
-    return true;
+    return navigator.onLine;
   }
 
   async hasOfflineStorageHeadroom() {
@@ -1835,7 +1792,7 @@ class StashApp {
       const worker = async () => {
         while (next < queue.length) {
           const save = queue[next++];
-          if (!this.shouldPrefetchOfflineImagesNow()) return; // network/setting changed mid-pass
+          if (!this.shouldPrefetchOfflineImagesNow()) return; // went offline mid-pass
 
           const urls = window.StashOffline.extractImageUrls(save);
           const existing = await window.StashDB.getOfflineStatus(save.id);
@@ -1869,7 +1826,6 @@ class StashApp {
       };
 
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
-      this.updateOfflineStorageLabel();
     } finally {
       this.offlinePrefetchInFlight = false;
     }
@@ -1881,8 +1837,8 @@ class StashApp {
   // recently saved — see OFFLINE_PRELOAD_DAYS / OFFLINE_PRELOAD_COUNT —
   // rather than the whole stash, so this stays a background nice-to-have and
   // never turns back into "download everything". Reuses the same
-  // enabled/Wi-Fi-only/storage-headroom gating as prefetchOfflineImages, via
-  // the same settings. Fire-and-forget: callers don't await this.
+  // storage-headroom gating as prefetchOfflineImages. Fire-and-forget:
+  // callers don't await this.
   //
   // `pageIndex` is this page's position in the paginated list (0 for the
   // first page loaded this session) — the "most recently saved" check only
@@ -1979,53 +1935,8 @@ class StashApp {
         }
       }
       await window.StashDB.deleteOfflineStatus(id);
-      this.updateOfflineStorageLabel();
     } catch (e) {
       // Best-effort; a leftover cached image just ages out under quota pressure.
-    }
-  }
-
-  async clearOfflineImageCache() {
-    try {
-      if ('caches' in window && window.StashOffline) {
-        await caches.delete(window.StashOffline.IMAGE_CACHE_NAME);
-      }
-      if (window.StashDB) {
-        const statuses = await window.StashDB.getAllOfflineStatuses();
-        for (const s of statuses) await window.StashDB.deleteOfflineStatus(s.id);
-      }
-      this.showToast('Offline images cleared');
-    } catch (e) {
-      this.showToast('Could not clear offline images');
-    }
-    this.updateOfflineStorageLabel();
-  }
-
-  formatBytes(bytes) {
-    if (!bytes) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    const units = ['KB', 'MB', 'GB'];
-    let value = bytes / 1024;
-    let i = 0;
-    while (value >= 1024 && i < units.length - 1) {
-      value /= 1024;
-      i++;
-    }
-    return `${value.toFixed(1)} ${units[i]}`;
-  }
-
-  async updateOfflineStorageLabel() {
-    const el = document.getElementById('offline-storage-label');
-    if (!el) return;
-    if (!navigator.storage || !navigator.storage.estimate) {
-      el.textContent = 'Offline storage: unavailable';
-      return;
-    }
-    try {
-      const { usage } = await navigator.storage.estimate();
-      el.textContent = `Offline storage used: ${this.formatBytes(usage)}`;
-    } catch (e) {
-      el.textContent = 'Offline storage: unavailable';
     }
   }
 
@@ -3008,7 +2919,7 @@ class StashApp {
   // Broken-link icon shown in place of the article thumbnail when Stash
   // couldn't fetch the article's content (no body text was ever extracted).
   brokenImageTile() {
-    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M10.5 6.5l1-1a3.54 3.54 0 0 1 5 5l-1 1"/><path d="M13.5 17.5l-1 1a3.54 3.54 0 0 1-5-5l1-1"/><line x1="3" y1="3" x2="21" y2="21"/></svg></div>`;
+    return `<div class="save-card-thumb-broken"><svg viewBox="0 0 96 96" fill="currentColor"><path d="M24.2499 87.0563L28.0499 88.3563C29.1499 88.7563 30.3499 88.9563 31.4499 88.9563C36.1499 88.9563 40.4499 85.9563 41.9499 81.3563L48.2499 62.1563C49.8499 57.3563 47.9499 52.0563 43.6499 49.3563C42.2499 48.4563 40.3499 48.8563 39.5499 50.2563C38.6499 51.6563 39.0499 53.5563 40.4499 54.3563C42.4499 55.5563 43.2499 58.0563 42.5499 60.2563L36.2499 79.4563C35.3499 82.1563 32.5499 83.5563 29.8499 82.6563L26.0499 81.3563C23.3499 80.4563 21.9499 77.6563 22.7499 74.9563L29.0499 55.7563C29.7499 53.5563 31.8499 52.1563 34.2499 52.2563C35.9499 52.3563 37.3499 51.1563 37.4499 49.4563C37.5499 47.7563 36.3499 46.3563 34.6499 46.2563C29.5499 45.9563 24.9499 49.0563 23.4499 53.8563L17.1499 73.0563C15.2499 78.8563 18.4499 85.1563 24.2499 87.0563Z"/><path d="M77.15 10.3563C72.85 5.95631 65.85 5.95631 61.45 10.2563L47.25 24.5563C43.65 28.1563 42.95 33.6563 45.55 38.0563C46.35 39.4563 48.25 39.9563 49.65 39.1563C51.05 38.3563 51.55 36.4563 50.75 35.0563C49.55 33.0563 49.85 30.5563 51.55 28.8563L65.85 14.5563C67.85 12.5563 71.05 12.5563 73.05 14.5563L75.95 17.4563C76.95 18.4563 77.45 19.6563 77.45 21.0563C77.45 22.4563 76.95 23.6563 75.95 24.6563L61.55 38.9563C59.95 40.5563 57.35 40.9563 55.35 39.7563C53.95 38.9563 52.05 39.3563 51.25 40.8563C50.45 42.2563 50.85 44.1563 52.35 44.9563C54.15 45.9563 56.05 46.4563 57.95 46.4563C60.85 46.4563 63.65 45.3563 65.75 43.2563L80.05 28.8563C82.15 26.7563 83.25 23.9563 83.25 21.0563C83.25 18.0563 82.05 15.3563 79.95 13.2563L77.15 10.3563Z"/><path d="M21.95 14.4563C20.75 13.2563 18.85 13.2563 17.75 14.4563C16.55 15.6563 16.55 17.5563 17.75 18.6563L31.25 32.1563C31.85 32.7563 32.65 33.0563 33.35 33.0563C34.05 33.0563 34.85 32.7563 35.45 32.1563C36.65 30.9563 36.65 29.0563 35.45 27.9563L21.95 14.4563Z"/><path d="M36.75 12.5563V25.5563C36.75 27.2563 38.05 28.5563 39.75 28.5563C41.45 28.5563 42.75 27.2563 42.75 25.5563V12.5563C42.75 10.8563 41.45 9.5563 39.75 9.5563C38.05 9.5563 36.75 10.9563 36.75 12.5563Z"/><path d="M31.75 35.5563C31.75 33.8563 30.45 32.5563 28.75 32.5563H15.75C14.05 32.5563 12.75 33.8563 12.75 35.5563C12.75 37.2563 14.05 38.5563 15.75 38.5563H28.75C30.45 38.5563 31.75 37.2563 31.75 35.5563Z"/></svg></div>`;
   }
 
   renderMarkdown(text) {
