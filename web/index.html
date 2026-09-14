@@ -15,7 +15,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <!-- Apply theme before first paint to avoid a flash of the wrong theme -->
+  <!-- Apply theme before first paint to avoid a flash of the wrong theme.
+       Also sync the theme-color meta here (not just in app.js's loadTheme)
+       so the browser's top bar matches immediately instead of staying on
+       the hardcoded light color until the app finishes initializing. -->
   <script>
     (function () {
       var choice = localStorage.getItem('stash-theme') || 'auto';
@@ -23,6 +26,8 @@
         ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
         : choice;
       document.documentElement.setAttribute('data-theme', effective);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', effective === 'dark' ? '#111827' : '#ffffff');
     })();
   </script>
 
