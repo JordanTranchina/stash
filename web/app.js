@@ -213,9 +213,29 @@ class StashApp {
 
   applyTheme(choice) {
     const effective = this.resolveTheme(choice);
-    document.documentElement.setAttribute('data-theme', effective);
+    this.suppressTransitionsWhile(() => {
+      document.documentElement.setAttribute('data-theme', effective);
+    });
     this.updateThemeToggle(choice);
     this.updateThemeColorMeta(effective);
+  }
+
+  // A theme flip changes color/background/border/shadow on nearly every
+  // element at once, and every transition on those properties (there are a
+  // lot — see the transition rules throughout styles.css) fires together,
+  // so the switch smears instead of snapping. Disables all transitions for
+  // one frame around `change`, then restores them.
+  suppressTransitionsWhile(change) {
+    const style = document.createElement('style');
+    style.textContent = '*, *::before, *::after { transition: none !important; }';
+    document.head.appendChild(style);
+    // Force a reflow so the no-transition rule above is actually in effect
+    // before the change below runs.
+    void document.body.offsetHeight;
+    change();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => style.remove());
+    });
   }
 
   updateThemeColorMeta(theme) {

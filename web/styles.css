@@ -149,7 +149,7 @@
   padding: 6px 12px;
   border-radius: calc(var(--radius) - 2px);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
 .theme-segment-btn:hover {
@@ -325,7 +325,7 @@ select {
   border-radius: var(--radius);
   font-size: 15px;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 .btn.primary {
@@ -400,7 +400,7 @@ select {
   padding: 10px 12px;
   border-radius: var(--radius);
   color: var(--text-secondary);
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
   border: none;
   background: none;
   width: 100%;
@@ -443,7 +443,7 @@ select {
   color: var(--text-muted);
   font-size: 13px;
   margin-top: 8px;
-  transition: all 0.15s;
+  transition: border-color 0.15s, color 0.15s;
 }
 
 .add-folder-btn:hover {
@@ -466,7 +466,7 @@ select {
   font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s;
 }
 
 .tag:hover {
@@ -617,7 +617,7 @@ select {
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: box-shadow 0.15s, transform 0.15s;
 }
 
 .save-card:hover {
@@ -1062,7 +1062,7 @@ select {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: background-color 0.15s, transform 0.15s;
 }
 
 .audio-play-btn:hover {
@@ -1224,7 +1224,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .font-size-step-btn:hover {
@@ -1436,7 +1436,7 @@ select {
     z-index: 199;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s;
+    transition: opacity 0.3s, visibility 0.3s;
   }
 
   .sidebar-overlay.open {
@@ -2028,7 +2028,7 @@ select {
   padding: 48px 24px;
   text-align: center;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
 .dropzone:hover,
@@ -2322,7 +2322,7 @@ select {
   padding: 20px;
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
 [data-theme="dark"] .rediscovery-card {
@@ -2782,7 +2782,7 @@ select {
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
 .settings-row:hover {
@@ -2906,7 +2906,7 @@ select {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, color 0.15s;
 }
 
 .offline-clear-btn:hover {
