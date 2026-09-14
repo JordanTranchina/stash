@@ -189,6 +189,21 @@ button {
   cursor: pointer;
 }
 
+/* Visually hidden but still announced by screen readers — for labels a
+   placeholder already covers visually (a placeholder is never a real label
+   on its own, since it disappears the moment the user types). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 input,
 select {
   font-family: inherit;
@@ -265,8 +280,9 @@ select {
   transition: border-color 0.15s;
 }
 
-#auth-form input:focus {
-  outline: none;
+#auth-form input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
   border-color: var(--primary);
 }
 
@@ -516,6 +532,13 @@ select {
   max-width: 500px;
 }
 
+/* The input itself has no border to recolor on focus (it sits flush inside
+   this pill), so give the pill the focus ring instead. */
+.search-container:has(input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
 /* Sort control: a compact icon button with the native <select> overlaid
    transparently on top, so a tap opens the OS menu and the existing
    change handler keeps working. */
@@ -585,10 +608,6 @@ select {
   color: var(--text);
 }
 
-.search-container input:focus {
-  outline: none;
-}
-
 .search-container input::placeholder {
   color: var(--text-muted);
 }
@@ -612,6 +631,12 @@ select {
 }
 
 .save-card {
+  /* Now a real <a href="?open=..."> for keyboard/Cmd-click support (see
+     saveCardHtml() in app.js) — reset it back to looking like a card. */
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  -webkit-user-drag: none;
   background: white;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -623,6 +648,12 @@ select {
 .save-card:hover {
   box-shadow: var(--shadow-lg);
   transform: translateY(-2px);
+}
+
+.save-card:focus-visible {
+  outline: 2px solid var(--primary);
+  /* Inset so it isn't clipped by the card's own overflow: hidden. */
+  outline-offset: -2px;
 }
 
 .save-card.highlight {
@@ -1741,11 +1772,12 @@ select {
   resize: vertical;
 }
 
-.digest-form input[type="email"]:focus,
-.digest-form input[type="text"]:focus,
-.digest-form input[type="url"]:focus,
-.digest-form textarea:focus {
-  outline: none;
+.digest-form input[type="email"]:focus-visible,
+.digest-form input[type="text"]:focus-visible,
+.digest-form input[type="url"]:focus-visible,
+.digest-form textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
   border-color: var(--primary);
 }
 
@@ -2439,6 +2471,30 @@ select {
   color: #fff;
 }
 
+/* Dismiss control for toasts that persist (an action to take, or an error
+   to read) instead of auto-hiding — see showToast() in app.js. */
+.toast-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px -4px -2px 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--bg);
+  opacity: 0.7;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
 .toast.hidden {
   opacity: 0;
   transform: translateX(-50%) translateY(20px);
@@ -2928,4 +2984,18 @@ select {
 /* Stats section respects dark mode (was hardcoded white) */
 [data-theme="dark"] .stats-section {
   background: var(--bg-secondary);
+}
+
+/* Respect the OS-level "reduce motion" setting: turn every animation and
+   transition effectively instant instead of stripping them out per-rule.
+   Scoped to the app's own transitions/animations — scroll behavior is left
+   alone since jumping instead of smooth-scrolling isn't a motion concern. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

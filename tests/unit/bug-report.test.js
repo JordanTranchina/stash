@@ -70,6 +70,14 @@ function fakeApp() {
     user: { email: 'reader@example.com', id: 'user-uuid-123' },
     getAccessToken: async () => 'fake-token',
     showToast: () => {},
+    // Real implementations in web/app.js — BugReporter defers to the app's
+    // shared modal helper (focus trap, Escape, focus return) rather than
+    // handling classList/keydown itself. See openModal()/closeModal() there.
+    openModal: (modal, { focusEl } = {}) => {
+      modal.classList.remove('hidden');
+      (focusEl || modal.querySelector('textarea, input, button'))?.focus();
+    },
+    closeModal: (modal) => modal.classList.add('hidden'),
   };
 }
 
@@ -83,16 +91,13 @@ describe('BugReporter', () => {
 
   test('bindEvents() called twice does not stack duplicate listeners', () => {
     const reporter = new BugReporter(fakeApp());
-    const docSpy = jest.spyOn(document, 'addEventListener');
     const winSpy = jest.spyOn(window, 'addEventListener');
 
     reporter.bindEvents();
     reporter.bindEvents();
 
-    expect(docSpy.mock.calls.filter((c) => c[0] === 'keydown')).toHaveLength(1);
     expect(winSpy.mock.calls.filter((c) => c[0] === 'online')).toHaveLength(1);
 
-    docSpy.mockRestore();
     winSpy.mockRestore();
   });
 
