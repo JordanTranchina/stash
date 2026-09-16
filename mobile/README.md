@@ -21,7 +21,7 @@ apps need from Supabase before sign-in works on a device.
 |---|---|---|
 | Machine | macOS | macOS, Linux or Windows |
 | Tooling | Xcode 16+ (dependencies come through Swift Package Manager — no CocoaPods) | Android Studio, JDK 21+, Android SDK 36 |
-| Node | 20+ | 20+ |
+| Node | 22+ (the Capacitor CLI's minimum) | 22+ (the Capacitor CLI's minimum) |
 
 ## First run
 
