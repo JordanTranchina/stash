@@ -1,0 +1,25 @@
+<!-- Intent filters merged into android/app/src/main/AndroidManifest.xml's
+     MainActivity by scripts/apply-native-overlays.js. Kept here as the source
+     of truth because android/ is generated (and gitignored), so hand-editing
+     the manifest would be lost on the next `cap add android`.
+
+     Two entry points, matching the two the iOS side gets from its Share
+     Extension and URL scheme:
+
+     1. ACTION_SEND — "Share to Stash" from any app. The send-intent plugin
+        reads the intent and hands it to web/platform.js, which routes it into
+        the same save path the PWA share target uses.
+     2. stash:// — deep links: the OAuth callback coming back from the system
+        browser (stash://auth/callback) and "open this save"
+        (stash://open?id=<uuid>). -->
+<intent-filter>
+    <action android:name="android.intent.action.SEND" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <data android:mimeType="text/plain" />
+</intent-filter>
+<intent-filter android:autoVerify="false">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="stash" />
+</intent-filter>

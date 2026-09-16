@@ -17,6 +17,14 @@ npm run test:e2e             # Jest e2e tests, Puppeteer driving web/index.html 
 npm run test:extension       # Playwright e2e tests, loads the unpacked MV3 extension (tests/extension-e2e)
 npm run test:all             # unit + e2e Jest suites together
 npm run sync:firefox-extension  # copies extension/ -> extension-firefox/ (see "Two extension builds" below)
+npm run mobile:build         # rebuilds mobile/www from web/ (native apps' bundled assets)
+npm run mobile:sync          # mobile:build + native overlays + `cap sync` (needs mobile/node_modules)
+```
+
+Native mobile shells, from `mobile/` (first time only — needs Xcode / Android Studio to run the apps):
+```bash
+npm install                  # Capacitor CLI + plugins (native-side only; never bundled into www/)
+npm run init                 # build www/, `cap add ios|android`, apply overlays, `cap sync`
 ```
 
 Run a single Jest test: `npx jest tests/unit/save.test.js -t "name of test"`
@@ -45,13 +53,39 @@ Every client (Chrome extension, Firefox extension, web PWA, bookmarklet, iOS Sho
 
 **Convention: never hand-edit `extension-firefox/` files other than `manifest.json`.** Edit `extension/` and run `npm run sync:firefox-extension`, which copies everything except `manifest.json` from `extension/` into `extension-firefox/`. `tests/unit/firefox-extension.test.js` exists specifically to catch drift between the two.
 
+### The native apps run the same `web/` client
+
+`mobile/` is a pair of Capacitor shells (iOS + Android) that load `web/` from
+the app bundle — not a second implementation. `mobile/scripts/build-www.js`
+copies `web/` into `mobile/www`, dropping `sw.js`/`manifest.json` and vendoring
+the three CDN `<script>` tags into `www/vendor/` so the app opens offline on
+first launch; nothing else is transformed.
+
+Every behavioural difference between the three builds (browser tab, installed
+PWA, native shell) lives at runtime in **`web/platform.js`** (`StashPlatform`),
+which feature-detects `window.Capacitor` and degrades to browser behaviour:
+service-worker registration, OAuth redirect target, external links, share
+sheet, Android back button, status bar, splash screen. It deliberately does not
+import the Capacitor JS packages — the native bridge registers plugins on
+`window.Capacitor.Plugins`, which keeps the no-bundler rule intact.
+
+**Convention: never edit `mobile/ios/`, `mobile/android/` or `mobile/www/`** —
+all three are generated and gitignored. Native customizations belong in
+`mobile/native/` (the iOS Share Extension; the Android intent filters) and are
+re-applied idempotently by `mobile/scripts/apply-native-overlays.js`, which
+`npm run mobile:sync` runs. `tests/unit/mobile-build.test.js` covers both
+scripts. Native saves and deep links route back into the shared code
+(`handleNativeShare` -> `save-page` Edge Function), so there is no
+platform-specific save path. See `documentation/MOBILE_APPS.md`.
+
 ### Web app (`web/`) — vanilla JS, no framework, no build
 
 - `app.js` — one large `StashApp` class driving the whole UI (list rendering, reading pane, search, theming, font size, audio player for TTS/podcast playback, swipe-to-archive, import modal, podcast settings modal). It talks to Supabase via the official `@supabase/supabase-js` client (loaded as a `<script>` in `index.html`), unlike the extensions' hand-rolled `SupabaseClient`.
 - `db.js` — IndexedDB wrapper exposed as `self.StashDB` (not `window.StashDB`) so the exact same file can be `importScripts()`'d into the service worker (`sw.js`, for Background Sync) as well as loaded normally in page context.
 - `save-lib.js` / `save.html` — the PWA's "share target" ingestion path (e.g. iOS/Android share sheet), including `StashSave.buildScrapeRequest`, which normalizes a share payload before sending it to the `save-page` Edge Function.
 - `import-lib.js` — client-side CSV/Kindle "My Clippings.txt" import parsing.
-- `sw.js` — service worker for offline caching and background sync of pending saves queued while offline.
+- `platform.js` — `StashPlatform`, the one seam between the web, PWA and native builds (see above). Loaded by `index.html` and `save.html`; safe to call unconditionally because every native-only call is a no-op on the web.
+- `sw.js` — service worker for offline caching and background sync of pending saves queued while offline. Not shipped in the native builds, which drain the same IndexedDB queue on resume instead.
 - Config precedence: `config.js` is checked in with real (public, RLS-protected) credentials for the deployed instance; `config.local.js` is gitignored for local overrides and is not auto-loaded by any file, so wire it up manually per environment if you use it.
 
 ### Supabase Edge Functions (`supabase/functions/`, Deno + TypeScript)
@@ -78,6 +112,7 @@ Required secrets (GitHub Actions / local `.env` via `python-dotenv`): `SUPABASE_
 
 ### Other clients
 
+- `mobile/` — Capacitor shells for iOS and Android (see "The native apps run the same `web/` client" above).
 - `bookmarklet/` — a single JS bookmarklet (`save-page.js`) for saving from any browser without an extension.
 - `ios-shortcut/` — Apple Shortcut for saving from Safari's share sheet on iOS (see its own `README.md`).
 - `tts/` — a standalone local Edge-TTS generator script (`tts.py`) plus a `launchd` plist (`com.stash.tts.plist`) for running it as a background service on macOS.
