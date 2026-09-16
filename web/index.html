@@ -816,6 +816,7 @@
   <script src="analytics.js"></script>
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
+  <script src="platform.js"></script>
   <script src="offline-lib.js"></script>
   <script src="import-lib.js"></script>
   <script src="bug-report.js"></script>
@@ -823,7 +824,9 @@
 
   <!-- Register Service Worker -->
   <script>
-    if ('serviceWorker' in navigator) {
+    // Skipped in the native iOS/Android shells: their assets already live
+    // in the app bundle, so a worker would only add a stale second copy.
+    if ('serviceWorker' in navigator && window.StashPlatform.shouldRegisterServiceWorker()) {
       navigator.serviceWorker.register('/sw.js').catch(() => {
         // Registration failed; app still works online without offline caching.
       });

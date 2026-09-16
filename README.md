@@ -13,6 +13,7 @@ A simple, self-hosted read-it-later app. Save articles and highlights to your ow
 - **Text-to-Speech** - Basic audio generation (Edge TTS)
 - **Listen Later** - Turn your saved articles into a conversational AI podcast with an RSS feed
 - **YouTube Transcripts** - Save a YouTube video and its transcript becomes a Listen Later input, just like an article
+- **Native iOS & Android apps** - The same client as the web app, in a native shell, with a real share-sheet entry
 - **iOS Shortcut** - Save from Safari on iPhone/iPad
 - **Bookmarklet** - Works in any browser
 
@@ -63,7 +64,8 @@ completing the store submissions.
 stash/
 ├── extension/          # Chrome extension (MV3, service worker background)
 ├── extension-firefox/  # Firefox extension (MV3, event page background)
-├── web/                # Web app (PWA)
+├── web/                # Web app (PWA) — also the source for the native apps
+├── mobile/             # Capacitor shells for iOS & Android (loads web/)
 ├── tts/                # Text-to-speech generator
 ├── bookmarklet/        # Universal save bookmarklet
 ├── ios-shortcut/       # iOS Shortcut for Safari
@@ -84,6 +86,28 @@ change into the Firefox build with:
 ```
 npm run sync:firefox-extension
 ```
+
+### Native mobile apps
+
+`mobile/` wraps the *same* `web/` client in a Capacitor shell for iOS and
+Android — not a rewrite. Every difference between a browser tab, an installed
+PWA and a native app is decided at runtime in `web/platform.js`, so a UI change
+ships to all three at once. The only native source in the repo is the iOS Share
+Extension, which does nothing but hand a shared link to the web layer.
+
+```
+cd mobile && npm install && npm run init   # then: npm run open:ios / open:android
+```
+
+Re-sync after any change under `web/`:
+
+```
+npm run mobile:sync
+```
+
+See [MOBILE_APPS.md](documentation/MOBILE_APPS.md) for the architecture and the
+one Supabase redirect URL the apps need, and
+[mobile/README.md](mobile/README.md) for build steps.
 
 ## Tech Stack
 
