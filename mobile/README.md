@@ -20,7 +20,7 @@ apps need from Supabase before sign-in works on a device.
 | | iOS | Android |
 |---|---|---|
 | Machine | macOS | macOS, Linux or Windows |
-| Tooling | Xcode 15+, CocoaPods | Android Studio (Giraffe+), JDK 17+ |
+| Tooling | Xcode 16+ (dependencies come through Swift Package Manager — no CocoaPods) | Android Studio, JDK 21+, Android SDK 36 |
 | Node | 20+ | 20+ |
 
 ## First run
@@ -77,6 +77,30 @@ is a one-time click-through, in Xcode:
 
 There is nothing to repeat here: `npm run sync` overwrites the two source files
 in place, and the target keeps pointing at them.
+
+## Continuous integration
+
+`.github/workflows/mobile-build.yml` compiles both apps on every PR that touches
+`web/` or `mobile/`. Each job runs the same sequence as this README
+(`npm ci` -> `npm run build` -> `cap add` -> overlays -> `cap sync` -> compile),
+then checks that what came out is a working app rather than a build that merely
+exited 0:
+
+- the shipped bundle is unpacked (`assets/public/` from the APK, `App.app/public/`
+  from the `.app`) and checked with `scripts/verify-bundle.js`, which derives its
+  expectations from `web/` and `build-www.js` — so a file added to the web client
+  is required in the native builds automatically;
+- the APK's own manifest is read back with `aapt2` and must declare `ACTION_SEND`
+  and the `stash://` scheme;
+- the `.app`'s `Info.plist` must register the `stash://` scheme;
+- `ShareViewController.swift` is type-checked against the iOS SDK, since the
+  extension target is added by hand and so is not part of the app build.
+
+`scripts/verify-bundle.js` runs locally too, against a synced project:
+
+```bash
+node scripts/verify-bundle.js android/app/src/main/assets/public
+```
 
 ## Signing and store builds
 

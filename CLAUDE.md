@@ -19,6 +19,7 @@ npm run test:all             # unit + e2e Jest suites together
 npm run sync:firefox-extension  # copies extension/ -> extension-firefox/ (see "Two extension builds" below)
 npm run mobile:build         # rebuilds mobile/www from web/ (native apps' bundled assets)
 npm run mobile:sync          # mobile:build + native overlays + `cap sync` (needs mobile/node_modules)
+node mobile/scripts/verify-bundle.js mobile/android/app/src/main/assets/public  # what CI runs on a built app
 ```
 
 Native mobile shells, from `mobile/` (first time only — needs Xcode / Android Studio to run the apps):
@@ -74,7 +75,9 @@ all three are generated and gitignored. Native customizations belong in
 `mobile/native/` (the iOS Share Extension; the Android intent filters) and are
 re-applied idempotently by `mobile/scripts/apply-native-overlays.js`, which
 `npm run mobile:sync` runs. `tests/unit/mobile-build.test.js` covers both
-scripts. Native saves and deep links route back into the shared code
+scripts plus `verify-bundle.js`, and
+`.github/workflows/mobile-build.yml` actually compiles both apps on every PR
+touching `web/` or `mobile/` and checks the built artifacts. Native saves and deep links route back into the shared code
 (`handleNativeShare` -> `save-page` Edge Function), so there is no
 platform-specific save path. See `documentation/MOBILE_APPS.md`.
 

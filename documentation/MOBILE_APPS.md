@@ -134,6 +134,29 @@ The one thing the script cannot do is add the iOS Share Extension *target* to
 the Xcode project — that is a one-time click-through documented in
 `mobile/README.md`.
 
+## How the apps are tested
+
+Three layers, all in CI:
+
+1. **`tests/unit/platform.test.js`** — the platform seam: detection, deep-link
+   routing, share-intent normalization, the back button, and every web
+   fallback. Runs in the existing Jest unit job.
+2. **`tests/unit/mobile-build.test.js`** — the build and overlay scripts, run
+   against the real `web/index.html` and `save.html`, so a CDN `<script>`
+   changing shape fails loudly instead of shipping an app that needs the
+   network to start. Also covers the manifest/plist overlays' idempotency and
+   the bundle verifier's own logic.
+3. **`.github/workflows/mobile-build.yml`** — an actual compile of both apps
+   (`gradlew assembleDebug`, `xcodebuild -sdk iphonesimulator`) on every PR
+   touching `web/` or `mobile/`, followed by checks on the *built artifacts*:
+   the bundled web client is complete and CDN-free, the APK manifest declares
+   `ACTION_SEND` and `stash://`, and the `.app` registers `stash://`. The debug
+   APK is uploaded as a build artifact.
+
+Because the iOS Share Extension target is added to the Xcode project by hand,
+the app build does not compile it; CI type-checks `ShareViewController.swift`
+against the iOS SDK separately so that source is still covered.
+
 ## Store submission
 
 Neither app is submitted yet. The listing copy, privacy policy and support URLs
