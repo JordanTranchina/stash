@@ -10,8 +10,10 @@
 //
 // What it does:
 //   Android — merges the share (ACTION_SEND) and stash:// deep-link intent
-//             filters into MainActivity, and makes that activity singleTask so
-//             a share reuses the running app instead of stacking a second copy.
+//             filters into MainActivity, makes that activity singleTask so a
+//             share reuses the running app instead of stacking a second copy,
+//             and applies the app's compileSdk to the plugin modules (see
+//             native/android/plugin-compile-sdk.gradle for why).
 //   iOS     — copies the Share Extension sources into the Xcode project's
 //             directory and registers the stash:// URL scheme in Info.plist.
 //
@@ -82,6 +84,18 @@ function patchAndroidManifest(xml, filters) {
   return patched;
 }
 
+const ANDROID_BUILD_GRADLE = path.join(MOBILE, 'android', 'build.gradle');
+
+// Marker for the compileSdk overlay below.
+const GRADLE_MARKER = 'rootProject.ext.compileSdkVersion';
+
+// Append the plugin-compileSdk block to the generated root build.gradle.
+// Returns the input unchanged when it is already there.
+function patchAndroidBuildGradle(gradle, block) {
+  if (gradle.includes(GRADLE_MARKER)) return gradle;
+  return `${gradle.trimEnd()}\n\n${block.trim()}\n`;
+}
+
 function applyAndroid() {
   if (!fs.existsSync(ANDROID_MANIFEST)) {
     console.log('android/ not generated yet — skipping (run `npx cap add android` first)');
@@ -96,6 +110,19 @@ function applyAndroid() {
   }
   fs.writeFileSync(ANDROID_MANIFEST, patched);
   console.log('android: merged share + deep-link intent filters into MainActivity');
+}
+
+function applyAndroidBuildGradle() {
+  if (!fs.existsSync(ANDROID_BUILD_GRADLE)) return;
+  const block = fs.readFileSync(path.join(NATIVE, 'android', 'plugin-compile-sdk.gradle'), 'utf8');
+  const gradle = fs.readFileSync(ANDROID_BUILD_GRADLE, 'utf8');
+  const patched = patchAndroidBuildGradle(gradle, block);
+  if (patched === gradle) {
+    console.log('android: plugin compileSdk override already applied');
+    return;
+  }
+  fs.writeFileSync(ANDROID_BUILD_GRADLE, patched);
+  console.log("android: applied the app's compileSdk to the plugin modules");
 }
 
 // -------------------------------------------------------------------- iOS
@@ -153,6 +180,7 @@ function applyIos() {
 if (require.main === module) {
   try {
     applyAndroid();
+    applyAndroidBuildGradle();
     applyIos();
   } catch (err) {
     console.error(err.message);
@@ -160,4 +188,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { patchAndroidManifest, intentFilterElements, patchIosInfoPlist, ANDROID_MARKER, URL_SCHEME };
+module.exports = { patchAndroidManifest, patchAndroidBuildGradle, intentFilterElements, patchIosInfoPlist, ANDROID_MARKER, URL_SCHEME };

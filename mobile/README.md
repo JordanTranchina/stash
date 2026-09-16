@@ -114,7 +114,15 @@ means regenerating them.
 - **Android** — `android/app/build.gradle` holds `versionCode`/`versionName`;
   build a release bundle with `./gradlew bundleRelease` from `android/`.
 
-## Known gap
+## Known gaps
+
+The `send-intent` plugin (Android's share-intent reader) still declares
+compileSdk 35, while the androidx libraries Capacitor 8 pulls in require 36.
+`scripts/apply-native-overlays.js` works around it by applying the app's own
+compileSdk to the plugin modules — see
+`native/android/plugin-compile-sdk.gradle`, which can be deleted once the
+plugin ships a build targeting 36.
+
 
 The reading font (PT Serif) is still loaded from Google Fonts, so on a first,
 fully-offline launch the reading pane falls back to the system serif until the
