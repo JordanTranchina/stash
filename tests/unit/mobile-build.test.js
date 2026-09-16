@@ -124,6 +124,39 @@ describe('Android manifest overlay', () => {
   });
 });
 
+describe('Android build.gradle overlay', () => {
+  const BLOCK = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'mobile', 'native', 'android', 'plugin-compile-sdk.gradle'),
+    'utf8'
+  );
+
+  // Trimmed to the shape `npx cap add android` generates.
+  const GENERATED = `apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        google()
+    }
+}
+`;
+
+  // send-intent declares compileSdk 35 while Capacitor 8's androidx
+  // dependencies require 36, so without this override Gradle stops at the AAR
+  // metadata check and no APK is produced at all.
+  test('applies the app compileSdk to the plugin modules', () => {
+    const patched = overlays.patchAndroidBuildGradle(GENERATED, BLOCK);
+    expect(patched).toContain('subprojects');
+    expect(patched).toContain('compileSdkVersion rootProject.ext.compileSdkVersion');
+    // The generated content it was appended to survives.
+    expect(patched).toContain('apply from: "variables.gradle"');
+  });
+
+  test('is idempotent', () => {
+    const once = overlays.patchAndroidBuildGradle(GENERATED, BLOCK);
+    expect(overlays.patchAndroidBuildGradle(once, BLOCK)).toBe(once);
+  });
+});
+
 describe('iOS Info.plist overlay', () => {
   const GENERATED = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">

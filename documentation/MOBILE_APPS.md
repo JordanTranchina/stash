@@ -130,6 +130,11 @@ every customization Stash needs on top of the stock templates is re-applied
 idempotently by `npm run sync`, and covered by
 `tests/unit/mobile-build.test.js`.
 
+The overlays also carry one workaround: `send-intent` declares compileSdk 35
+while Capacitor 8's androidx dependencies require 36, which stops the Android
+build at the AAR metadata check, so the script applies the app's own compileSdk
+to the plugin modules (`mobile/native/android/plugin-compile-sdk.gradle`).
+
 The one thing the script cannot do is add the iOS Share Extension *target* to
 the Xcode project — that is a one-time click-through documented in
 `mobile/README.md`.
