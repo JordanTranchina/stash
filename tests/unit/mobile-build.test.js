@@ -151,3 +151,69 @@ describe('iOS Info.plist overlay', () => {
     expect(() => overlays.patchIosInfoPlist('not a plist')).toThrow(/malformed Info.plist/);
   });
 });
+
+describe('verify-bundle: what a built app must contain', () => {
+  const os = require('os');
+  const verify = require('../../mobile/scripts/verify-bundle.js');
+
+  // Builds a directory that looks like the assets unpacked from a built APK
+  // or .app, so the checker can be run against a known-good bundle and then
+  // against damaged variants of it.
+  function makeBundle(mutate = () => {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stash-bundle-'));
+    for (const rel of verify.expectedFiles()) {
+      const file = path.join(dir, ...rel.split('/'));
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, rel.endsWith('.html') ? '<html></html>' : '');
+    }
+    mutate(dir);
+    return dir;
+  }
+
+  test('expects the real web/ files, plus the vendored scripts', () => {
+    const expected = verify.expectedFiles();
+    expect(expected).toEqual(expect.arrayContaining([
+      'index.html', 'save.html', 'app.js', 'platform.js', 'save-lib.js',
+      'db.js', 'config.js', 'styles.css',
+      'vendor/supabase.js', 'vendor/marked.min.js',
+    ]));
+    // Derived from web/, so nested assets come along too.
+    expect(expected.some((file) => file.startsWith('icons/'))).toBe(true);
+    // Web-only files are not expected in a native bundle.
+    expect(expected).not.toContain('sw.js');
+    expect(expected).not.toContain('manifest.json');
+    // Sentry is optional — build-www drops it rather than failing.
+    expect(expected).not.toContain('vendor/sentry.min.js');
+  });
+
+  test('passes a complete bundle', () => {
+    const dir = makeBundle();
+    expect(verify.verifyBundle(dir)).toEqual({ missing: [], forbidden: [], indexRefsCdn: [] });
+  });
+
+  test('catches a web asset that never made it into the app', () => {
+    const dir = makeBundle((d) => fs.rmSync(path.join(d, 'app.js')));
+    expect(verify.verifyBundle(dir).missing).toEqual(['app.js']);
+  });
+
+  test('catches a vendored script that never made it into the app', () => {
+    const dir = makeBundle((d) => fs.rmSync(path.join(d, 'vendor', 'supabase.js')));
+    expect(verify.verifyBundle(dir).missing).toEqual(['vendor/supabase.js']);
+  });
+
+  test('catches a Service Worker or PWA manifest leaking into a native build', () => {
+    const dir = makeBundle((d) => {
+      fs.writeFileSync(path.join(d, 'sw.js'), '');
+      fs.writeFileSync(path.join(d, 'manifest.json'), '{}');
+    });
+    expect(verify.verifyBundle(dir).forbidden.sort()).toEqual(['manifest.json', 'sw.js']);
+  });
+
+  test('catches a shipped page that still loads a script over the network', () => {
+    const cdn = build.VENDORED[0].src;
+    const dir = makeBundle((d) => {
+      fs.writeFileSync(path.join(d, 'index.html'), `<script src="${cdn}"></script>`);
+    });
+    expect(verify.verifyBundle(dir).indexRefsCdn).toEqual([`index.html -> ${cdn}`]);
+  });
+});
