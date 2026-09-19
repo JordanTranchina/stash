@@ -60,10 +60,23 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
 GEMINI_RETRY_BASE_DELAY_SECONDS = float(os.getenv("GEMINI_RETRY_BASE_DELAY_SECONDS", "15"))
 RETRYABLE_GEMINI_ERROR_MARKERS = ("503", "UNAVAILABLE", "500", "INTERNAL")
+RETRYABLE_GEMINI_STATUS_CODES = (500, 503)
+RETRYABLE_GEMINI_STATUSES = ("UNAVAILABLE", "INTERNAL")
 
 
 def _is_retryable_gemini_error(error):
     if isinstance(error, json.JSONDecodeError):
+        return True
+    # google-genai's APIError exposes the HTTP status as `.code` and the API's
+    # own status string as `.status` (e.g. 503 / "UNAVAILABLE" for a "model
+    # overloaded" response) — check those directly first. Some server error
+    # messages (e.g. Gemini's "This model is currently experiencing high
+    # demand..." 503) don't contain the status code or name anywhere in their
+    # text, so string-matching str(error) alone missed them and let a
+    # retryable error fail on the first attempt (#160).
+    if getattr(error, "code", None) in RETRYABLE_GEMINI_STATUS_CODES:
+        return True
+    if getattr(error, "status", None) in RETRYABLE_GEMINI_STATUSES:
         return True
     text = str(error)
     return any(marker in text for marker in RETRYABLE_GEMINI_ERROR_MARKERS)

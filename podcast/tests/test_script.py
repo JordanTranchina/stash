@@ -112,6 +112,37 @@ class TestGenerateScript:
 
         assert mock_client.models.generate_content.call_count == script.GEMINI_MAX_RETRIES
 
+    def test_retries_on_high_demand_error_with_no_status_text_in_message(self, monkeypatch):
+        """Regression test for #160: a real google-genai ServerError for a 503
+
+        "high demand" response carries the status as structured `code`/`status`
+        attributes, but its message text is just "This model is currently
+        experiencing high demand..." with no "503"/"UNAVAILABLE" substring —
+        this must still be recognized as retryable.
+        """
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+
+        class FakeServerError(Exception):
+            code = 503
+            status = "UNAVAILABLE"
+
+        high_demand_error = FakeServerError(
+            "This model is currently experiencing high demand. Spikes in "
+            "demand are usually temporary. Please try again later."
+        )
+        success_response = MagicMock()
+        success_response.text = json.dumps(SAMPLE_SCRIPT)
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = [high_demand_error, success_response]
+
+        with patch("script.genai.Client", return_value=mock_client), \
+             patch("script.time.sleep") as mock_sleep:
+            result = script.generate_script(SAMPLE_ARTICLES)
+
+        assert result == SAMPLE_SCRIPT
+        assert mock_client.models.generate_content.call_count == 2
+        mock_sleep.assert_called_once()
+
     def test_does_not_retry_on_quota_exhaustion(self, monkeypatch):
         """429 quota errors surface immediately — a short retry can't fix them."""
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
