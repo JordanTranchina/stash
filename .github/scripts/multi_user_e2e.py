@@ -507,7 +507,22 @@ def test_flow_6_daily_podcast_creation(user_a_id, user_b_id, user_c_id, token_a,
     discover.SUPABASE_URL = SUPABASE_URL
     discover.SUPABASE_KEY = SERVICE_ROLE_KEY
 
-    # User C explicitly unsubscribes from the podcast feed
+    # podcast_feeds.subscribed defaults to false at sign-up (opting into the
+    # podcast is a deliberate Settings action, not automatic) — so User A and
+    # User B must explicitly subscribe here, the same PATCH the app's podcast
+    # settings toggle sends, before discover.py has anyone to find.
+    for uid in (user_a_id, user_b_id):
+        requests.patch(
+            f"{REST_URL}/podcast_feeds",
+            headers=service_headers(),
+            params={"user_id": f"eq.{uid}"},
+            json={"subscribed": True},
+            timeout=TIMEOUT,
+        )
+
+    # User C stays on the sign-up default (subscribed = false) — no action
+    # needed, but PATCH it explicitly so this test doesn't silently pass if
+    # that default ever flips.
     requests.patch(
         f"{REST_URL}/podcast_feeds",
         headers=service_headers(),
