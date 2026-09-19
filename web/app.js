@@ -83,6 +83,10 @@ class StashApp {
     this.bugReporter.bindEvents();
     this.installErrorReporting();
 
+    // Native (iOS/Android) shell wiring: share-sheet intents, stash:// deep
+    // links, the Android back button. No-op in a browser tab or a PWA.
+    this.bindNativeShell();
+
     // Deep link (also used by the podcast show notes): ?report-bug=1 opens
     // the reporter straight away.
     if (new URLSearchParams(window.location.search).get('report-bug') === '1') {
@@ -106,6 +110,141 @@ class StashApp {
     // the offline image cache under storage pressure. Safe to ignore failure.
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist().catch(() => {});
+    }
+
+    // A screen (list or sign-in) is on-screen by now, so the native launch
+    // image can go. Deliberately last: dismissing it earlier would show a
+    // blank WebView while the session resolves.
+    window.StashPlatform?.hideSplash();
+  }
+
+  // Everything the iOS/Android shells need that a browser tab doesn't. Each
+  // registration is a no-op on web, so this runs unconditionally and the
+  // three builds keep sharing one init path.
+  bindNativeShell() {
+    const platform = window.StashPlatform;
+    if (!platform || !platform.isNative()) return;
+
+    // A share from the OS share sheet — iOS via the Share Extension's
+    // stash://share deep link, Android via the ACTION_SEND intent. Both land
+    // on the same handler and the same Edge Function the PWA share target
+    // uses, so a native save is ingested identically to a web one.
+    platform.onShare((shared) => this.handleNativeShare(shared));
+
+    platform.onDeepLink((link) => {
+      if (link.kind === 'auth') this.handleAuthDeepLink(link.url);
+      else if (link.kind === 'open' && link.id) this.openSaveById(link.id);
+    });
+
+    // Android hardware/gesture back. Closing an open modal or the reading
+    // pane takes priority; returning false hands the press back to the shell,
+    // which goes back in history (the reading pane's own back entry) or
+    // minimizes the app.
+    platform.onBackButton(() => this.handleBackButton());
+
+    // Returning to the foreground: drain anything queued while the app was
+    // away. The PWA gets this from the Service Worker's Background Sync,
+    // which native builds don't run.
+    platform.onResume(() => {
+      if (!this.user) return;
+      this.syncPendingShares();
+      this.loadSaves();
+    });
+  }
+
+  // True when the press was consumed. Checked innermost-first so back peels
+  // one layer at a time, the way it does on every other Android app.
+  handleBackButton() {
+    const openModal = document.querySelector('.modal:not(.hidden)');
+    if (openModal) {
+      // Go through each modal's own hide method where it has one, so back
+      // leaves the same state behind as tapping the close button (reset
+      // forms, cancelled imports) rather than just hiding the element.
+      const dismiss = {
+        'add-url-modal': () => this.hideAddUrlModal(),
+        'podcast-modal': () => this.hidePodcastModal(),
+        'share-token-modal': () => this.hideShareTokenModal(),
+        'install-app-modal': () => this.hideInstallInstructionsModal(),
+        'import-modal': () => this.hideImportModal(),
+        'bug-report-modal': () => this.bugReporter.close(),
+      }[openModal.id];
+      if (dismiss) dismiss();
+      else openModal.classList.add('hidden');
+      return true;
+    }
+    const pane = document.getElementById('reading-pane');
+    if (pane && pane.classList.contains('open')) {
+      this.closeReadingPane();
+      return true;
+    }
+    if (this.currentView !== 'all') {
+      this.setView('all');
+      return true;
+    }
+    return false;
+  }
+
+  // Save a link handed over by the OS share sheet. The shared payload is
+  // rarely a bare URL (Android shares "Title https://…", iOS passes a
+  // separate title), so the URL is pulled out of whichever field carries it
+  // using the same extractor save.html's share target uses. Offline shares
+  // queue to IndexedDB and drain on the next resume, matching the PWA.
+  async handleNativeShare({ url, title, text }) {
+    const link =
+      window.StashSave.extractUrlFromText(url) ||
+      window.StashSave.extractUrlFromText(text) ||
+      window.StashSave.extractUrlFromText(title);
+
+    if (!link) {
+      this.showToast('No link found in what was shared');
+      return;
+    }
+
+    const request = window.StashSave.buildScrapeRequest({
+      url: link,
+      source: `mobile-${window.StashPlatform.name()}`,
+      title: title || null,
+    });
+
+    if (!navigator.onLine) {
+      await window.StashDB.savePendingShare(request);
+      this.showToast('Offline — saved to queue');
+      return;
+    }
+
+    try {
+      const accessToken = await this.getAccessToken();
+      const { ok, duplicate } = await window.StashSave.saveViaScrapeDetailed(request, accessToken);
+      if (!ok) {
+        this.showToast("Couldn't save that link");
+        return;
+      }
+      this.showToast(duplicate ? 'Already in your stash' : 'Saved to Stash');
+      this.loadSaves();
+    } catch (e) {
+      if (e?.noSession) {
+        this.showToast('Sign in to save');
+        return;
+      }
+      // Network failure: queue it rather than losing the share.
+      await window.StashDB.savePendingShare(request);
+      this.showToast('Offline — saved to queue');
+    }
+  }
+
+  // Open one save's reading pane by id. Shared by the ?open= web deep link
+  // and the native stash://open?id= one.
+  async openSaveById(id) {
+    try {
+      const { data, error } = await this.supabase
+        .from('saves')
+        .select(this.SAVES_LIST_COLUMNS)
+        .eq('id', id)
+        .single();
+      if (error || !data) return;
+      this.openReadingPane(data);
+    } catch (e) {
+      // A deep link that can't be resolved just leaves the list open.
     }
   }
 
@@ -221,6 +360,10 @@ class StashApp {
   // Keep these hex values in sync with the pre-paint inline script in
   // index.html's <head>, which sets the same meta tag before app.js loads.
   updateThemeColorMeta(theme) {
+    // The native shells have no <meta name="theme-color"> to read, so the
+    // same theme change is pushed to the OS status bar as well. No-op on web.
+    window.StashPlatform?.setStatusBarTheme(theme);
+
     const meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) return;
     const colors = { dark: '#111827', sepia: '#f4ecd8' };
@@ -732,8 +875,12 @@ class StashApp {
 
   // True once installed and running standalone (Android/desktop Chrome
   // report this via the display-mode media query; iOS Safari instead sets
-  // navigator.standalone, which doesn't exist on other browsers).
+  // navigator.standalone, which doesn't exist on other browsers). The native
+  // iOS/Android builds are installed by definition, which StashPlatform
+  // folds into the same answer so every "are we installed?" check — the
+  // Settings row, the home toast — gets it right in all three builds.
   isStandalone() {
+    if (window.StashPlatform) return window.StashPlatform.isInstalled();
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   }
 
@@ -1052,13 +1199,64 @@ class StashApp {
     const errorEl = document.getElementById('auth-error');
     errorEl.textContent = '';
 
-    const { error } = await this.supabase.auth.signInWithOAuth({
+    // A WebView can't be an OAuth redirect target, and Google refuses to
+    // sign in inside an embedded one at all. On native we therefore ask
+    // Supabase for the consent URL without navigating (skipBrowserRedirect),
+    // open it in the system browser, and let it come back through the
+    // stash:// scheme — handleAuthDeepLink below completes the exchange.
+    const native = window.StashPlatform?.isNative();
+    const { data, error } = await this.supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.StashPlatform?.oauthRedirectTo() || window.location.origin,
+        skipBrowserRedirect: Boolean(native),
+      },
     });
 
     if (error) {
       errorEl.textContent = error.message;
+      return;
+    }
+
+    if (native && data?.url) {
+      await window.StashPlatform.openExternal(data.url);
+    }
+  }
+
+  // Completes a native OAuth round trip. The system browser hands the app
+  // back a stash://auth/callback URL carrying either a PKCE `code` (the
+  // default flow) or the tokens themselves in the fragment (implicit flow);
+  // both are accepted so the app keeps working if the Supabase client's flow
+  // type ever changes. onAuthStateChange takes it from there, so there is no
+  // screen swap to do here.
+  async handleAuthDeepLink(rawUrl) {
+    const errorEl = document.getElementById('auth-error');
+    try {
+      const parsed = new URL(rawUrl);
+      const code = parsed.searchParams.get('code');
+      if (code) {
+        const { error } = await this.supabase.auth.exchangeCodeForSession(code);
+        if (error) throw error;
+        return;
+      }
+
+      const fragment = new URLSearchParams((parsed.hash || '').replace(/^#/, ''));
+      const access_token = fragment.get('access_token');
+      const refresh_token = fragment.get('refresh_token');
+      if (access_token && refresh_token) {
+        const { error } = await this.supabase.auth.setSession({ access_token, refresh_token });
+        if (error) throw error;
+        return;
+      }
+
+      const message = parsed.searchParams.get('error_description') || fragment.get('error_description');
+      if (message && errorEl) errorEl.textContent = message;
+    } catch (e) {
+      if (errorEl) errorEl.textContent = e?.message || 'Sign-in failed. Please try again.';
+    } finally {
+      // Whether it worked or not, close the system browser view so the user
+      // is looking at the app again rather than a spent callback page.
+      window.StashPlatform?.closeExternal?.();
     }
   }
 
@@ -1095,18 +1293,9 @@ class StashApp {
     url.searchParams.delete('open');
     history.replaceState({}, '', url);
 
-    try {
-      const { data, error } = await this.supabase
-        .from('saves')
-        .select(this.SAVES_LIST_COLUMNS)
-        .eq('id', id)
-        .single();
-      if (error || !data) return;
-      this.openReadingPane(data);
-    } catch (e) {
-      // Deep link failing silently just leaves the list open — not worth
-      // surfacing as an error toast.
-    }
+    // Deep link failing silently just leaves the list open — not worth
+    // surfacing as an error toast (openSaveById swallows its own errors).
+    await this.openSaveById(id);
   }
 
   // Filter + sort cached saves to match what the server query would return

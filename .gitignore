@@ -47,3 +47,6 @@ podcast/script.json
 # Playwright
 test-results/
 playwright-report/
+
+# Native mobile shells: the generated Capacitor projects and web bundle are
+# ignored by mobile/.gitignore. See documentation/MOBILE_APPS.md.
