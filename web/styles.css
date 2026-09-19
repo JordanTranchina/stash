@@ -19,6 +19,14 @@
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
+  /* --success/--danger above are tuned for fills, borders and icons (where
+     WCAG only asks for 3:1 against an adjacent color) — on white they're
+     2.54:1 and 3.76:1, both short of the 4.5:1 body text needs. These are
+     for actual text set in the color: .error, .message, .digest-status.
+     Also clear 4.5:1 on the sepia surfaces they render on (sepia doesn't
+     override them, only dark mode does below). */
+  --success-text: #166534;
+  --danger-text: #b91c1c;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1);
   --radius: 8px;
@@ -51,6 +59,10 @@
   --border: #374151;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.4);
+  /* Lighter tints so error/success text still clears 4.5:1 on dark surfaces —
+     the light-mode --success-text/--danger-text are too dark to read here. */
+  --success-text: #34d399;
+  --danger-text: #f87171;
 }
 
 [data-theme="dark"] .save-card,
@@ -288,14 +300,14 @@ select {
 }
 
 .error {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 14px;
   margin-top: 12px;
   text-align: center;
 }
 
 .message {
-  color: var(--success);
+  color: var(--success-text);
   font-size: 14px;
   margin-top: 12px;
   text-align: center;
@@ -1838,12 +1850,12 @@ select {
 
 .digest-status.success {
   background: rgba(16, 185, 129, 0.1);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .digest-status.error {
   background: rgba(239, 68, 68, 0.1);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 /* Install App instructions modal (fallback for browsers without
