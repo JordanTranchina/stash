@@ -68,8 +68,8 @@
           <input type="email" id="email" placeholder="Email" autocomplete="email" required>
           <label class="sr-only" for="password">Password</label>
           <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-          <button type="submit" class="btn primary" id="signin-btn">Sign In</button>
-          <button type="button" class="btn secondary" id="signup-btn">Create Account</button>
+          <button type="submit" class="btn primary" id="signin-btn">Sign in</button>
+          <button type="button" class="btn secondary" id="signup-btn">Create account</button>
         </form>
         <p id="auth-error" class="error"></p>
         <p id="auth-message" class="message"></p>
@@ -149,7 +149,7 @@
             <div id="empty-state" class="empty-state hidden">
               <div class="empty-icon">📚</div>
               <h3>Your stash is empty</h3>
-              <p>Save your first article: tap <strong>Settings &rarr; Add URL</strong> and paste a link. On your phone you can also use the Share button in any browser and pick Stash.</p>
+              <p>Save your first article: select <strong>+</strong> above and paste a link. On your phone you can also use the Share button in any browser and pick Stash.</p>
             </div>
 
             <!-- Shown instead of empty-state when loadSaves() couldn't reach
@@ -595,7 +595,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn secondary" id="podcast-cancel-btn">Cancel</button>
-          <button class="btn primary" id="podcast-save-btn">Save Settings</button>
+          <button class="btn primary" id="podcast-save-btn">Save settings</button>
         </div>
       </div>
     </div>
@@ -647,9 +647,18 @@
             </ol>
           </details>
         </div>
-        <div class="modal-footer">
-          <button class="btn secondary" id="share-token-regenerate-btn" type="button">Regenerate Token</button>
+        <div class="modal-footer" id="share-token-footer">
+          <button class="btn secondary" id="share-token-regenerate-btn" type="button">Regenerate token</button>
           <button class="btn primary" id="share-token-done-btn" type="button">Done</button>
+        </div>
+        <!-- Replaces a native confirm() (generic OK/Cancel) so the buttons
+             name the actual consequence instead. -->
+        <div class="modal-footer modal-footer-confirm hidden" id="share-token-regenerate-confirm">
+          <p class="confirm-footer-text">Your current iOS Shortcut will stop working until you paste the new token into it.</p>
+          <div class="confirm-footer-actions">
+            <button class="btn secondary" id="share-token-regenerate-cancel-btn" type="button">Cancel</button>
+            <button class="btn primary" id="share-token-regenerate-confirm-btn" type="button">Regenerate token</button>
+          </div>
         </div>
       </div>
     </div>
