@@ -38,9 +38,10 @@ class BugReporter {
     document.getElementById('bug-report-submit-btn').addEventListener('click', () => this.submit());
     document.getElementById('bug-report-files').addEventListener('change', (e) => this.addFiles(e.target.files));
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !modal.classList.contains('hidden') && !this.submitting) this.close();
-    });
+    // Escape-to-close, the focus trap, and returning focus to whatever
+    // opened the modal all come from the app's shared openModal()/
+    // closeModal() (see open()/close() below) — replaces the bespoke
+    // Escape-only listener this used to have here.
 
     // Retry any queued reports when connectivity returns.
     window.addEventListener('online', () => this.flushQueue());
@@ -59,13 +60,15 @@ class BugReporter {
       }
     }
 
-    modal.classList.remove('hidden');
-    document.getElementById('bug-report-text').focus();
+    this.app.openModal(modal, {
+      focusEl: document.getElementById('bug-report-text'),
+      onClose: () => this.close(),
+    });
   }
 
   close() {
     if (this.submitting) return;
-    document.getElementById('bug-report-modal').classList.add('hidden');
+    this.app.closeModal(document.getElementById('bug-report-modal'));
     this.reset();
   }
 
