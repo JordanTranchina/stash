@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stash is a self-hosted, single-user "read it later" app (Pocket/Instapaper replacement). There is no build step and no backend server you run yourself: static/vanilla JS clients (browser extensions, a PWA web app) talk directly to a Supabase project (Postgres + REST + Auth + Storage + Edge Functions) over HTTPS. A separate Python pipeline (`podcast/`) turns saved articles into an AI-narrated podcast ("Listen Later") via a daily GitHub Action.
+Stash is a self-hosted "read it later" app (Pocket/Instapaper replacement). There is no build step and no backend server you run yourself: static/vanilla JS clients (browser extensions, a PWA web app) talk directly to a Supabase project (Postgres + REST + Auth + Storage + Edge Functions) over HTTPS. A separate Python pipeline (`podcast/`) turns saved articles into an AI-narrated podcast ("Listen Later") via a daily GitHub Action.
 
-Single-user mode is the default: `USER_ID` is hardcoded in each client's `config.js` and all requests use the Supabase `anon` key, with Postgres Row Level Security enforcing per-user isolation. Multi-user mode (real Supabase Auth sign-in) exists but is secondary — see `documentation/SETUP.md`.
+Multi-user is the only mode: everyone signs in via real Supabase Auth (Google or email/password), sign-up is invite-only (an `allowed_emails` table gated by a trigger on `auth.users`), and all requests use the Supabase `anon` key with Postgres Row Level Security enforcing per-account isolation — see `documentation/SETUP.md`.
 
 ## Commands
 
@@ -37,7 +37,7 @@ There is no lint/typecheck script configured in this repo.
 
 ### The clients all share one Supabase backend
 
-Every client (Chrome extension, Firefox extension, web PWA, bookmarklet, iOS Shortcut) writes/reads the same Postgres tables directly via Supabase's REST API (PostgREST), gated by RLS policies keyed on `auth.uid()`. There is no custom app server. Each client has its own `config.js` with `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and (in single-user mode) a hardcoded `USER_ID` — see `documentation/SETUP.md` for provisioning steps. `supabase/schema.sql` is the source of truth for tables (`saves`, `folders`, `tags`, `save_tags`, `user_preferences`) and RLS policies; `supabase/migrations/` holds incremental changes applied after the initial schema.
+Every client (Chrome extension, Firefox extension, web PWA, bookmarklet, iOS Shortcut) writes/reads the same Postgres tables directly via Supabase's REST API (PostgREST), gated by RLS policies keyed on `auth.uid()`. There is no custom app server. Each client has its own `config.js` with `SUPABASE_URL` and `SUPABASE_ANON_KEY`; the signed-in user's identity comes from Supabase Auth, not a hardcoded id — see `documentation/SETUP.md` for provisioning steps. `supabase/schema.sql` is the source of truth for tables (`saves`, `folders`, `tags`, `save_tags`, `user_preferences`) and RLS policies; `supabase/migrations/` holds incremental changes applied after the initial schema.
 
 ### Two extension builds share one codebase
 
