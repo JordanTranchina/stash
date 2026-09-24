@@ -116,6 +116,15 @@
               <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
           </button>
+          <!-- Select: pick saves for one custom podcast episode (#133). Hidden by
+               setView() on Podcasts/Settings, same as sort and add. -->
+          <button type="button" class="header-add-btn header-select-btn" id="header-select-btn"
+                  aria-label="Select saves for a podcast" aria-pressed="false" title="Select saves for a podcast">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 11 12 14 22 4"></polyline>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+            </svg>
+          </button>
           <!-- Report a bug: always visible (setView() never hides it) so it's
                reachable from every view. Opens the same modal as Settings. -->
           <button type="button" class="header-bug-btn" id="header-bug-btn" aria-label="Report a bug" title="Report a bug">
@@ -795,6 +804,13 @@
     </div>
 
     <!-- Toast / Notification -->
+    <!-- Custom podcast select mode (#133): shown while picking saves. -->
+    <div id="select-bar" class="select-bar hidden" role="region" aria-label="Custom podcast">
+      <span id="select-bar-count" class="select-bar-count" aria-live="polite"></span>
+      <button type="button" class="select-bar-cancel" id="select-bar-cancel">Cancel</button>
+      <button type="button" class="btn primary select-bar-make" id="select-bar-make" disabled>🎙️ Make podcast</button>
+    </div>
+
     <div id="toast" class="toast hidden" role="status" aria-live="polite">
       <span id="toast-message"></span>
     </div>

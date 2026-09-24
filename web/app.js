@@ -1,4 +1,10 @@
 // Stash Web App
+
+// Custom podcast episodes (#133). Must match the limits in
+// supabase/functions/request-podcast and podcast/script.py.
+const CUSTOM_PODCAST_MIN_SAVES = 2;
+const CUSTOM_PODCAST_MAX_SAVES = 8;
+
 class StashApp {
   constructor() {
     this.supabase = null;
@@ -24,6 +30,12 @@ class StashApp {
     // suppressed while a search is active so it can't clobber the results
     // with a plain loadSaves() page.
     this.searchActive = false;
+    // Select mode (#133): tapping cards picks them for a custom podcast
+    // episode instead of opening them. The ids are kept in pick order, and
+    // stay picked when the list re-renders (a new search, sort or page), so
+    // saves can be gathered from more than one search.
+    this.selectMode = false;
+    this.selectedSaveIds = new Set();
     this.SAVES_LIST_COLUMNS =
       'id, folder_id, url, title, excerpt, highlight, site_name, author, ' +
       'published_at, image_url, is_archived, is_favorite, read_at, ' +
@@ -437,6 +449,11 @@ class StashApp {
       // Cards are real <a href="?open=..."> links now (keyboard + Cmd/Ctrl/
       // middle-click support) but a plain click still opens in the in-page
       // reading pane instead of navigating — only hijack the plain case.
+      if (this.selectMode) {
+        e.preventDefault();
+        this.toggleSaveSelected(card.dataset.id);
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
       const swipeEl = card.closest('.save-card-swipe');
       if (swipeEl && swipeEl._suppressClick) return;
@@ -597,6 +614,19 @@ class StashApp {
 
     document.getElementById('header-add-btn')?.addEventListener('click', () => {
       this.showAddUrlModal();
+    });
+
+    // Custom podcast (#133): pick saves in the list, then make one blended
+    // episode about them.
+    document.getElementById('header-select-btn')?.addEventListener('click', () => {
+      if (this.selectMode) this.exitSelectMode();
+      else this.enterSelectMode();
+    });
+    document.getElementById('select-bar-cancel')?.addEventListener('click', () => {
+      this.exitSelectMode();
+    });
+    document.getElementById('select-bar-make')?.addEventListener('click', (e) => {
+      this.requestCustomPodcast(e.currentTarget);
     });
 
     // Report a bug — always-visible header button, on every view.
@@ -1326,6 +1356,7 @@ class StashApp {
   saveCardHtml(save, swipeEnabled, swipeRestores = false) {
     const isHighlight = !!save.highlight;
     const date = new Date(save.created_at).toLocaleDateString();
+    const selectedClass = this.selectedSaveIds.has(save.id) ? ' selected' : '';
 
     // Real links, not click-handler divs: reachable and activatable from the
     // keyboard, and Cmd/Ctrl/middle-click opens the same article in a new tab
@@ -1334,7 +1365,7 @@ class StashApp {
     let cardHtml;
     if (isHighlight) {
       cardHtml = `
-        <a class="save-card highlight" href="?open=${encodeURIComponent(save.id)}" data-id="${save.id}">
+        <a class="save-card highlight${selectedClass}" href="?open=${encodeURIComponent(save.id)}" data-id="${save.id}">
           <div class="save-card-content">
             <div class="save-card-site">${this.escapeHtml(save.site_name || '')}</div>
             <div class="save-card-highlight">"${this.escapeHtml(save.highlight)}"</div>
@@ -1362,7 +1393,7 @@ class StashApp {
                 </svg>${minutes} min read${publishedSuffix}
               </span>`;
       cardHtml = `
-        <a class="save-card" href="?open=${encodeURIComponent(save.id)}" data-id="${save.id}">
+        <a class="save-card${selectedClass}" href="?open=${encodeURIComponent(save.id)}" data-id="${save.id}">
           <div class="save-card-content">
             <div class="save-card-body">
               <div class="save-card-site">${this.escapeHtml(save.site_name || this.hostFromUrl(save.url))}</div>
@@ -1508,6 +1539,8 @@ class StashApp {
     cardEl.addEventListener('pointerdown', (e) => {
       // Ignore secondary mouse buttons
       if (e.button && e.button !== 0) return;
+      // In select mode a tap picks the card; a swipe must not archive it.
+      if (this.selectMode) return;
       startX = e.clientX;
       startY = e.clientY;
       dx = 0;
@@ -2059,6 +2092,11 @@ class StashApp {
     if (headerAddBtn) {
       headerAddBtn.style.display = showSavesControls;
     }
+    const headerSelectBtn = document.getElementById('header-select-btn');
+    if (headerSelectBtn) {
+      headerSelectBtn.style.display = showSavesControls;
+    }
+    if (this.selectMode && showSavesControls === 'none') this.exitSelectMode();
 
     // Toggle between the saves view and the settings view
     const savesView = document.getElementById('saves-view');
@@ -2253,6 +2291,114 @@ class StashApp {
     this.loadPodcasts();
   }
 
+  // ---- Custom podcast select mode (#133) ----------------------------------
+
+  enterSelectMode() {
+    this.selectMode = true;
+    this.selectedSaveIds.clear();
+    document.getElementById('saves-container')?.classList.add('select-mode');
+    document.getElementById('header-select-btn')?.setAttribute('aria-pressed', 'true');
+    document.getElementById('select-bar')?.classList.remove('hidden');
+    this.updateSelectBar();
+    window.StashAnalytics?.capture('podcast_select_mode_entered', { view: this.currentView });
+  }
+
+  exitSelectMode() {
+    this.selectMode = false;
+    this.selectedSaveIds.clear();
+    const container = document.getElementById('saves-container');
+    container?.classList.remove('select-mode');
+    container?.querySelectorAll('.save-card.selected').forEach(el => el.classList.remove('selected'));
+    document.getElementById('header-select-btn')?.setAttribute('aria-pressed', 'false');
+    document.getElementById('select-bar')?.classList.add('hidden');
+  }
+
+  toggleSaveSelected(id) {
+    if (!id) return;
+    if (this.selectedSaveIds.has(id)) {
+      this.selectedSaveIds.delete(id);
+    } else {
+      if (this.selectedSaveIds.size >= CUSTOM_PODCAST_MAX_SAVES) {
+        this.showToast(`You can pick up to ${CUSTOM_PODCAST_MAX_SAVES} saves for one episode.`);
+        return;
+      }
+      this.selectedSaveIds.add(id);
+    }
+    const selected = this.selectedSaveIds.has(id);
+    document.querySelectorAll(`#saves-container .save-card[data-id="${CSS.escape(id)}"]`)
+      .forEach(el => el.classList.toggle('selected', selected));
+    this.updateSelectBar();
+  }
+
+  updateSelectBar() {
+    const n = this.selectedSaveIds.size;
+    const count = document.getElementById('select-bar-count');
+    if (count) {
+      count.textContent = n === 0
+        ? `Pick ${CUSTOM_PODCAST_MIN_SAVES} to ${CUSTOM_PODCAST_MAX_SAVES} saves`
+        : n < CUSTOM_PODCAST_MIN_SAVES
+          ? `${n} selected. Pick at least ${CUSTOM_PODCAST_MIN_SAVES}.`
+          : `${n} selected`;
+    }
+    const make = document.getElementById('select-bar-make');
+    if (make && make.dataset.busy !== '1') make.disabled = n < CUSTOM_PODCAST_MIN_SAVES;
+  }
+
+  // POSTs to the `request-podcast` Edge Function. `payload` is the JSON body
+  // (none for the plain "Make an episode now" button). Returns { res, body }.
+  async postPodcastRequest(payload) {
+    const token = await this.getAccessToken();
+    if (!token) throw new Error('no-session');
+    const headers = { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` };
+    const init = { method: 'POST', headers };
+    if (payload) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(payload);
+    }
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/request-podcast`, init);
+    const body = await res.json().catch(() => ({}));
+    return { res, body };
+  }
+
+  // "Make podcast" in select mode: one blended episode about the picked
+  // saves. Shares the on-demand rate limit with "Make an episode now".
+  async requestCustomPodcast(btnEl) {
+    const btn = btnEl || document.getElementById('select-bar-make');
+    if (btn && btn.dataset.busy === '1') return;
+    const saveIds = [...this.selectedSaveIds];
+    if (saveIds.length < CUSTOM_PODCAST_MIN_SAVES) return;
+    if (btn) {
+      btn.dataset.busy = '1';
+      btn.disabled = true;
+      btn.textContent = '⏳ Starting…';
+    }
+    try {
+      const { res, body } = await this.postPodcastRequest({ saveIds });
+      if (res.ok) {
+        window.StashAnalytics?.capture('podcast_custom_requested', { count: saveIds.length });
+        this.exitSelectMode();
+        this.showToast('On it! Your custom episode shows up in Podcasts in a few minutes.');
+        return;
+      }
+      this.showToast(body.error || "Couldn't start your episode just now. Try again in a bit.", null, true);
+    } catch (e) {
+      console.error('requestCustomPodcast failed:', e);
+      this.showToast(
+        e && e.message === 'no-session'
+          ? 'Please sign in again to make an episode.'
+          : "Couldn't start your episode. Check your connection and try again.",
+        null,
+        true,
+      );
+    } finally {
+      if (btn) {
+        btn.dataset.busy = '';
+        btn.textContent = '🎙️ Make podcast';
+        this.updateSelectBar();
+      }
+    }
+  }
+
   // "Make an episode now" — asks the `request-podcast` Edge Function to run
   // the generation workflow for just this user. The function rate-limits per
   // user (a few per rolling 24h), so a 429 here is expected, not an error.
@@ -2266,13 +2412,7 @@ class StashApp {
     }
     let succeeded = false;
     try {
-      const token = await this.getAccessToken();
-      if (!token) throw new Error('no-session');
-      const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/request-podcast`, {
-        method: 'POST',
-        headers: { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-      });
-      const body = await res.json().catch(() => ({}));
+      const { res, body } = await this.postPodcastRequest();
 
       if (res.ok) {
         succeeded = true;
