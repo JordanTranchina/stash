@@ -452,3 +452,44 @@ describe("welcome episode", () => {
     expect(xml).not.toMatch(/<podcast:chapters/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Upstream failures (issue #165)
+// ---------------------------------------------------------------------------
+// Mirrors QueryError / isTransientStatus. A Supabase gateway timeout must reach
+// podcast apps as a retryable 503, and Sentry needs a real Error with a message.
+
+class QueryError extends Error {
+  constructor(what, status, detail) {
+    super(`${what} query failed (HTTP ${status}): ${detail}`);
+    this.name = "QueryError";
+    this.status = status;
+  }
+}
+
+function isTransientStatus(status) {
+  return status === 0 || status >= 500;
+}
+
+describe("upstream query failures", () => {
+  test("treats a gateway timeout as transient", () => {
+    expect(isTransientStatus(504)).toBe(true);
+    expect(isTransientStatus(502)).toBe(true);
+  });
+
+  test("treats no response (network failure) as transient", () => {
+    expect(isTransientStatus(0)).toBe(true);
+  });
+
+  test("does not treat client errors as transient", () => {
+    expect(isTransientStatus(400)).toBe(false);
+    expect(isTransientStatus(406)).toBe(false);
+  });
+
+  test("QueryError is a real Error naming the table and status", () => {
+    const err = new QueryError("podcast_episodes", 504, "Gateway Timeout");
+    expect(err).toBeInstanceOf(Error);
+    expect(err.status).toBe(504);
+    expect(err.message).toBe("podcast_episodes query failed (HTTP 504): Gateway Timeout");
+  });
+});
