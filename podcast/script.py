@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import subprocess
+import re
 import time
 import requests
 import sentry_sdk
@@ -12,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 import edge_tts
-from extract import fetch_recent_articles
+from extract import fetch_recent_articles, fetch_articles_by_ids
 from assembly import assemble_episode
 from artwork import build_episode_collage
 from supabase import create_client, Client
@@ -150,8 +151,15 @@ def fetch_podcast_preferences():
     return prefs
 
 
-def build_system_prompt(prefs):
-    """Construct the Gemini system prompt from the given host preferences."""
+def build_system_prompt(prefs, blended=False):
+    """Construct the Gemini system prompt from the given host preferences.
+
+    ``blended`` switches to the custom-episode format (#133): the user
+    hand-picked these articles around a topic, so the hosts weave them into
+    one conversation instead of covering them one after another.
+    """
+    if blended:
+        return _build_blended_system_prompt(prefs)
     host_a = prefs["host_a_name"]
     host_b = prefs["host_b_name"]
     return f"""
@@ -185,6 +193,43 @@ Do not include any other text, markdown, or explanations. Only return the raw JS
 """
 
 
+def _build_blended_system_prompt(prefs):
+    host_a = prefs["host_a_name"]
+    host_b = prefs["host_b_name"]
+    return f"""
+You are the witty, insightful, and casual producers and hosts of "Listen Later," a personalized podcast.
+The user hand-picked a set of articles they saved because they want one conversation about the topic they share.
+
+PERSONAS:
+- {host_a.upper()}: {prefs["host_a_persona"]}
+- {host_b.upper()}: {prefs["host_b_persona"]}
+
+TONE:
+- {prefs["tone"]}
+- This is a single blended discussion, NOT a rundown of articles one after another. Organize the conversation around the ideas, questions and tensions the articles share.
+- Bring articles in wherever they add to the current thread of discussion: compare them, let one article answer or challenge another, and point out where they agree or disagree.
+- Name an article's source when you first draw on it so the listener can tell where a claim came from. Only use what the articles actually say.
+- Every article must contribute at least once.
+- Open by naming the common theme, and close with a takeaway that ties the articles together.
+- Avoid sounding like a dry news report. Use "{host_a}:" and "{host_b}:" prefixes for dialogue.
+
+OUTPUT FORMAT:
+Return a JSON array of objects. Each object must have:
+- "speaker": exactly "{host_a}" or "{host_b}"
+- "text": their dialogue line
+- "article_index": the 0-based index (into the provided articles list) of the article this line mainly draws on, or null for the intro, outro, and lines that synthesize several articles at once.
+Lines about different articles may interleave; there is no need to keep one article's lines together.
+Example:
+[
+  {{ "speaker": "{host_a}", "text": "Welcome back to Listen Later! Today it's all about who owns your data.", "article_index": null }},
+  {{ "speaker": "{host_b}", "text": "The local-first piece argues your files should live on your own device first.", "article_index": 0 }},
+  {{ "speaker": "{host_a}", "text": "Which is funny, because the Wired story says the big clouds are going the other way.", "article_index": 1 }}
+]
+
+Do not include any other text, markdown, or explanations. Only return the raw JSON array.
+"""
+
+
 # Backwards-compatible default prompt (Alex/Taylor) for callers/tests that import it.
 SYSTEM_PROMPT = build_system_prompt(DEFAULT_PODCAST_PREFS)
 
@@ -202,7 +247,7 @@ SPEAKING_RATE_WPM = float(os.getenv("PODCAST_SPEAKING_RATE_WPM", "150"))
 INTRO_OUTRO_FRACTION = 0.1
 
 
-def build_length_instructions(num_articles, target_minutes=None, wpm=None):
+def build_length_instructions(num_articles, target_minutes=None, wpm=None, blended=False):
     """Instructions telling Gemini how to divide the fixed episode runtime.
 
     The episode is always ``target_minutes`` long in total; each article gets
@@ -217,6 +262,15 @@ def build_length_instructions(num_articles, target_minutes=None, wpm=None):
     wpm = SPEAKING_RATE_WPM if wpm is None else wpm
 
     total_words = target_minutes * wpm
+
+    if blended:
+        return f"""
+EPISODE LENGTH:
+- The whole episode must run about {target_minutes:g} minutes when spoken aloud (about {round(total_words)} words of dialogue in total).
+- Spread that time across all {num_articles} articles as the conversation needs; they don't need equal airtime, but each one must be part of the discussion.
+- Keep the intro and outro short (a couple of lines each).
+"""
+
     article_words = total_words * (1 - INTRO_OUTRO_FRACTION)
     words_per_article = round(article_words / num_articles)
     seconds_per_article = round((target_minutes * 60 * (1 - INTRO_OUTRO_FRACTION)) / num_articles)
@@ -229,11 +283,12 @@ EPISODE LENGTH:
 """
 
 
-def generate_script(articles, prefs=None):
+def generate_script(articles, prefs=None, blended=False):
     """Generate a conversational script based on the provided articles.
 
     If ``prefs`` is None the user's custom host personalities are loaded from
-    Supabase (falling back to the Alex/Taylor defaults).
+    Supabase (falling back to the Alex/Taylor defaults). ``blended`` makes a
+    custom episode that weaves the articles together (#133).
     """
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     if not gemini_api_key:
@@ -246,7 +301,10 @@ def generate_script(articles, prefs=None):
 
     if prefs is None:
         prefs = fetch_podcast_preferences()
-    system_prompt = build_system_prompt(prefs) + build_length_instructions(len(articles))
+    system_prompt = (
+        build_system_prompt(prefs, blended=blended)
+        + build_length_instructions(len(articles), blended=blended)
+    )
 
     client = genai.Client(api_key=gemini_api_key)
 
@@ -260,7 +318,9 @@ def generate_script(articles, prefs=None):
             "content": art["content"]
         })
 
-    prompt = f"Here are the articles to discuss today:\n\n{json.dumps(articles_payload, indent=2)}"
+    intro = ("Here are the articles to discuss together:" if blended
+             else "Here are the articles to discuss today:")
+    prompt = f"{intro}\n\n{json.dumps(articles_payload, indent=2)}"
 
     def _generate_and_parse():
         response = client.models.generate_content(
@@ -761,13 +821,83 @@ def _describe_no_articles(stats):
     )
 
 
+# Custom episodes (#133): the user picks the saves instead of the daily
+# "whatever was saved in the last 24h" selection. PODCAST_SAVE_IDS is a
+# comma-separated list of save ids, set by the workflow's `save_ids` input.
+# The cap keeps the prompt (5k chars per article) and the episode focused.
+MIN_CUSTOM_ARTICLES = 2
+MAX_CUSTOM_ARTICLES = 8
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def parse_custom_save_ids(raw):
+    """Parse PODCAST_SAVE_IDS into an ordered, de-duplicated list of save ids.
+
+    Returns [] when unset/blank (a normal daily episode). Raises ValueError
+    for a malformed id or a list outside MIN/MAX_CUSTOM_ARTICLES, since a
+    custom episode is an explicit request and should fail loudly, not quietly
+    fall back to a daily one. Ids are validated as UUIDs because they are
+    interpolated into a PostgREST ``in.(...)`` filter.
+    """
+    ids = []
+    for part in (raw or "").split(","):
+        save_id = part.strip().lower()
+        if not save_id:
+            continue
+        if not _UUID_RE.match(save_id):
+            raise ValueError(f"not a valid save id: {part.strip()!r}")
+        if save_id not in ids:
+            ids.append(save_id)
+
+    if not ids:
+        return []
+    if len(ids) < MIN_CUSTOM_ARTICLES:
+        raise ValueError(f"a custom episode needs at least {MIN_CUSTOM_ARTICLES} saves (got {len(ids)})")
+    if len(ids) > MAX_CUSTOM_ARTICLES:
+        raise ValueError(f"a custom episode takes at most {MAX_CUSTOM_ARTICLES} saves (got {len(ids)})")
+    return ids
+
+
+def _describe_custom_shortfall(stats):
+    """Explain why too few of the picked saves were usable for a custom episode."""
+    parts = []
+    missing = stats.get("missing", [])
+    if missing:
+        parts.append(f"{len(missing)} save(s) not found for this user")
+    for title, reason in stats.get("skipped", []):
+        parts.append(f"'{title}' — {reason}")
+    detail = "; ".join(parts) if parts else "no usable saves"
+    return (f"only some of the {stats.get('requested', 0)} picked saves can be "
+            f"discussed ({detail}); need at least {MIN_CUSTOM_ARTICLES}.")
+
+
 async def main():
+    try:
+        custom_save_ids = parse_custom_save_ids(os.getenv("PODCAST_SAVE_IDS"))
+    except ValueError as e:
+        fail(f"invalid PODCAST_SAVE_IDS: {e}")
+    blended = bool(custom_save_ids)
+
     print("Fetching articles...")
     fetch_stats = {}
-    try:
-        articles = fetch_recent_articles(limit=3, stats=fetch_stats)
-    except Exception as e:
-        fail(str(e))
+    if blended:
+        try:
+            articles = fetch_articles_by_ids(custom_save_ids, stats=fetch_stats)
+        except Exception as e:
+            fail(str(e))
+        # Unlike a quiet daily run, the user asked for this episode, so
+        # coming up short is a failure they should see.
+        if len(articles) < MIN_CUSTOM_ARTICLES:
+            reason = _describe_custom_shortfall(fetch_stats)
+            _write_step_summary(
+                f"### No custom episode generated\n- User: `{USER_ID}`\n- Reason: {reason}\n"
+            )
+            fail(f"custom episode: {reason}")
+    else:
+        try:
+            articles = fetch_recent_articles(limit=3, stats=fetch_stats)
+        except Exception as e:
+            fail(str(e))
 
     # Not a failure: nothing was saved recently enough to discuss (see
     # fetch_recent_articles' recency window). Exit 0 so the scheduled run stays
@@ -785,11 +915,11 @@ async def main():
 
     # Load custom host personalities once and reuse for script + audio (#13)
     prefs = fetch_podcast_preferences()
-    print(f"Generating script for {len(articles)} articles "
+    print(f"Generating {'blended custom ' if blended else ''}script for {len(articles)} articles "
           f"(hosts: {prefs['host_a_name']} & {prefs['host_b_name']})...")
 
     try:
-        script = generate_script(articles, prefs=prefs)
+        script = generate_script(articles, prefs=prefs, blended=blended)
     except Exception as e:
         fail(str(e))
 
@@ -805,7 +935,12 @@ async def main():
         fail("could not save the episode record to Supabase — check "
              "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / USER_ID.")
 
-    mark_articles_discussed([art["id"] for art in articles], episode_id)
+    # A custom episode can include saves a daily episode already covered;
+    # leave those linked to their original episode rather than moving them.
+    mark_articles_discussed(
+        [art["id"] for art in articles if not art.get("podcast_discussed_at")],
+        episode_id,
+    )
 
     # Best-effort collage artwork from the covered articles' images. Never
     # fatal — an episode with no artwork is fine, this is enrichment only.
