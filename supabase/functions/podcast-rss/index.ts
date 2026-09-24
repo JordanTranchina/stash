@@ -63,6 +63,22 @@ function renderWelcomeItem(supabaseUrl: string, feedCreatedAt: string): string {
     </item>`;
 }
 
+// Thrown for a failed Supabase query, keeping the HTTP status so the handler
+// can tell a transient upstream failure from a real bug. The PostgREST error
+// is a plain object, which Sentry could only title "Server.?" (issue #165).
+export class QueryError extends Error {
+  constructor(what: string, public status: number, detail: string) {
+    super(`${what} query failed (HTTP ${status}): ${detail}`);
+    this.name = "QueryError";
+  }
+}
+
+// A 5xx from the API gateway (e.g. 504 Gateway Timeout) or no response at all
+// (status 0) is a passing Supabase-side failure, not a fault in this function.
+export function isTransientStatus(status: number): boolean {
+  return status === 0 || status >= 500;
+}
+
 serve(async (req) => {
   try {
     // Podcast apps can't sign in, so the feed is scoped by an unguessable token
@@ -80,11 +96,15 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: feed } = await supabase
+    const { data: feed, error: feedError, status: feedStatus } = await supabase
       .from("podcast_feeds")
       .select("user_id, created_at")
       .eq("token", token)
       .maybeSingle();
+
+    // Check the error before the 404 below: a timed-out lookup also returns no
+    // row, and a 404 tells podcast apps the feed is gone for good.
+    if (feedError) throw new QueryError("podcast_feeds", feedStatus, feedError.message);
 
     // An unknown token is a 404, not a 500 — podcast apps retry 5xx forever but
     // handle a 404 as "this feed is gone".
@@ -95,7 +115,7 @@ serve(async (req) => {
       });
     }
 
-    const { data: episodes, error } = await supabase
+    const { data: episodes, error, status } = await supabase
       .from("podcast_episodes")
       .select("id, title, description, audio_url, duration_seconds, size_bytes, created_at, chapters, artwork_url")
       .eq("user_id", feed.user_id)
@@ -107,7 +127,7 @@ serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(10);
 
-    if (error) throw error;
+    if (error) throw new QueryError("podcast_episodes", status, error.message);
 
     // Base URLs for the companion chapters endpoint (Podcasting 2.0 chapters)
     // and this feed itself. Both carry the token: the chapters endpoint uses it
@@ -185,6 +205,14 @@ ${itemsXml}
     });
   } catch (err) {
     await reportError(err, "podcast-rss");
+    // Podcast apps poll on a schedule, so ask them to come back later instead
+    // of serving a hard 500 for an upstream hiccup.
+    if (err instanceof QueryError && isTransientStatus(err.status)) {
+      return new Response("Service Unavailable", {
+        status: 503,
+        headers: { "Content-Type": "text/plain", "Retry-After": "300" },
+      });
+    }
     return new Response(`Internal Server Error: ${err.message}`, {
       status: 500,
       headers: { "Content-Type": "text/plain" },
