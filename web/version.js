@@ -1,6 +1,6 @@
 // AUTO-GENERATED on merge to main by .github/workflows/version-bump.yml — do not edit by hand.
 window.STASH_VERSION = {
-  build: 257,
-  commit: "5964530",
+  build: 259,
+  commit: "303653b",
   date: "2026-09-24"
 };
