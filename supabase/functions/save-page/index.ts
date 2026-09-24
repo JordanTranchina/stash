@@ -2,7 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // `?external=canvas` keeps esm.sh/the edge bundler from trying to build
 // linkedom's optional native `canvas` dependency (a .node binary that fails to
-// bundle). We never render <canvas>, so it's only ever lazily referenced.
+// bundle). deno.json maps `canvas` to canvas_stub.js, which must stay inert:
+// linkedom builds a canvas for every <canvas> tag it parses.
 import { parseHTML } from "https://esm.sh/linkedom@0.16.8?external=canvas";
 import { Readability } from "https://esm.sh/@mozilla/readability@0.5.0";
 import { reportError } from "../_shared/sentry.ts";
