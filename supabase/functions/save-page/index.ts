@@ -385,28 +385,11 @@ function waybackRawUrl(snapshotUrl: string | null | undefined): string | null {
   return match ? `https://web.archive.org/web/${match[1]}id_/${match[2]}` : null;
 }
 
-// When the origin blocks us (bot wall, 403, paywall), try other public ways to
-// read the same page so the save still gets its text:
-//   1. Jina Reader, only when a JINA_API_KEY secret is set. It renders the
-//      page in a real browser, so it also works for new articles.
-//   2. The Internet Archive's newest capture, which needs no key but only
-//      exists once the page has been archived.
+// When the origin blocks us (bot wall, 403, paywall), read the Internet
+// Archive's newest capture of the same page so the save still gets its text.
+// This needs no key, but only works once the page has been archived.
 // Every failure is soft: the caller falls back to a link-only save.
 async function fetchBlockedArticleHtml(url: string): Promise<string> {
-  const jinaKey = Deno.env.get("JINA_API_KEY");
-  if (jinaKey) {
-    try {
-      const response = await fetch(`https://r.jina.ai/${url}`, {
-        headers: { "Authorization": `Bearer ${jinaKey}`, "X-Return-Format": "html" },
-        signal: AbortSignal.timeout(20000),
-      });
-      const html = response.ok ? await response.text() : "";
-      if (html && !isBotWall(html)) return html;
-    } catch (e) {
-      console.error("Jina Reader fallback failed:", e);
-    }
-  }
-
   try {
     const lookup = await fetch(
       `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`,

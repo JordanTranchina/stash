@@ -4,8 +4,8 @@
  * Sites such as Axios and OpenAI sit behind Cloudflare bot protection and
  * answer every server-side fetch with a challenge page (usually HTTP 403,
  * sometimes 200). save-page used to keep such saves as a bare link. It now
- * spots the challenge page and falls back to other public copies of the same
- * article (Jina Reader when configured, then the Internet Archive).
+ * spots the challenge page and falls back to the Internet Archive's newest
+ * capture of the same article.
  *
  * supabase/functions/save-page/index.ts is a Deno/TypeScript edge function, so
  * (as in x-save-page.test.js) the pure helpers are mirrored here and tested in
