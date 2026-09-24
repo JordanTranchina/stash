@@ -28,6 +28,38 @@ const REDIRECT_WRAPPER_HOSTS = [
   "trib.al",
 ];
 
+// Turn the caller's `url` field into a fetchable http(s) URL, or null when it
+// holds no link at all. Share sheets rarely send a bare link: the text can be
+// "Title https://…", and an iOS Shortcut whose body still holds the placeholder
+// text instead of the URLs variable sends the literal word "URLs" (issue #167).
+// Without this check such input reached new URL()/fetch() and failed as a 500
+// "Invalid URL" in Sentry instead of a 400 the caller can act on. Mirrors the
+// scheme and bare-host rules of StashSave.extractUrlFromText in web/save-lib.js.
+const BARE_HOST_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}(?::\d{2,5})?(?:[\/?#]\S*)?$/i;
+
+function normalizeSaveUrl(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const raw = input.trim();
+  if (!raw) return null;
+
+  const trimPunctuation = (u: string) => u.replace(/[)\]}>.,;:!?'"]+$/, "");
+  const scheme = raw.match(/https?:\/\/[^\s]+/i);
+  let candidate = "";
+  if (scheme) candidate = trimPunctuation(scheme[0]);
+  else if (BARE_HOST_RE.test(trimPunctuation(raw))) candidate = "https://" + trimPunctuation(raw);
+  if (!candidate) return null;
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    // Keep the caller's spelling (not parsed.href) so duplicate checks still
+    // match saves stored before this helper existed.
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 // X (Twitter) hosts. X refuses to serve article content to a logged-out
 // server-side reader: what comes back is a login wall, and because that wall is
 // the densest run of text in an otherwise <p>-free React shell, Readability
@@ -439,11 +471,21 @@ serve(async (req) => {
       userId = authData.user.id;
     }
 
-    const { url, highlight, source, prefetched, created_at, title } = await req.json();
+    const { url: rawUrl, highlight, source, prefetched, created_at, title } = await req.json();
 
-    if (!url) {
+    if (!rawUrl) {
       return new Response(
         JSON.stringify({ error: "url required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const url = normalizeSaveUrl(rawUrl);
+    if (!url) {
+      return new Response(
+        JSON.stringify({
+          error: `Not a valid link: "${String(rawUrl).slice(0, 100)}". Send an http(s) URL in the url field.`,
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
