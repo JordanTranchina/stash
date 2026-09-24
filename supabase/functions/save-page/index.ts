@@ -340,7 +340,10 @@ async function fetchArticleHtml(inputUrl: string): Promise<{ html: string; final
 
     // response.url reflects any HTTP-level redirects that were followed.
     const resolvedUrl = response.url || currentUrl;
-    const html = response.ok ? await response.text() : "";
+    let html = response.ok ? await response.text() : "";
+    // Some bot walls answer 200 with a challenge page; treat that the same as
+    // a refused fetch so the challenge text never becomes the article body.
+    if (isBotWall(html)) html = "";
     if (!html) return { html, finalUrl: resolvedUrl };
 
     // If we landed on a known wrapper host (or the HTML looks like an
@@ -360,7 +363,70 @@ async function fetchArticleHtml(inputUrl: string): Promise<{ html: string; final
 
   // Ran out of hops; do one last plain fetch of wherever we ended up.
   const response = await fetch(currentUrl, { headers: { "User-Agent": BROWSER_UA }, redirect: "follow" });
-  return { html: response.ok ? await response.text() : "", finalUrl: response.url || currentUrl };
+  const html = response.ok ? await response.text() : "";
+  return { html: isBotWall(html) ? "" : html, finalUrl: response.url || currentUrl };
+}
+
+// Markers of a bot-protection challenge page (Cloudflare "Just a moment..." /
+// "Attention Required!", and the generic challenge-platform script). Sites
+// such as Axios and OpenAI serve one of these to every server-side fetch.
+const BOT_WALL_RE = /<title>\s*(?:Just a moment\.\.\.|Attention Required! \| Cloudflare)\s*<\/title>|\/cdn-cgi\/challenge-platform\/|window\._cf_chl_opt/i;
+
+function isBotWall(html: string): boolean {
+  return !!html && BOT_WALL_RE.test(html);
+}
+
+// The Wayback Machine URL for an archived capture, rewritten to the `id_` form
+// so the page comes back exactly as archived, without the Wayback toolbar or
+// rewritten links. Returns null when there is no usable capture.
+function waybackRawUrl(snapshotUrl: string | null | undefined): string | null {
+  if (!snapshotUrl) return null;
+  const match = String(snapshotUrl).match(/^https?:\/\/web\.archive\.org\/web\/(\d+)\/(.+)$/);
+  return match ? `https://web.archive.org/web/${match[1]}id_/${match[2]}` : null;
+}
+
+// When the origin blocks us (bot wall, 403, paywall), try other public ways to
+// read the same page so the save still gets its text:
+//   1. Jina Reader, only when a JINA_API_KEY secret is set. It renders the
+//      page in a real browser, so it also works for new articles.
+//   2. The Internet Archive's newest capture, which needs no key but only
+//      exists once the page has been archived.
+// Every failure is soft: the caller falls back to a link-only save.
+async function fetchBlockedArticleHtml(url: string): Promise<string> {
+  const jinaKey = Deno.env.get("JINA_API_KEY");
+  if (jinaKey) {
+    try {
+      const response = await fetch(`https://r.jina.ai/${url}`, {
+        headers: { "Authorization": `Bearer ${jinaKey}`, "X-Return-Format": "html" },
+        signal: AbortSignal.timeout(20000),
+      });
+      const html = response.ok ? await response.text() : "";
+      if (html && !isBotWall(html)) return html;
+    } catch (e) {
+      console.error("Jina Reader fallback failed:", e);
+    }
+  }
+
+  try {
+    const lookup = await fetch(
+      `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!lookup.ok) return "";
+    const closest = (await lookup.json())?.archived_snapshots?.closest;
+    const rawUrl = closest?.available ? waybackRawUrl(closest.url) : null;
+    if (!rawUrl) return "";
+
+    const response = await fetch(rawUrl, {
+      headers: { "User-Agent": BROWSER_UA },
+      signal: AbortSignal.timeout(15000),
+    });
+    const html = response.ok ? await response.text() : "";
+    return isBotWall(html) ? "" : html;
+  } catch (e) {
+    console.error("Wayback fallback failed:", e);
+    return "";
+  }
 }
 
 serve(async (req) => {
@@ -468,8 +534,13 @@ serve(async (req) => {
       // article so we scrape the full content the way Pocket does. Some sites
       // (Medium and other bot-blocked or paywalled pages) refuse the fetch —
       // that's handled by the graceful fallback below, not by failing the save.
-      const { html, finalUrl } = await fetchArticleHtml(url);
+      let { html, finalUrl } = await fetchArticleHtml(url);
       resolvedUrl = finalUrl;
+      // Bot-blocked sites (Axios, OpenAI, …) refuse every server-side fetch.
+      // X is left out: its fallback is the embed endpoint below.
+      if (!html && !isXHost(finalUrl)) {
+        html = await fetchBlockedArticleHtml(finalUrl);
+      }
       article = html ? extractArticle(html, finalUrl) : null;
 
       // On X, whatever Readability found is the login wall, not the post, so

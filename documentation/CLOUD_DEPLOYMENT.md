@@ -98,6 +98,18 @@ If you use Supabase Edge Functions (like `save-page`), secrets are managed via t
 1. Go to your [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions).
 2. Add or update your secrets there.
 
+### `save-page` function: bot-blocked sites (optional)
+
+Some sites (Axios, OpenAI and others behind Cloudflare bot protection) refuse
+every server-side fetch. When that happens, `save-page` tries the Internet
+Archive's newest capture of the page, which needs no setup. New articles are
+often not archived yet, so you can also set:
+
+- `JINA_API_KEY` — a free key from [Jina Reader](https://jina.ai/reader/).
+  When set, `save-page` asks Jina Reader for a blocked page before it tries the
+  Internet Archive. The blocked page's URL is sent to Jina. Leave it unset to
+  skip this step.
+
 ### `report-bug` function (in-app "Report a Bug")
 
 The `report-bug` Edge Function files an in-app bug report as a GitHub issue and
@@ -148,6 +160,7 @@ Apply `supabase/migrations/20260906_podcast_generation_requests.sql`
 | **Supabase Access Token** (for automated deploys) | [Supabase Access Tokens](https://supabase.com/dashboard/account/tokens) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **Supabase DB Password** (for automated deploys) | [Project Settings → Database](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/database) | [GitHub Secrets](https://github.com/JordanTranchina/stash/settings/secrets/actions) |
 | **`GITHUB_TOKEN` (report-bug + request-podcast)** | [Fine-grained PATs](https://github.com/settings/personal-access-tokens) — `stash` repo, Issues: R/W + Actions: R/W | [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions) |
+| **`JINA_API_KEY`** (optional, save-page fallback for bot-blocked sites) | [Jina Reader](https://jina.ai/reader/) | [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/jntnmvxkirrosxjquuoy/settings/edge-functions) |
 | **Vercel Personal Access Token** (only if you ever script Vercel from CI) | [Vercel Personal Access Tokens](https://vercel.com/account/tokens) | Not needed today — Vercel deploys via its own GitHub integration, no GitHub secret required |
 
 ### Note on `VERCEL_OIDC_TOKEN`
