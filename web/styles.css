@@ -646,6 +646,11 @@ select {
 
 .search-container input {
   flex: 1;
+  /* A flex item's default min-width is auto (its content's intrinsic
+     width), so without this the input refuses to shrink below the width
+     of its placeholder text and overflows the pill at narrow viewports —
+     at 320px it renders underneath the sort/add/bug-report buttons. */
+  min-width: 0;
   border: none;
   background: none;
   /* 16px, not --text-base (15px) — see #auth-form input above. */
@@ -2526,12 +2531,15 @@ select {
   position: fixed;
   /* Sit above the bottom tab bar */
   bottom: calc(84px + env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
+  /* Centered horizontally via logical properties instead of left: 50% +
+     transform: translateX(-50%) — leaves transform free for the hide/show
+     slide below instead of the two having to compose in one declaration. */
+  inset-inline: 16px;
+  margin-inline: auto;
+  width: fit-content;
   display: flex;
   align-items: center;
   gap: 16px;
-  max-width: calc(100vw - 32px);
   background: var(--text);
   color: var(--bg);
   padding: 12px 20px;
@@ -2589,7 +2597,7 @@ select {
 
 .toast.hidden {
   opacity: 0;
-  transform: translateX(-50%) translateY(20px);
+  transform: translateY(20px);
   pointer-events: none;
 }
 
