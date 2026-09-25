@@ -43,5 +43,5 @@ const CONFIG = {
   // one thing — their own save token — via a built-in Shortcuts "import
   // question". Settings > iOS Share Sheet links here when set. Leave blank
   // to fall back to the manual, build-it-yourself steps in that guide.
-  IOS_SHORTCUT_URL: '',
+  IOS_SHORTCUT_URL: 'https://www.icloud.com/shortcuts/c72d992550e649c4997e50ded89449fb',
 };
