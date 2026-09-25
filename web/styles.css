@@ -597,12 +597,6 @@ select {
   cursor: pointer;
 }
 
-.header-select-btn:hover,
-.header-select-btn[aria-pressed="true"] {
-  color: var(--primary);
-  border-color: var(--primary);
-}
-
 .header-bug-btn:hover {
   color: var(--text);
   border-color: var(--primary);
@@ -2480,8 +2474,8 @@ select {
   max-width: calc(100vw - 32px);
   background: var(--text);
   color: var(--bg);
-  padding: 12px 20px;
-  border-radius: 99px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
   font-size: 14px;
   font-weight: 500;
   z-index: 1000;
@@ -3043,6 +3037,21 @@ select {
 }
 
 /* ---- Custom podcast select mode (#133) ---------------------------------- */
+
+/* Long press starts select mode (#133): stop iOS's link preview callout
+   and text selection from hijacking the press. */
+.save-card {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Right swipe past the threshold: hint that letting go selects the card. */
+.save-card-swipe.will-select .save-card {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
 
 /* Room below the last card so the fixed select bar never hides it. */
 .saves-grid.select-mode {

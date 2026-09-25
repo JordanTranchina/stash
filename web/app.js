@@ -449,14 +449,20 @@ class StashApp {
       // Cards are real <a href="?open=..."> links now (keyboard + Cmd/Ctrl/
       // middle-click support) but a plain click still opens in the in-page
       // reading pane instead of navigating — only hijack the plain case.
+      // The click that ends a drag or a long press is part of that gesture,
+      // not a tap: drop it (once) instead of opening or toggling the card.
+      const swipeEl = card.closest('.save-card-swipe');
+      if (swipeEl && swipeEl._suppressClick) {
+        swipeEl._suppressClick = false;
+        e.preventDefault();
+        return;
+      }
       if (this.selectMode) {
         e.preventDefault();
         this.toggleSaveSelected(card.dataset.id);
         return;
       }
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-      const swipeEl = card.closest('.save-card-swipe');
-      if (swipeEl && swipeEl._suppressClick) return;
       e.preventDefault();
       const save = this._savesById?.get(card.dataset.id);
       if (save) this.openReadingPane(save);
@@ -616,12 +622,9 @@ class StashApp {
       this.showAddUrlModal();
     });
 
-    // Custom podcast (#133): pick saves in the list, then make one blended
+    // Custom podcast (#133): long-press or right-swipe a card to start
+    // picking saves (see attachSwipeToArchive), then make one blended
     // episode about them.
-    document.getElementById('header-select-btn')?.addEventListener('click', () => {
-      if (this.selectMode) this.exitSelectMode();
-      else this.enterSelectMode();
-    });
     document.getElementById('select-bar-cancel')?.addEventListener('click', () => {
       this.exitSelectMode();
     });
@@ -1486,8 +1489,22 @@ class StashApp {
   attachSwipeToArchive(swipeEl, cardEl, save, restore = false) {
     const action = swipeEl.querySelector('.save-card-swipe-action');
     const THRESHOLD = 90; // px of left-drag needed to commit the archive
+    // A right-drag past the same distance, or a press held still for
+    // LONG_PRESS_MS, starts select mode with this card picked (#133).
+    const LONG_PRESS_MS = 500;
     let startX = 0, startY = 0, dx = 0;
     let decided = false, horizontal = false;
+    let longPressTimer = null;
+
+    const startSelecting = () => {
+      // Swallow the click that follows the gesture so it doesn't unpick the
+      // card again (select mode's click handler toggles).
+      swipeEl._suppressClick = true;
+      setTimeout(() => { swipeEl._suppressClick = false; }, 600);
+      if (!this.selectMode) this.enterSelectMode();
+      if (!this.selectedSaveIds.has(save.id)) this.toggleSaveSelected(save.id);
+      navigator.vibrate?.(10);
+    };
 
     const onMove = (e) => {
       const mx = e.clientX - startX;
@@ -1496,6 +1513,7 @@ class StashApp {
       // Decide once whether this gesture is a horizontal swipe or a vertical scroll
       if (!decided) {
         if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        clearTimeout(longPressTimer);
         decided = true;
         horizontal = Math.abs(mx) > Math.abs(my);
         if (horizontal) {
@@ -1505,14 +1523,23 @@ class StashApp {
       if (!horizontal) return;
 
       e.preventDefault();
-      dx = Math.min(0, mx); // only allow dragging left
+      // Left drags archive; right drags select, capped at the threshold
+      // since nothing sits behind the card on that side.
+      dx = Math.min(mx, THRESHOLD);
       cardEl.style.transform = `translateX(${dx}px)`;
+      if (dx >= 0) {
+        swipeEl.classList.remove('will-archive');
+        swipeEl.classList.toggle('will-select', dx >= THRESHOLD);
+        return;
+      }
+      swipeEl.classList.remove('will-select');
       const progress = Math.min(1, Math.abs(dx) / THRESHOLD);
       if (action) action.style.opacity = String(0.5 + 0.5 * progress);
       swipeEl.classList.toggle('will-archive', Math.abs(dx) >= THRESHOLD);
     };
 
     const onUp = () => {
+      clearTimeout(longPressTimer);
       cardEl.removeEventListener('pointermove', onMove);
       cardEl.removeEventListener('pointerup', onUp);
       cardEl.removeEventListener('pointercancel', onUp);
@@ -1523,7 +1550,11 @@ class StashApp {
       setTimeout(() => { swipeEl._suppressClick = false; }, 400);
 
       cardEl.style.transition = 'transform 0.2s ease';
-      if (Math.abs(dx) >= THRESHOLD) {
+      if (dx >= THRESHOLD) {
+        cardEl.style.transform = 'translateX(0)';
+        swipeEl.classList.remove('will-select');
+        startSelecting();
+      } else if (dx <= -THRESHOLD) {
         cardEl.style.transform = 'translateX(-100%)';
         setTimeout(() => {
           if (restore) this.restoreSaveById(save.id, swipeEl);
@@ -1531,7 +1562,7 @@ class StashApp {
         }, 160);
       } else {
         cardEl.style.transform = 'translateX(0)';
-        swipeEl.classList.remove('will-archive');
+        swipeEl.classList.remove('will-archive', 'will-select');
         if (action) action.style.opacity = '';
       }
     };
@@ -1547,9 +1578,17 @@ class StashApp {
       decided = false;
       horizontal = false;
       cardEl.style.transition = 'none';
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(startSelecting, LONG_PRESS_MS);
       cardEl.addEventListener('pointermove', onMove);
       cardEl.addEventListener('pointerup', onUp);
       cardEl.addEventListener('pointercancel', onUp);
+    });
+
+    // A long press on a link opens the browser's own menu (Android) —
+    // not wanted once the press has started select mode.
+    cardEl.addEventListener('contextmenu', (e) => {
+      if (swipeEl._suppressClick) e.preventDefault();
     });
   }
 
@@ -2092,10 +2131,6 @@ class StashApp {
     if (headerAddBtn) {
       headerAddBtn.style.display = showSavesControls;
     }
-    const headerSelectBtn = document.getElementById('header-select-btn');
-    if (headerSelectBtn) {
-      headerSelectBtn.style.display = showSavesControls;
-    }
     if (this.selectMode && showSavesControls === 'none') this.exitSelectMode();
 
     // Toggle between the saves view and the settings view
@@ -2297,7 +2332,6 @@ class StashApp {
     this.selectMode = true;
     this.selectedSaveIds.clear();
     document.getElementById('saves-container')?.classList.add('select-mode');
-    document.getElementById('header-select-btn')?.setAttribute('aria-pressed', 'true');
     document.getElementById('select-bar')?.classList.remove('hidden');
     this.updateSelectBar();
     window.StashAnalytics?.capture('podcast_select_mode_entered', { view: this.currentView });
@@ -2309,7 +2343,6 @@ class StashApp {
     const container = document.getElementById('saves-container');
     container?.classList.remove('select-mode');
     container?.querySelectorAll('.save-card.selected').forEach(el => el.classList.remove('selected'));
-    document.getElementById('header-select-btn')?.setAttribute('aria-pressed', 'false');
     document.getElementById('select-bar')?.classList.add('hidden');
   }
 
@@ -2317,9 +2350,13 @@ class StashApp {
     if (!id) return;
     if (this.selectedSaveIds.has(id)) {
       this.selectedSaveIds.delete(id);
+      if (this.selectedSaveIds.size === 0) {
+        this.exitSelectMode();
+        return;
+      }
     } else {
       if (this.selectedSaveIds.size >= CUSTOM_PODCAST_MAX_SAVES) {
-        this.showToast(`You can pick up to ${CUSTOM_PODCAST_MAX_SAVES} saves for one episode.`);
+        this.showToast(`${CUSTOM_PODCAST_MAX_SAVES} saves max`);
         return;
       }
       this.selectedSaveIds.add(id);
@@ -2377,7 +2414,7 @@ class StashApp {
       if (res.ok) {
         window.StashAnalytics?.capture('podcast_custom_requested', { count: saveIds.length });
         this.exitSelectMode();
-        this.showToast('On it! Your custom episode shows up in Podcasts in a few minutes.');
+        this.showToast('Episode on its way');
         return;
       }
       this.showToast(body.error || "Couldn't start your episode just now. Try again in a bit.", null, true);
