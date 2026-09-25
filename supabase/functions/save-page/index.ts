@@ -2,7 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // `?external=canvas` keeps esm.sh/the edge bundler from trying to build
 // linkedom's optional native `canvas` dependency (a .node binary that fails to
-// bundle). We never render <canvas>, so it's only ever lazily referenced.
+// bundle). deno.json maps `canvas` to canvas_stub.js, which must stay inert:
+// linkedom builds a canvas for every <canvas> tag it parses.
 import { parseHTML } from "https://esm.sh/linkedom@0.16.8?external=canvas";
 import { Readability } from "https://esm.sh/@mozilla/readability@0.5.0";
 import { reportError } from "../_shared/sentry.ts";
@@ -27,6 +28,38 @@ const REDIRECT_WRAPPER_HOSTS = [
   "lnkd.in",
   "trib.al",
 ];
+
+// Turn the caller's `url` field into a fetchable http(s) URL, or null when it
+// holds no link at all. Share sheets rarely send a bare link: the text can be
+// "Title https://…", and an iOS Shortcut whose body still holds the placeholder
+// text instead of the URLs variable sends the literal word "URLs" (issue #167).
+// Without this check such input reached new URL()/fetch() and failed as a 500
+// "Invalid URL" in Sentry instead of a 400 the caller can act on. Mirrors the
+// scheme and bare-host rules of StashSave.extractUrlFromText in web/save-lib.js.
+const BARE_HOST_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}(?::\d{2,5})?(?:[\/?#]\S*)?$/i;
+
+function normalizeSaveUrl(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const raw = input.trim();
+  if (!raw) return null;
+
+  const trimPunctuation = (u: string) => u.replace(/[)\]}>.,;:!?'"]+$/, "");
+  const scheme = raw.match(/https?:\/\/[^\s]+/i);
+  let candidate = "";
+  if (scheme) candidate = trimPunctuation(scheme[0]);
+  else if (BARE_HOST_RE.test(trimPunctuation(raw))) candidate = "https://" + trimPunctuation(raw);
+  if (!candidate) return null;
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    // Keep the caller's spelling (not parsed.href) so duplicate checks still
+    // match saves stored before this helper existed.
+    return candidate;
+  } catch {
+    return null;
+  }
+}
 
 // X (Twitter) hosts. X refuses to serve article content to a logged-out
 // server-side reader: what comes back is a login wall, and because that wall is
@@ -340,7 +373,10 @@ async function fetchArticleHtml(inputUrl: string): Promise<{ html: string; final
 
     // response.url reflects any HTTP-level redirects that were followed.
     const resolvedUrl = response.url || currentUrl;
-    const html = response.ok ? await response.text() : "";
+    let html = response.ok ? await response.text() : "";
+    // Some bot walls answer 200 with a challenge page; treat that the same as
+    // a refused fetch so the challenge text never becomes the article body.
+    if (isBotWall(html)) html = "";
     if (!html) return { html, finalUrl: resolvedUrl };
 
     // If we landed on a known wrapper host (or the HTML looks like an
@@ -360,7 +396,53 @@ async function fetchArticleHtml(inputUrl: string): Promise<{ html: string; final
 
   // Ran out of hops; do one last plain fetch of wherever we ended up.
   const response = await fetch(currentUrl, { headers: { "User-Agent": BROWSER_UA }, redirect: "follow" });
-  return { html: response.ok ? await response.text() : "", finalUrl: response.url || currentUrl };
+  const html = response.ok ? await response.text() : "";
+  return { html: isBotWall(html) ? "" : html, finalUrl: response.url || currentUrl };
+}
+
+// Markers of a bot-protection challenge page (Cloudflare "Just a moment..." /
+// "Attention Required!", and the generic challenge-platform script). Sites
+// such as Axios and OpenAI serve one of these to every server-side fetch.
+const BOT_WALL_RE = /<title>\s*(?:Just a moment\.\.\.|Attention Required! \| Cloudflare)\s*<\/title>|\/cdn-cgi\/challenge-platform\/|window\._cf_chl_opt/i;
+
+function isBotWall(html: string): boolean {
+  return !!html && BOT_WALL_RE.test(html);
+}
+
+// The Wayback Machine URL for an archived capture, rewritten to the `id_` form
+// so the page comes back exactly as archived, without the Wayback toolbar or
+// rewritten links. Returns null when there is no usable capture.
+function waybackRawUrl(snapshotUrl: string | null | undefined): string | null {
+  if (!snapshotUrl) return null;
+  const match = String(snapshotUrl).match(/^https?:\/\/web\.archive\.org\/web\/(\d+)\/(.+)$/);
+  return match ? `https://web.archive.org/web/${match[1]}id_/${match[2]}` : null;
+}
+
+// When the origin blocks us (bot wall, 403, paywall), read the Internet
+// Archive's newest capture of the same page so the save still gets its text.
+// This needs no key, but only works once the page has been archived.
+// Every failure is soft: the caller falls back to a link-only save.
+async function fetchBlockedArticleHtml(url: string): Promise<string> {
+  try {
+    const lookup = await fetch(
+      `https://archive.org/wayback/available?url=${encodeURIComponent(url)}`,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!lookup.ok) return "";
+    const closest = (await lookup.json())?.archived_snapshots?.closest;
+    const rawUrl = closest?.available ? waybackRawUrl(closest.url) : null;
+    if (!rawUrl) return "";
+
+    const response = await fetch(rawUrl, {
+      headers: { "User-Agent": BROWSER_UA },
+      signal: AbortSignal.timeout(15000),
+    });
+    const html = response.ok ? await response.text() : "";
+    return isBotWall(html) ? "" : html;
+  } catch (e) {
+    console.error("Wayback fallback failed:", e);
+    return "";
+  }
 }
 
 serve(async (req) => {
@@ -439,11 +521,21 @@ serve(async (req) => {
       userId = authData.user.id;
     }
 
-    const { url, highlight, source, prefetched, created_at, title } = await req.json();
+    const { url: rawUrl, highlight, source, prefetched, created_at, title } = await req.json();
 
-    if (!url) {
+    if (!rawUrl) {
       return new Response(
         JSON.stringify({ error: "url required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const url = normalizeSaveUrl(rawUrl);
+    if (!url) {
+      return new Response(
+        JSON.stringify({
+          error: `Not a valid link: "${String(rawUrl).slice(0, 100)}". Send an http(s) URL in the url field.`,
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -468,8 +560,13 @@ serve(async (req) => {
       // article so we scrape the full content the way Pocket does. Some sites
       // (Medium and other bot-blocked or paywalled pages) refuse the fetch —
       // that's handled by the graceful fallback below, not by failing the save.
-      const { html, finalUrl } = await fetchArticleHtml(url);
+      let { html, finalUrl } = await fetchArticleHtml(url);
       resolvedUrl = finalUrl;
+      // Bot-blocked sites (Axios, OpenAI, …) refuse every server-side fetch.
+      // X is left out: its fallback is the embed endpoint below.
+      if (!html && !isXHost(finalUrl)) {
+        html = await fetchBlockedArticleHtml(finalUrl);
+      }
       article = html ? extractArticle(html, finalUrl) : null;
 
       // On X, whatever Readability found is the login wall, not the post, so

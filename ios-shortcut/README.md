@@ -156,5 +156,7 @@ update `IOS_SHORTCUT_URL` — an old link keeps pointing at the old version.
   - A `401` means the `X-Stash-Save-Token` header is wrong, or the token was
     regenerated in Settings. Copy the current token from Settings and update
     the Shortcut.
-  - A `400` means the `url` field didn't come through. Check that Action 3's
-    body uses the **URLs** variable from Action 2.
+  - A `400` means the `url` field didn't come through, or held no link. The
+    error text shows what the server got. If it says `Not a valid link:
+    "URLs"`, the body still holds the placeholder text: delete it and insert
+    the **URLs** variable from Action 2.

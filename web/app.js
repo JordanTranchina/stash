@@ -184,7 +184,7 @@ class StashApp {
       const now = Date.now();
       if (this._lastErrorToast && now - this._lastErrorToast < 15000) return;
       this._lastErrorToast = now;
-      this.showToast('Something went wrong', {
+      this.showToast('Something went wrong. Try reloading the page.', {
         label: 'Report',
         onClick: () => this.bugReporter.open({ prefillError: true }),
       });
@@ -225,9 +225,29 @@ class StashApp {
 
   applyTheme(choice) {
     const effective = this.resolveTheme(choice);
-    document.documentElement.setAttribute('data-theme', effective);
+    this.suppressTransitionsWhile(() => {
+      document.documentElement.setAttribute('data-theme', effective);
+    });
     this.updateThemeToggle(choice);
     this.updateThemeColorMeta(effective);
+  }
+
+  // A theme flip changes color/background/border/shadow on nearly every
+  // element at once, and every transition on those properties (there are a
+  // lot — see the transition rules throughout styles.css) fires together,
+  // so the switch smears instead of snapping. Disables all transitions for
+  // one frame around `change`, then restores them.
+  suppressTransitionsWhile(change) {
+    const style = document.createElement('style');
+    style.textContent = '*, *::before, *::after { transition: none !important; }';
+    document.head.appendChild(style);
+    // Force a reflow so the no-transition rule above is actually in effect
+    // before the change below runs.
+    void document.body.offsetHeight;
+    change();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => style.remove());
+    });
   }
 
   // Keep these hex values in sync with the pre-paint inline script in
@@ -612,6 +632,12 @@ class StashApp {
       this.copySaveToken();
     });
     document.getElementById('share-token-regenerate-btn')?.addEventListener('click', () => {
+      this.promptRegenerateSaveToken();
+    });
+    document.getElementById('share-token-regenerate-cancel-btn')?.addEventListener('click', () => {
+      this.cancelRegenerateSaveToken();
+    });
+    document.getElementById('share-token-regenerate-confirm-btn')?.addEventListener('click', () => {
       this.regenerateSaveToken();
     });
 
@@ -1349,7 +1375,7 @@ class StashApp {
       body.innerHTML = 'Swipe a save to the left to file it here when you\'re done with it.';
     } else {
       heading.textContent = 'Your stash is empty';
-      body.innerHTML = 'Save your first article: go to <strong>Settings &rarr; Add URL</strong> and paste a link. On your phone you can also hit Share in any browser and pick Stash.';
+      body.innerHTML = 'Save your first article: select <strong>+</strong> above and paste a link. On your phone you can also hit Share in any browser and pick Stash.';
     }
   }
 
@@ -2318,7 +2344,7 @@ class StashApp {
 
     if (error) {
       console.error('Failed to subscribe to podcast:', error);
-      this.showToast("Couldn't turn on your podcast. Try again?", null, true);
+      this.showToast("Unable to turn on your podcast. Try again.", null, true);
       return;
     }
 
@@ -3365,6 +3391,7 @@ class StashApp {
   hideShareTokenModal() {
     this.closeModal(document.getElementById('share-token-modal'));
     document.getElementById('share-token-status').classList.add('hidden');
+    this.cancelRegenerateSaveToken();
   }
 
   async loadSaveToken() {
@@ -3398,11 +3425,22 @@ class StashApp {
     }
   }
 
+  // Swaps the modal footer for an inline confirmation instead of a native
+  // confirm() — see the buttons' labels, which name the actual consequence
+  // rather than a generic OK/Cancel.
+  promptRegenerateSaveToken() {
+    document.getElementById('share-token-footer').classList.add('hidden');
+    document.getElementById('share-token-regenerate-confirm').classList.remove('hidden');
+  }
+
+  cancelRegenerateSaveToken() {
+    document.getElementById('share-token-regenerate-confirm').classList.add('hidden');
+    document.getElementById('share-token-footer').classList.remove('hidden');
+  }
+
   async regenerateSaveToken() {
-    const confirmed = confirm(
-      'Regenerate your save token? Your current iOS Shortcut will stop working until you paste the new token into it.'
-    );
-    if (!confirmed) return;
+    document.getElementById('share-token-regenerate-confirm').classList.add('hidden');
+    document.getElementById('share-token-footer').classList.remove('hidden');
 
     const field = document.getElementById('share-token-value');
     field.value = 'Loading…';
