@@ -11,6 +11,9 @@ on:
       max_users:
         description: "Override PODCAST_MAX_USERS for this run"
         required: false
+      save_ids:
+        description: "Custom episode: comma-separated save ids to blend into one episode (needs user_id)"
+        required: false
 
 # A slow multi-user run must not still be going when tomorrow's cron fires —
 # that would double up Gemini/edge-tts load across two overlapping runs.
@@ -110,6 +113,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           USER_ID: ${{ matrix.user_id }}
+          # Custom blended episode (#133). Only honored for a single-user run:
+          # one user's picks must never replace every subscriber's daily episode.
+          PODCAST_SAVE_IDS: ${{ inputs.user_id != '' && inputs.save_ids || '' }}
           # Optional: reports a fatal pipeline error for this user to Sentry
           # (see script.py's _report_fatal_error). No-op if the secret isn't set.
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}

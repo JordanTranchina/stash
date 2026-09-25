@@ -272,3 +272,154 @@ describe('Stash Web App — reading Theme control and app-wide Settings toggle s
     expect(checked).toEqual(['auto']);
   });
 });
+
+describe('Stash Web App — select saves for a custom podcast (#133)', () => {
+  const uuid = (n) => `${String(n).padStart(8, '0')}-0000-0000-0000-000000000000`;
+  const cardSel = (id) => `#saves-container .save-card[data-id="${id}"]`;
+
+  beforeEach(async () => {
+    await page.goto(INDEX_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await new Promise((r) => setTimeout(r, 500));
+    await page.evaluate((ids) => {
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('main-screen').classList.remove('hidden');
+      const app = window.stashApp;
+      app.saves = ids.map((id, i) => ({
+        id,
+        title: `Article ${i}`,
+        url: `https://example.com/${i}`,
+        site_name: 'Example',
+        created_at: '2026-09-01T00:00:00Z',
+      }));
+      app.renderSaves();
+    }, Array.from({ length: 10 }, (_, i) => uuid(i)));
+  });
+
+  // el.click() rather than page.click(): a card near the bottom of the small
+  // test viewport sits under the fixed select bar, so a mouse click at its
+  // centre would land on the bar instead.
+  const clickCard = (id) => page.$eval(cardSel(id), (el) => el.click());
+  // Same for the bar's own buttons: other fixed banners (e.g. the install
+  // prompt) can sit over the bottom of the viewport in this test page.
+  const clickBar = (sel) => page.$eval(sel, (el) => el.click());
+
+  // A press held still, then released — the release's click must not
+  // unpick the card the long press just picked.
+  const longPress = async (id) => {
+    await page.$eval(cardSel(id), (el) => {
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 100, clientY: 100 }));
+    });
+    await new Promise((r) => setTimeout(r, 650));
+    await page.$eval(cardSel(id), (el) => {
+      el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0, clientX: 100, clientY: 100 }));
+      el.click();
+    });
+  };
+
+  const drag = (id, deltaX) => page.$eval(cardSel(id), (el, dx) => {
+    const opts = (x) => ({ bubbles: true, button: 0, clientX: x, clientY: 100 });
+    el.dispatchEvent(new PointerEvent('pointerdown', opts(100)));
+    el.dispatchEvent(new PointerEvent('pointermove', opts(100 + dx / 2)));
+    el.dispatchEvent(new PointerEvent('pointermove', opts(100 + dx)));
+    el.dispatchEvent(new PointerEvent('pointerup', opts(100 + dx)));
+    el.click();
+  }, deltaX);
+
+  const barState = () => page.evaluate(() => ({
+    hidden: document.getElementById('select-bar').classList.contains('hidden'),
+    count: document.getElementById('select-bar-count').textContent,
+    makeDisabled: document.getElementById('select-bar-make').disabled,
+    selected: [...document.querySelectorAll('#saves-container .save-card.selected')].map((e) => e.dataset.id),
+  }));
+
+  test('there is no Select button in the header', async () => {
+    expect(await page.$('#header-select-btn')).toBeNull();
+  });
+
+  test('a plain tap still opens the reader, not select mode', async () => {
+    await clickCard(uuid(0));
+    expect((await barState()).hidden).toBe(true);
+  });
+
+  test('a long press starts select mode with that card picked', async () => {
+    await longPress(uuid(0));
+    const state = await barState();
+    expect(state.hidden).toBe(false);
+    expect(state.selected).toEqual([uuid(0)]);
+    expect(state.count).toBe('1 selected. Pick at least 2.');
+    expect(state.makeDisabled).toBe(true);
+  });
+
+  test('a right swipe starts select mode with that card picked', async () => {
+    await drag(uuid(1), 140);
+    const state = await barState();
+    expect(state.hidden).toBe(false);
+    expect(state.selected).toEqual([uuid(1)]);
+    // And it does not archive the card.
+    expect(await page.$(cardSel(uuid(1)))).not.toBeNull();
+  });
+
+  test('a short right drag does nothing', async () => {
+    await page.evaluate(() => { window.__opened = 0; window.stashApp.openReadingPane = () => { window.__opened++; }; });
+    await drag(uuid(1), 40);
+    expect((await barState()).hidden).toBe(true);
+  });
+
+  test('in select mode, taps toggle cards; unpicking the last one leaves select mode', async () => {
+    await longPress(uuid(0));
+    await clickCard(uuid(1));
+    let state = await barState();
+    expect(state.count).toBe('2 selected');
+    expect(state.makeDisabled).toBe(false);
+    expect(await page.$eval('#reading-pane', (e) => e.classList.contains('open'))).toBe(false);
+
+    await clickCard(uuid(0));
+    await clickCard(uuid(1));
+    state = await barState();
+    expect(state.hidden).toBe(true);
+    expect(state.selected).toEqual([]);
+  });
+
+  test('selection survives a re-render and stops at 8 saves', async () => {
+    await longPress(uuid(0));
+    for (let i = 1; i < 9; i++) await clickCard(uuid(i));
+    await page.evaluate(() => window.stashApp.renderSaves());
+    const state = await barState();
+    expect(state.selected).toHaveLength(8);
+    expect(state.selected).not.toContain(uuid(8));
+  });
+
+  test('Make podcast posts the picked save ids and leaves select mode', async () => {
+    await page.evaluate(() => {
+      window.__podcastRequests = [];
+      window.stashApp.getAccessToken = async () => 'fake-token';
+      window.fetch = async (url, init) => {
+        // Analytics also calls fetch; keep only the podcast request.
+        if (String(url).includes('/functions/v1/request-podcast')) {
+          window.__podcastRequests.push({ url, body: init.body });
+        }
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      };
+    });
+    await longPress(uuid(2));
+    await clickCard(uuid(0));
+    await clickBar('#select-bar-make');
+    await page.waitForFunction(() => window.__podcastRequests.length === 1);
+
+    const [req] = await page.evaluate(() => window.__podcastRequests);
+    expect(req.url).toMatch(/\/functions\/v1\/request-podcast$/);
+    expect(JSON.parse(req.body)).toEqual({ saveIds: [uuid(2), uuid(0)] });
+
+    await page.waitForFunction(() => document.getElementById('select-bar').classList.contains('hidden'));
+    expect((await barState()).selected).toEqual([]);
+    expect(await page.$eval('#toast-message', (e) => e.textContent)).toBe('Episode on its way');
+  });
+
+  test('Cancel leaves select mode and clears the selection', async () => {
+    await longPress(uuid(0));
+    await clickBar('#select-bar-cancel');
+    const state = await barState();
+    expect(state.hidden).toBe(true);
+    expect(state.selected).toEqual([]);
+  });
+});

@@ -71,6 +71,38 @@ export function evaluateRateLimit(
   return { allowed, used, limit, remaining, retryAfterSeconds };
 }
 
+// Custom episode (#133): an optional `saveIds` body field asks for one blended
+// episode about exactly those saves instead of the usual daily selection.
+// Mirrors podcast/script.py's parse_custom_save_ids limits so a bad request is
+// rejected here, before it spends a rate-limit slot on a doomed workflow run.
+export const MIN_CUSTOM_SAVES = 2;
+export const MAX_CUSTOM_SAVES = 8;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Returns the cleaned, de-duplicated ids ([] for a normal episode) or an error.
+export function normalizeSaveIds(input: unknown): { ids: string[] } | { error: string } {
+  if (input === undefined || input === null) return { ids: [] };
+  if (!Array.isArray(input)) return { error: "saveIds must be an array of save ids" };
+
+  const ids: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== "string" || !UUID_RE.test(raw.trim())) {
+      return { error: "saveIds contains an invalid save id" };
+    }
+    const id = raw.trim().toLowerCase();
+    if (!ids.includes(id)) ids.push(id);
+  }
+
+  if (ids.length === 0) return { ids };
+  if (ids.length < MIN_CUSTOM_SAVES) {
+    return { error: `Pick at least ${MIN_CUSTOM_SAVES} saves for a custom episode` };
+  }
+  if (ids.length > MAX_CUSTOM_SAVES) {
+    return { error: `Pick at most ${MAX_CUSTOM_SAVES} saves for a custom episode` };
+  }
+  return { ids };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -88,6 +120,12 @@ serve(async (req) => {
     const { data: authData, error: authError } = await authClient.auth.getUser();
     if (authError || !authData?.user) return json({ error: "Invalid or expired token" }, 401);
     const user = authData.user;
+
+    // The body is optional: the plain "Make an episode now" button sends none.
+    const body = await req.json().catch(() => ({}));
+    const parsed = normalizeSaveIds(body?.saveIds);
+    if ("error" in parsed) return json({ error: parsed.error }, 400);
+    const saveIds = parsed.ids;
 
     const githubToken = Deno.env.get("GITHUB_TOKEN");
     const githubRepo = Deno.env.get("GITHUB_REPO");
@@ -163,7 +201,12 @@ serve(async (req) => {
           "User-Agent": "stash-request-podcast",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ref: workflowRef, inputs: { user_id: user.id } }),
+        body: JSON.stringify({
+          ref: workflowRef,
+          inputs: saveIds.length
+            ? { user_id: user.id, save_ids: saveIds.join(",") }
+            : { user_id: user.id },
+        }),
       },
     );
 

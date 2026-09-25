@@ -246,6 +246,64 @@ def fetch_recent_articles(limit=5, stats=None):
     return formatted_articles
 
 
+def fetch_articles_by_ids(save_ids, stats=None):
+    """Fetch specific saves the user picked for a custom episode (#133).
+
+    Unlike :func:`fetch_recent_articles` there is no recency, archive or
+    already-discussed filter: the user chose these saves on purpose, so an
+    older or archived article is still fair game. Saves are still scoped to
+    USER_ID (a foreign id simply doesn't match) and still skipped when they
+    have no real body text (see :func:`podcast_skip_reason`).
+
+    Articles come back in the order of ``save_ids``. Each carries an extra
+    ``podcast_discussed_at`` key so the caller can avoid overwriting the
+    episode link of a save a daily episode already covered.
+
+    If ``stats`` is given it is filled with ``requested``, ``missing`` (ids
+    with no matching save) and ``skipped`` (``(title, reason)`` pairs).
+    """
+    if not save_ids:
+        return []
+
+    url = f"{SUPABASE_URL}/rest/v1/saves"
+    params = {
+        "select": "id,url,title,content,excerpt,site_name,created_at,published_at,image_url,podcast_discussed_at",
+        "user_id": f"eq.{USER_ID}",
+        "id": f"in.({','.join(save_ids)})",
+    }
+
+    response = requests.get(url, headers=get_headers(), params=params)
+    if response.status_code != 200:
+        raise RuntimeError(f"Error fetching articles: {response.status_code} - {response.text}")
+
+    rows_by_id = {row["id"]: row for row in response.json()}
+
+    if stats is not None:
+        stats["requested"] = len(save_ids)
+        stats["missing"] = [sid for sid in save_ids if sid not in rows_by_id]
+        stats["skipped"] = []
+
+    formatted_articles = []
+    for save_id in save_ids:
+        row = rows_by_id.get(save_id)
+        if not row:
+            print(f"Skipping {save_id} — no such save for this user.")
+            continue
+
+        formatted = format_article(row)
+        skip_reason = podcast_skip_reason(formatted["content"])
+        if skip_reason:
+            print(f"Skipping '{formatted['title']}' — {skip_reason}.")
+            if stats is not None:
+                stats["skipped"].append((formatted["title"], skip_reason))
+            continue
+
+        formatted["podcast_discussed_at"] = row.get("podcast_discussed_at")
+        formatted_articles.append(formatted)
+
+    return formatted_articles
+
+
 def persist_transcript(save_id, transcript):
     """Best-effort write of a fetched YouTube transcript back to the save.
 
