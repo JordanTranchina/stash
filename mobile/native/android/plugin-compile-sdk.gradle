@@ -1,0 +1,28 @@
+// Merged into the generated android/build.gradle by
+// scripts/apply-native-overlays.js.
+//
+// send-intent (the plugin that reads Android's ACTION_SEND share intent)
+// declares compileSdk 35, while the androidx libraries Capacitor 8 pulls in
+// (androidx.core 1.17, androidx.activity 1.11) require every module that
+// depends on them to compile against 36 or later. Left alone, Gradle stops
+// the build at the AAR metadata check:
+//
+//   Dependency 'androidx.core:core:1.17.0' requires libraries and
+//   applications that depend on it to compile against version 36 or later
+//   of the Android APIs. :send-intent is currently compiled against
+//   android-35.
+//
+// Raising compileSdk only changes which APIs a module may compile against,
+// not the behaviour it opts into (targetSdk) or the devices it runs on
+// (minSdk), so applying the app's own compileSdk to the plugin modules is
+// safe and is the standard Capacitor answer to a plugin lagging the SDK.
+// Remove this once send-intent ships a build targeting 36.
+subprojects { subproject ->
+    afterEvaluate {
+        if (subproject.hasProperty('android')) {
+            subproject.android {
+                compileSdkVersion rootProject.ext.compileSdkVersion
+            }
+        }
+    }
+}

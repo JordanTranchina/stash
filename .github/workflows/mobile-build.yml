@@ -1,0 +1,187 @@
+name: Mobile App Builds
+
+# Compiles the native iOS and Android apps end to end and checks that what
+# comes out is a working Stash app, not just a build that exited 0.
+#
+# The two jobs run the exact sequence a developer runs locally
+# (documentation is in mobile/README.md):
+#
+#   npm ci -> npm run build -> cap add -> overlays -> cap sync -> compile
+#
+# so a break anywhere in that chain — a bad overlay, a plugin that no longer
+# resolves, an asset that stopped being copied — fails here rather than on
+# someone's laptop. After each compile the shipped bundle is unpacked and
+# checked with scripts/verify-bundle.js, and the app's own native manifest is
+# checked for the share and deep-link entry points the app needs to work.
+#
+# Path-filtered: these are the slowest jobs in the repo and nothing outside
+# web/ and mobile/ can affect them.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'web/**'
+      - 'mobile/**'
+      - '.github/workflows/mobile-build.yml'
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Android: assemble a debug APK and verify its contents
+  # ---------------------------------------------------------------------------
+  android-build:
+    name: Android App Build (Gradle)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node 22, not the 20 the repo's other jobs use: the Capacitor CLI
+      # refuses to run on anything older.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The runner image already ships the Android SDK, so this only accepts
+      # the licences and pins the platform and build-tools the generated
+      # project asks for (compileSdk 36). `android-actions/setup-android` is
+      # deliberately not used: it fails on the current image trying to install
+      # the long-removed 'tools' package.
+      - name: Prepare the Android SDK
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -1)"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+
+      - name: Install the Capacitor toolchain
+        working-directory: mobile
+        run: npm ci
+
+      - name: Build www/ and generate the Android project
+        working-directory: mobile
+        run: |
+          npm run build
+          npx cap add android
+          npm run overlays
+          npx cap sync android
+
+      - name: Assemble the debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify the APK ships a complete, offline-capable web client
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          rm -rf /tmp/apk && mkdir -p /tmp/apk
+          unzip -q "$APK" -d /tmp/apk
+          node scripts/verify-bundle.js /tmp/apk/assets/public
+
+      - name: Verify the APK declares the share and deep-link entry points
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          AAPT2="$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -1)"
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/manifest.txt
+          # Without these the app builds and runs but cannot be shared to, and
+          # Google sign-in has no way back from the system browser.
+          grep -q 'android.intent.action.SEND' /tmp/manifest.txt
+          grep -q '"stash"' /tmp/manifest.txt
+          grep -q 'android.intent.action.MAIN' /tmp/manifest.txt
+          echo 'Manifest declares ACTION_SEND, the stash:// scheme and a launcher activity'
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: stash-android-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # iOS: build for the simulator (unsigned) and verify the .app bundle
+  # ---------------------------------------------------------------------------
+  ios-build:
+    name: iOS App Build (xcodebuild)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node 22, not the 20 the repo's other jobs use: the Capacitor CLI
+      # refuses to run on anything older.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the Capacitor toolchain
+        working-directory: mobile
+        run: npm ci
+
+      - name: Build www/ and generate the iOS project
+        working-directory: mobile
+        run: |
+          npm run build
+          npx cap add ios
+          npm run overlays
+          npx cap sync ios
+
+      - name: Type-check the Share Extension
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          # The Share Extension target is added to the Xcode project by hand
+          # (see mobile/README.md), so the app build below does not compile
+          # these sources. Type-check them directly against the iOS SDK so a
+          # break in the one piece of native Stash code is still caught here.
+          xcrun -sdk iphonesimulator swiftc \
+            -typecheck \
+            -target "$(uname -m)-apple-ios15.0-simulator" \
+            native/ios/ShareExtension/ShareViewController.swift
+          echo 'ShareViewController.swift type-checks against the iOS SDK'
+
+      - name: Build the app for the simulator
+        working-directory: mobile/ios/App
+        run: |
+          set -euo pipefail
+          xcodebuild -list -project App.xcodeproj
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath /tmp/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify the app bundle ships a complete, offline-capable web client
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          APP="$(find /tmp/DerivedData/Build/Products -maxdepth 2 -name 'App.app' | head -1)"
+          test -n "$APP"
+          node scripts/verify-bundle.js "$APP/public"
+
+      - name: Verify the app registers the stash:// URL scheme
+        run: |
+          set -euo pipefail
+          APP="$(find /tmp/DerivedData/Build/Products -maxdepth 2 -name 'App.app' | head -1)"
+          # Without this the OAuth callback and the Share Extension's handoff
+          # have no way back into the app.
+          plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw "$APP/Info.plist" | grep -qx 'stash'
+          echo 'Info.plist registers the stash:// URL scheme'
