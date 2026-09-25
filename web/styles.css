@@ -3115,10 +3115,34 @@ select {
   user-select: none;
 }
 
-/* Right swipe past the threshold: hint that letting go selects the card. */
-.save-card-swipe.will-select .save-card {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
+/* Right swipe: a "Select" layer on the left takes the place of the
+   archive layer, and turns solid once letting go would select the card. */
+.save-card-swipe-select {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: none;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 24px;
+  background: var(--primary);
+  color: #fff;
+  font-size: var(--text-md);
+  font-weight: 600;
+  opacity: 0.5;
+}
+
+.save-card-swipe.swiping-right .save-card-swipe-select {
+  display: flex;
+}
+
+.save-card-swipe.swiping-right .save-card-swipe-action {
+  display: none;
+}
+
+.save-card-swipe.will-select .save-card-swipe-select {
+  opacity: 1;
 }
 
 /* Room below the last card so the fixed select bar never hides it. */

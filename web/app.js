@@ -1455,6 +1455,12 @@ class StashApp {
           ${swipeActionSvg}
           <span>${swipeRestores ? 'Move to Stash' : 'Archive'}</span>
         </div>
+        <div class="save-card-swipe-select" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Select</span>
+        </div>
         ${cardHtml}
       </div>
     `;
@@ -1553,6 +1559,7 @@ class StashApp {
       // since nothing sits behind the card on that side.
       dx = Math.min(mx, THRESHOLD);
       cardEl.style.transform = `translateX(${dx}px)`;
+      swipeEl.classList.toggle('swiping-right', dx > 0);
       if (dx >= 0) {
         swipeEl.classList.remove('will-archive');
         swipeEl.classList.toggle('will-select', dx >= THRESHOLD);
@@ -1576,6 +1583,9 @@ class StashApp {
       setTimeout(() => { swipeEl._suppressClick = false; }, 400);
 
       cardEl.style.transition = 'transform 0.2s ease';
+      // Keep the "Select" layer behind the card until it has slid back, so
+      // the archive layer doesn't flash through on the way.
+      setTimeout(() => swipeEl.classList.remove('swiping-right'), 220);
       if (dx >= THRESHOLD) {
         cardEl.style.transform = 'translateX(0)';
         swipeEl.classList.remove('will-select');
