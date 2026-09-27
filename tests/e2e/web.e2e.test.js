@@ -272,3 +272,74 @@ describe('Stash Web App — reading Theme control and app-wide Settings toggle s
     expect(checked).toEqual(['auto']);
   });
 });
+
+describe('Stash Web App — Invite Friends', () => {
+  beforeEach(async () => {
+    await page.goto(INDEX_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await new Promise((r) => setTimeout(r, 500));
+    await page.evaluate(() => {
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('main-screen').classList.remove('hidden');
+      // Fake of the my_invites()/invite_friend() database functions, with the
+      // same cap and error codes as supabase/migrations/*_friend_invites.sql.
+      const invites = [{ email: 'already@example.com', joined: true }];
+      const state = () => ({ limit: 3, remaining: 3 - invites.length, invites: [...invites] });
+      window.stashApp.supabase.rpc = async (fn, args) => {
+        if (fn === 'my_invites') return { data: state(), error: null };
+        const email = args.p_email.trim().toLowerCase();
+        if (invites.some((i) => i.email === email)) {
+          return { data: null, error: { code: '23505', message: 'That email can already sign in to Stash.' } };
+        }
+        if (invites.length >= 3) {
+          return { data: null, error: { code: '54000', message: "You've used all 3 of your invites." } };
+        }
+        invites.push({ email, joined: false });
+        return { data: state(), error: null };
+      };
+      window.stashApp.setView('settings');
+    });
+    await page.click('#invite-settings-btn');
+    await page.waitForFunction(() => document.getElementById('invite-remaining').textContent.includes('left'));
+  });
+
+  const invite = async (email) => {
+    await page.$eval('#invite-email', (el, v) => { el.value = v; }, email);
+    await page.click('#invite-submit-btn');
+    await new Promise((r) => setTimeout(r, 100));
+  };
+
+  test('opens from Settings and shows the invites left and past invites', async () => {
+    expect(await page.$eval('#invite-modal', (e) => e.classList.contains('hidden'))).toBe(false);
+    expect(await page.$eval('#invite-remaining', (e) => e.textContent)).toBe('2 of 3 invites left.');
+    expect(await page.$$eval('.invite-item', (els) => els.map((e) => e.textContent)))
+      .toEqual(['already@example.comJoined']);
+  });
+
+  test('adding an email lists it and counts down', async () => {
+    await invite('Friend@Example.com');
+    expect(await page.$eval('#invite-remaining', (e) => e.textContent)).toBe('1 of 3 invites left.');
+    expect(await page.$eval('#invite-status', (e) => e.className)).toContain('success');
+    expect(await page.$eval('#invite-email', (e) => e.value)).toBe('');
+    expect(await page.$$eval('.invite-item-email', (els) => els.map((e) => e.textContent)))
+      .toContain('friend@example.com');
+  });
+
+  test('an invalid email is refused before it reaches the server', async () => {
+    await invite('not-an-email');
+    expect(await page.$eval('#invite-status', (e) => e.textContent)).toMatch(/doesn't look like an email/);
+    expect(await page.$eval('#invite-remaining', (e) => e.textContent)).toBe('2 of 3 invites left.');
+  });
+
+  test('shows the server message for an email that is already listed', async () => {
+    await invite('already@example.com');
+    expect(await page.$eval('#invite-status', (e) => e.textContent)).toBe('That email can already sign in to Stash.');
+  });
+
+  test('disables the form once all 3 invites are used', async () => {
+    await invite('one@example.com');
+    await invite('two@example.com');
+    expect(await page.$eval('#invite-remaining', (e) => e.textContent)).toBe("You've used all 3 of your invites.");
+    expect(await page.$eval('#invite-submit-btn', (e) => e.disabled)).toBe(true);
+    expect(await page.$eval('#invite-email', (e) => e.disabled)).toBe(true);
+  });
+});
