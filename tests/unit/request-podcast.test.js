@@ -77,3 +77,65 @@ describe("evaluateRateLimit", () => {
     expect(v.retryAfterSeconds).toBe(21 * 3600);
   });
 });
+
+// ---------------------------------------------------------------------------
+// normalizeSaveIds mirrored from supabase/functions/request-podcast/index.ts
+// (custom blended episode, #133 — keep in sync with the original).
+// ---------------------------------------------------------------------------
+
+const MIN_CUSTOM_SAVES = 2;
+const MAX_CUSTOM_SAVES = 8;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeSaveIds(input) {
+  if (input === undefined || input === null) return { ids: [] };
+  if (!Array.isArray(input)) return { error: "saveIds must be an array of save ids" };
+
+  const ids = [];
+  for (const raw of input) {
+    if (typeof raw !== "string" || !UUID_RE.test(raw.trim())) {
+      return { error: "saveIds contains an invalid save id" };
+    }
+    const id = raw.trim().toLowerCase();
+    if (!ids.includes(id)) ids.push(id);
+  }
+
+  if (ids.length === 0) return { ids };
+  if (ids.length < MIN_CUSTOM_SAVES) {
+    return { error: `Pick at least ${MIN_CUSTOM_SAVES} saves for a custom episode` };
+  }
+  if (ids.length > MAX_CUSTOM_SAVES) {
+    return { error: `Pick at most ${MAX_CUSTOM_SAVES} saves for a custom episode` };
+  }
+  return { ids };
+}
+
+const uuid = (n) => `${String(n).padStart(8, "0")}-0000-0000-0000-000000000000`;
+
+describe("normalizeSaveIds", () => {
+  test("no saveIds means a normal episode", () => {
+    expect(normalizeSaveIds(undefined)).toEqual({ ids: [] });
+    expect(normalizeSaveIds(null)).toEqual({ ids: [] });
+    expect(normalizeSaveIds([])).toEqual({ ids: [] });
+  });
+
+  test("trims, lowercases and de-duplicates", () => {
+    const a = "AAAAAAAA-0000-0000-0000-000000000000";
+    expect(normalizeSaveIds([` ${a}`, uuid(1), a.toLowerCase()])).toEqual({
+      ids: [a.toLowerCase(), uuid(1)],
+    });
+  });
+
+  test("rejects a non-array and invalid ids", () => {
+    expect(normalizeSaveIds("abc")).toHaveProperty("error");
+    expect(normalizeSaveIds([uuid(1), "1),or(x"])).toHaveProperty("error");
+    expect(normalizeSaveIds([uuid(1), 42])).toHaveProperty("error");
+  });
+
+  test("enforces the min and max number of saves", () => {
+    expect(normalizeSaveIds([uuid(1)]).error).toMatch(/at least 2/);
+    const nine = Array.from({ length: 9 }, (_, i) => uuid(i));
+    expect(normalizeSaveIds(nine).error).toMatch(/at most 8/);
+    expect(normalizeSaveIds(nine.slice(0, 8)).ids).toHaveLength(8);
+  });
+});
