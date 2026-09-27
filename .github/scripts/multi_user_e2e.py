@@ -14,6 +14,10 @@ migrations exist to provide:
   2. Podcast feeds (podcast_feeds + podcast-rss): the RSS feed serves only
      the token-owning user's episodes, and an unknown token 404s rather
      than erroring or leaking anything.
+  3. Friend invites (invite_friend / my_invites): a user can put 3 friends
+     on the sign-up allowlist and no more, the row records who invited
+     whom, the invited friend can then sign up, and nobody can go around
+     the functions to write allowed_emails directly.
 
 Prints PASS/FAIL for every check and exits non-zero if any failed, so a
 broken policy or a broken podcast-rss deploy turns the CI job red.
@@ -244,6 +248,124 @@ def test_podcast_feed_isolation(user_a_id, user_b_id, token_a, token_b):
     )
 
 
+def rpc(fn, token, body=None, key=None):
+    """Call a Postgres function through PostgREST, as supabase.rpc() does."""
+    headers = user_headers(token) if token else {"apikey": key or ANON_KEY, "Content-Type": "application/json"}
+    return requests.post(f"{REST_URL}/rpc/{fn}", headers=headers, json=body or {}, timeout=TIMEOUT)
+
+
+def allowlist_row(email):
+    resp = requests.get(
+        f"{REST_URL}/allowed_emails", headers=service_headers(),
+        params={"email": f"eq.{email}", "select": "email,invited_by,note"}, timeout=TIMEOUT,
+    )
+    return resp.json()[0] if resp.status_code == 200 and resp.json() else None
+
+
+def sign_up(email, password):
+    """Public sign-up, the same GoTrue endpoint the web app's sign-up uses. It
+    runs the enforce_email_allowlist trigger, unlike the admin create above."""
+    return requests.post(
+        f"{AUTH_URL}/signup",
+        headers={"apikey": ANON_KEY, "Content-Type": "application/json"},
+        json={"email": email, "password": password},
+        timeout=TIMEOUT,
+    )
+
+
+def signed_up_user_id(resp):
+    if resp.status_code != 200:
+        return None
+    body = resp.json()
+    # With email confirmation off GoTrue returns a session ({"user": {...}});
+    # with it on it returns the bare user.
+    return (body.get("user") or body).get("id")
+
+
+def test_friend_invites(user_a_id, token_a, token_b, suffix, password):
+    print("\n--- Friend invites (invite_friend / my_invites) ---")
+
+    resp = rpc("my_invites", token_a)
+    data = resp.json() if resp.status_code == 200 else {}
+    check(
+        data.get("limit") == 3 and data.get("remaining") == 3 and data.get("invites") == [],
+        "a new user starts with 3 of 3 invites left",
+    )
+
+    friends = [f"friend{i}-{suffix}@example.test" for i in range(1, 5)]
+
+    # Mixed case and spaces, as someone might type it; stored lowercased.
+    resp = rpc("invite_friend", token_a, {"p_email": f"  {friends[0].upper()} "})
+    data = resp.json() if resp.status_code == 200 else {}
+    check(resp.status_code == 200 and data.get("remaining") == 2, "user A can invite a friend (2 left)")
+
+    row = allowlist_row(friends[0])
+    check(row is not None, "the invited email is on the allowlist, lowercased")
+    check(row is not None and row["invited_by"] == user_a_id, "the allowlist row records user A as the inviter")
+
+    resp = rpc("invite_friend", token_a, {"p_email": friends[0]})
+    check(
+        resp.status_code != 200 and resp.json().get("code") == "23505",
+        "inviting the same email again is refused",
+    )
+    resp = rpc("invite_friend", token_b, {"p_email": friends[0]})
+    check(
+        resp.status_code != 200 and resp.json().get("code") == "23505",
+        "another user cannot re-invite an email that is already listed",
+    )
+    resp = rpc("my_invites", token_a)
+    check(
+        resp.status_code == 200 and resp.json().get("remaining") == 2,
+        "a refused duplicate does not use up an invite",
+    )
+
+    resp = rpc("invite_friend", token_a, {"p_email": "not-an-email"})
+    check(
+        resp.status_code != 200 and resp.json().get("code") == "22023",
+        "an invalid email is refused",
+    )
+
+    for friend in friends[1:3]:
+        rpc("invite_friend", token_a, {"p_email": friend})
+    resp = rpc("my_invites", token_a)
+    data = resp.json() if resp.status_code == 200 else {}
+    check(
+        data.get("remaining") == 0 and len(data.get("invites", [])) == 3,
+        "after 3 invites user A has 0 left and sees all 3",
+    )
+
+    resp = rpc("invite_friend", token_a, {"p_email": friends[3]})
+    check(
+        resp.status_code != 200 and resp.json().get("code") == "54000",
+        "a 4th invite is refused",
+    )
+    check(allowlist_row(friends[3]) is None, "the refused 4th email is not on the allowlist")
+
+    # Going around the functions must not work.
+    resp = requests.post(
+        f"{REST_URL}/allowed_emails", headers=user_headers(token_b),
+        json={"email": f"sneaky-{suffix}@example.test"}, timeout=TIMEOUT,
+    )
+    check(resp.status_code not in (200, 201, 204), "a signed-in user cannot insert into allowed_emails directly")
+    resp = requests.get(f"{REST_URL}/allowed_emails", headers=user_headers(token_b), timeout=TIMEOUT)
+    check(resp.status_code != 200 or resp.json() == [], "a signed-in user cannot read allowed_emails")
+    resp = rpc("invite_friend", None, {"p_email": f"anon-{suffix}@example.test"})
+    check(
+        resp.status_code != 200 and allowlist_row(f"anon-{suffix}@example.test") is None,
+        "a signed-out caller cannot invite anyone",
+    )
+
+    # The point of an invite: the friend can now sign up, and a stranger can't.
+    resp = sign_up(friends[0], password)
+    check(signed_up_user_id(resp) is not None, "the invited friend can sign up")
+    resp = rpc("my_invites", token_a)
+    joined = {i["email"]: i["joined"] for i in resp.json().get("invites", [])} if resp.status_code == 200 else {}
+    check(joined.get(friends[0]) is True, "user A sees the invited friend as joined")
+
+    resp = sign_up(friends[3], password)
+    check(signed_up_user_id(resp) is None, "an email that was not invited cannot sign up")
+
+
 def main():
     suffix = uuid.uuid4().hex[:10]
     email_a = f"multiuser-a-{suffix}@example.test"
@@ -260,6 +382,7 @@ def main():
 
     test_article_storage_isolation(user_a_id, token_a, token_b)
     test_podcast_feed_isolation(user_a_id, user_b_id, token_a, token_b)
+    test_friend_invites(user_a_id, token_a, token_b, suffix, password)
 
     failed = [desc for passed, desc in results if not passed]
     print(f"\n{len(results) - len(failed)}/{len(results)} checks passed.")

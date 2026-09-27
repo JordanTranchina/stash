@@ -411,8 +411,8 @@ What actually happened, since it didn't go cleanly:
 B1 is closed: the public-write policies are gone, RLS is the only path to the
 data, and the app is genuinely multi-user.
 
-**Still open, not urgent:** step 8 (add a friend's email to `allowed_emails`
-to invite them) whenever there's a first friend to invite — and remember they
-also need adding as a Google OAuth test user in the "ListenLater" GCP project
-while it's still in Testing publishing status. Phase 2 (per-user podcast) and
-storage retention remain unstarted, as noted above.
+**Update 2026-09-27:** step 8 is done, and users can now invite up to 3
+friends each from Settings > Invite Friends. The Google OAuth consent screen is
+in Production, so invited friends no longer need to be Google test users.
+Phase 2 (per-user podcast) and storage retention remain unstarted, as noted
+above.

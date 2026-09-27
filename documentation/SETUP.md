@@ -70,6 +70,12 @@ insert into allowed_emails (email) values ('friend@example.com');
 Do this for your own address before your first sign-in, or you'll lock
 yourself out of your own install. Then open the web app and sign in.
 
+After that, every signed-in user can invite up to 3 friends from **Settings >
+Invite Friends**. That goes through the `invite_friend()` database function,
+which adds the row with `invited_by` set to the inviter and refuses a 4th
+invite. Rows you add by hand have no `invited_by`, so they don't count against
+anyone.
+
 ### 4. Install the Chrome Extension
 
 1. Open Chrome and go to `chrome://extensions/`
@@ -237,7 +243,8 @@ Multi-user is the only mode. Row Level Security means each account sees only
 its own saves, so sharing an install with friends and family is just a matter
 of letting them sign up:
 
-1. Add their email to `allowed_emails` (see step 3b)
+1. Add their email to `allowed_emails` (see step 3b), or have any signed-in
+   user invite them from **Settings > Invite Friends**
 2. Send them the web app URL
 3. They sign in with Google (or with a password) and they're in
 

@@ -619,6 +619,26 @@ class StashApp {
       this.regenerateSaveToken();
     });
 
+    // Invite Friends Modal (adds a friend to the sign-up allowlist)
+    const inviteModal = document.getElementById('invite-modal');
+
+    document.getElementById('invite-settings-btn')?.addEventListener('click', () => {
+      this.showInviteModal();
+    });
+    inviteModal?.querySelector('.modal-overlay')?.addEventListener('click', () => {
+      this.hideInviteModal();
+    });
+    inviteModal?.querySelector('.modal-close-btn')?.addEventListener('click', () => {
+      this.hideInviteModal();
+    });
+    document.getElementById('invite-done-btn')?.addEventListener('click', () => {
+      this.hideInviteModal();
+    });
+    document.getElementById('invite-form')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.sendInvite();
+    });
+
     // Add URL Modal (manually ingest a single link)
     const addUrlModal = document.getElementById('add-url-modal');
 
@@ -3314,6 +3334,102 @@ class StashApp {
 
   showShareTokenStatus(message, kind) {
     const status = document.getElementById('share-token-status');
+    status.textContent = message;
+    status.className = `digest-status ${kind}`;
+    status.classList.remove('hidden');
+  }
+
+  // Invite Friends Methods. Stash is invite-only (allowed_emails, checked by
+  // a trigger at sign-up). Users can't touch that table directly; the
+  // invite_friend()/my_invites() database functions add rows on their behalf
+  // and cap each user at 3 invites.
+  showInviteModal() {
+    const modal = document.getElementById('invite-modal');
+    this.openModal(modal, {
+      focusEl: document.getElementById('invite-email'),
+      onClose: () => this.hideInviteModal(),
+    });
+    this.loadInvites();
+  }
+
+  hideInviteModal() {
+    this.closeModal(document.getElementById('invite-modal'));
+    document.getElementById('invite-status').classList.add('hidden');
+    document.getElementById('invite-email').value = '';
+  }
+
+  async loadInvites() {
+    document.getElementById('invite-remaining').textContent = 'Loading…';
+    try {
+      const { data, error } = await this.supabase.rpc('my_invites');
+      if (error) throw error;
+      this.renderInvites(data);
+    } catch (error) {
+      console.error('Error loading invites:', error);
+      document.getElementById('invite-remaining').textContent = '';
+      this.showInviteStatus("Couldn't load your invites. Try again.", 'error');
+    }
+  }
+
+  async sendInvite() {
+    const input = document.getElementById('invite-email');
+    const button = document.getElementById('invite-submit-btn');
+    const email = input.value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      this.showInviteStatus("That doesn't look like an email address.", 'error');
+      input.focus();
+      return;
+    }
+
+    button.disabled = true;
+    try {
+      const { data, error } = await this.supabase.rpc('invite_friend', { p_email: email });
+      if (error) throw error;
+      input.value = '';
+      this.renderInvites(data);
+      this.showInviteStatus(`Invite sent. Tell ${email.toLowerCase()} to sign in to Stash with that email.`, 'success');
+    } catch (error) {
+      console.error('Error sending invite:', error);
+      // invite_friend() raises plain-English messages (already listed, out of
+      // invites, bad email); anything else is a network or server fault.
+      const known = error?.code && ['22023', '23505', '54000', '42501'].includes(error.code);
+      this.showInviteStatus(known ? error.message : "Couldn't send the invite. Try again.", 'error');
+    } finally {
+      // Stays disabled when no invites are left; renderInvites set that.
+      button.disabled = this._invitesRemaining === 0;
+    }
+  }
+
+  renderInvites(data) {
+    const remaining = data?.remaining ?? 0;
+    const limit = data?.limit ?? 3;
+    const invites = data?.invites || [];
+    this._invitesRemaining = remaining;
+
+    document.getElementById('invite-remaining').textContent = remaining === 0
+      ? `You've used all ${limit} of your invites.`
+      : `${remaining} of ${limit} invites left.`;
+    document.getElementById('invite-email').disabled = remaining === 0;
+    document.getElementById('invite-submit-btn').disabled = remaining === 0;
+
+    const list = document.getElementById('invite-list');
+    list.replaceChildren(...invites.map((invite) => {
+      const li = document.createElement('li');
+      li.className = 'invite-item';
+      const email = document.createElement('span');
+      email.className = 'invite-item-email';
+      email.textContent = invite.email;
+      const badge = document.createElement('span');
+      badge.className = `invite-item-badge${invite.joined ? ' joined' : ''}`;
+      badge.textContent = invite.joined ? 'Joined' : 'Invited';
+      li.append(email, badge);
+      return li;
+    }));
+    list.classList.toggle('hidden', invites.length === 0);
+  }
+
+  showInviteStatus(message, kind) {
+    const status = document.getElementById('invite-status');
     status.textContent = message;
     status.className = `digest-status ${kind}`;
     status.classList.remove('hidden');

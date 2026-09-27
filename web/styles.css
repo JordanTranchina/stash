@@ -1997,6 +1997,56 @@ select {
   flex-shrink: 0;
 }
 
+.invite-remaining {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+#invite-modal .btn:disabled,
+#invite-email:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.invite-list {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invite-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-md);
+}
+
+.invite-item-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invite-item-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.invite-item-badge.joined {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success-text);
+}
+
 .share-token-get-shortcut {
   margin-top: 20px;
   padding-top: 20px;

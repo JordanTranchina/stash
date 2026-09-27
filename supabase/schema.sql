@@ -215,8 +215,9 @@ create policy "Users can delete own preferences" on user_preferences
 -- Stash is invite-only: a trigger on auth.users refuses a sign-up whose email
 -- isn't listed here, so a link forwarded beyond the intended circle can't
 -- onboard strangers onto the project's quota. No client policies — the trigger
--- is SECURITY DEFINER and rows are managed from the Supabase dashboard, so RLS
--- with no policy means anon and authenticated see nothing.
+-- is SECURITY DEFINER and rows are managed from the Supabase dashboard or by
+-- the friend-invite functions below, so RLS with no policy means anon and
+-- authenticated see nothing.
 
 create table allowed_emails (
   email      text primary key,
@@ -247,6 +248,92 @@ $$;
 create trigger enforce_email_allowlist
   before insert on auth.users
   for each row execute function public.enforce_email_allowlist();
+
+-- Friend invites: each signed-in user can add up to 3 emails to the allowlist
+-- from Settings > Invite Friends. The table still has no client policies;
+-- these SECURITY DEFINER functions are the only way in, they enforce the cap,
+-- and they record the inviter in invited_by (which is also what the cap
+-- counts). Rows the owner adds by hand have no invited_by.
+
+create index allowed_emails_invited_by_idx on allowed_emails (invited_by);
+
+create or replace function public.my_invites()
+returns json
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_limit constant int := 3;
+  v_rows  json;
+  v_count int;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to invite friends.' using errcode = '42501';
+  end if;
+
+  select count(*),
+         coalesce(json_agg(json_build_object(
+           'email', a.email,
+           'created_at', a.created_at,
+           'joined', exists (select 1 from auth.users u where lower(u.email) = a.email)
+         ) order by a.created_at), '[]'::json)
+    into v_count, v_rows
+    from allowed_emails a
+   where a.invited_by = v_uid;
+
+  return json_build_object(
+    'limit', v_limit,
+    'remaining', greatest(v_limit - v_count, 0),
+    'invites', v_rows
+  );
+end;
+$$;
+
+create or replace function public.invite_friend(p_email text)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_email text := lower(btrim(coalesce(p_email, '')));
+  v_limit constant int := 3;
+  v_count int;
+begin
+  if v_uid is null then
+    raise exception 'Sign in to invite friends.' using errcode = '42501';
+  end if;
+
+  if length(v_email) > 254 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    raise exception 'That doesn''t look like an email address.' using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('invite_friend:' || v_uid::text));
+
+  if exists (select 1 from allowed_emails where email = v_email) then
+    raise exception 'That email can already sign in to Stash.' using errcode = '23505';
+  end if;
+
+  select count(*) into v_count from allowed_emails where invited_by = v_uid;
+  if v_count >= v_limit then
+    raise exception 'You''ve used all % of your invites.', v_limit using errcode = '54000';
+  end if;
+
+  insert into allowed_emails (email, note, invited_by)
+  values (v_email, 'friend invite', v_uid);
+
+  return public.my_invites();
+end;
+$$;
+
+revoke all on function public.my_invites() from public, anon;
+revoke all on function public.invite_friend(text) from public, anon;
+grant execute on function public.my_invites() to authenticated;
+grant execute on function public.invite_friend(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Per-user podcast feeds

@@ -44,6 +44,8 @@ Stash is multi-user. Everyone signs in — with Google, or with an email and
 password — and Row Level Security keeps each account's saves to itself. Sign-up
 is invite-only: a trigger on `auth.users` checks the address against the
 `allowed_emails` table, so to let someone in you insert their email there.
+Signed-in users can also invite up to 3 friends each from **Settings > Invite
+Friends**, which adds the email for them and records who invited whom.
 
 ### A note on the extension
 

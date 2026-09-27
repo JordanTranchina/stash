@@ -2,7 +2,9 @@ name: Multi-user E2E
 
 # Exercises the multi-user isolation added by the auth lockdown (RLS on
 # saves/tags/folders/podcast_feeds) and the per-user podcast feed
-# (podcast_feeds + podcast-rss) against a real, ephemeral local Supabase
+# (podcast_feeds + podcast-rss), plus friend invites (invite_friend /
+# my_invites, the 3-invite cap, and invited friends signing up), against a
+# real, ephemeral local Supabase
 # stack — not mocks, and never production. `supabase start` spins up
 # disposable local Postgres/Auth/Functions containers that are destroyed
 # when the job ends; nothing here can affect the real database.
