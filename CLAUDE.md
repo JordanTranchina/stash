@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stash is a self-hosted, single-user "read it later" app (Pocket/Instapaper replacement). There is no build step and no backend server you run yourself: static/vanilla JS clients (browser extensions, a PWA web app) talk directly to a Supabase project (Postgres + REST + Auth + Storage + Edge Functions) over HTTPS. A separate Python pipeline (`podcast/`) turns saved articles into an AI-narrated podcast ("Listen Later") via a daily GitHub Action.
+Stash is a self-hosted, invite-only multi-user "read it later" app (Pocket/Instapaper replacement). There is no build step and no backend server you run yourself: static/vanilla JS clients (browser extensions, a PWA web app) talk directly to a Supabase project (Postgres + REST + Auth + Storage + Edge Functions) over HTTPS. A separate Python pipeline (`podcast/`) turns saved articles into an AI-narrated podcast ("Listen Later") via a daily GitHub Action.
 
-Single-user mode is the default: `USER_ID` is hardcoded in each client's `config.js` and all requests use the Supabase `anon` key, with Postgres Row Level Security enforcing per-user isolation. Multi-user mode (real Supabase Auth sign-in) exists but is secondary — see `documentation/SETUP.md`.
+Every client signs in against Supabase Auth — Google OAuth, or email and password — and Postgres Row Level Security keyed on `auth.uid()` keeps each account's rows to itself. No client hardcodes a `USER_ID`; the user id comes from the signed-in session (see the `userId` getter in `extension/supabase.js`). There is no anonymous read path: `supabase/migrations/20260824000000_multi_user_lockdown.sql` dropped the earlier "Allow specific user" policies, which gave the `anon` role — and therefore anyone who read the checked-in anon key — full access to one hardcoded account.
+
+Sign-up is invite-only. A `SECURITY DEFINER` trigger on `auth.users` rejects any address that is not in the `allowed_emails` table, which the owner edits from the Supabase dashboard. Two clients cannot run a sign-in flow, so each uses an unguessable per-user token instead: `save_tokens` for the iOS Shortcut and `podcast_feeds` for podcast apps. `web/config.js`'s `OWNER_USER_ID` is UI-only — it hides the owner's "Generate Podcast Now" link from everyone else — and is not a security boundary. See `documentation/SETUP.md`.
 
 ## Commands
 
@@ -37,7 +39,7 @@ There is no lint/typecheck script configured in this repo.
 
 ### The clients all share one Supabase backend
 
-Every client (Chrome extension, Firefox extension, web PWA, bookmarklet, iOS Shortcut) writes/reads the same Postgres tables directly via Supabase's REST API (PostgREST), gated by RLS policies keyed on `auth.uid()`. There is no custom app server. Each client has its own `config.js` with `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and (in single-user mode) a hardcoded `USER_ID` — see `documentation/SETUP.md` for provisioning steps. `supabase/schema.sql` is the source of truth for tables (`saves`, `folders`, `tags`, `save_tags`, `user_preferences`) and RLS policies; `supabase/migrations/` holds incremental changes applied after the initial schema.
+Every client (Chrome extension, Firefox extension, web PWA, bookmarklet, iOS Shortcut) writes/reads the same Postgres tables directly via Supabase's REST API (PostgREST), gated by RLS policies keyed on `auth.uid()`. There is no custom app server. Each client has its own `config.js` with `SUPABASE_URL` and `SUPABASE_ANON_KEY`, and nothing that identifies a user — see `documentation/SETUP.md` for provisioning steps. `supabase/schema.sql` is the source of truth for tables (`saves`, `folders`, `tags`, `save_tags`, `user_preferences`, `allowed_emails`, `podcast_feeds`, `podcast_generation_requests`) and RLS policies; `supabase/migrations/` holds incremental changes applied after the initial schema, including the `save_tokens` and `podcast_episodes` tables.
 
 ### Two extension builds share one codebase
 
@@ -66,15 +68,15 @@ Edge Functions pin dependencies via full URLs (`esm.sh`, `deno.land/std`) in eac
 
 ### Podcast pipeline (`podcast/`, Python, run by GitHub Actions)
 
-Daily pipeline (`.github/workflows/podcast.yml`, cron 8:00 AM UTC + manual `workflow_dispatch`) that turns recent saves into a two-host conversational podcast episode:
-1. `youtube_sync.py` — polls a user-owned Unlisted YouTube playlist (official YouTube Data API, no scraping) and inserts new videos as saves. Idempotent; skips cleanly if `YOUTUBE_API_KEY`/`YOUTUBE_SYNC_PLAYLIST_ID` secrets are absent.
+Daily pipeline (`.github/workflows/podcast.yml`, cron 8:00 AM UTC + manual `workflow_dispatch`) that turns recent saves into a two-host conversational podcast episode, once per subscriber. `discover.py` (deliberately stdlib-only, so no `pip install` can break the job everything else depends on) reads `podcast_feeds` and prints the users to generate for; the `generate` job then runs steps 2–6 below as a matrix job per user, `max-parallel: 2` to stay inside the Gemini and edge-tts rate limits, `fail-fast: false` so one bad transcript can't red everyone else's episode:
+1. `youtube_sync.py` — owner-only, deliberately outside that matrix, because one `YOUTUBE_SYNC_PLAYLIST_ID` secret would otherwise push the owner's playlist into every subscriber's library. It polls a user-owned Unlisted YouTube playlist (official YouTube Data API, no scraping) and inserts new videos as saves. Idempotent; skips cleanly if `YOUTUBE_API_KEY`/`YOUTUBE_SYNC_PLAYLIST_ID` secrets are absent.
 2. `extract.py` — pulls recent unarchived saves from Supabase. YouTube-URL saves are resolved to a transcript via `youtube-transcript-api` (`youtube.py`) and the transcript is cached back onto the save's `content` so it's fetched only once; if no captions are available (or the host IP is rate-limited) it falls back to whatever content the save already had rather than failing the run.
 3. `script.py` — sends article text to Gemini (`gemini-2.5-flash-lite` by default, overridable via `GEMINI_MODEL`; chosen for free-tier quota) to produce two-host dialogue JSON. Host names/personas/tone are pulled from `user_preferences` per-user (`fetch_podcast_preferences`), falling back to `DEFAULT_PODCAST_PREFS`.
 4. TTS via `edge-tts` renders each dialogue line to an audio clip.
 5. `assembly.py` — stitches clips with `ffmpeg` into one MP3 with chapter metadata.
 6. The episode uploads to Supabase Storage and a row is written to `podcast_episodes`; `podcast-rss`/`podcast-chapters` Edge Functions serve it out.
 
-Required secrets (GitHub Actions / local `.env` via `python-dotenv`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `USER_ID`, `GEMINI_API_KEY`, and optionally `YOUTUBE_API_KEY`/`YOUTUBE_SYNC_PLAYLIST_ID`. See `documentation/CLOUD_DEPLOYMENT.md` for where each secret is configured across GitHub/Vercel/Supabase.
+Required secrets (GitHub Actions / local `.env` via `python-dotenv`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, and optionally `YOUTUBE_API_KEY`/`YOUTUBE_SYNC_PLAYLIST_ID`. `USER_ID` is not a secret: the `generate` job sets it per matrix entry from `discover.py`, and the owner-only `youtube-sync` job reads it from the `OWNER_USER_ID` repository variable. Each script still takes a single `USER_ID` from the environment, so set it yourself to run one locally. See `documentation/CLOUD_DEPLOYMENT.md` for where each secret is configured across GitHub/Vercel/Supabase.
 
 ### Other clients
 
