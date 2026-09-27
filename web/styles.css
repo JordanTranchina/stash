@@ -2529,8 +2529,8 @@ select {
 /* PWA Styles */
 .toast {
   position: fixed;
-  /* Sit above the bottom tab bar */
-  bottom: calc(84px + env(safe-area-inset-bottom));
+  /* Sit above the bottom tab bar, and above the install banner when it shows */
+  bottom: calc(var(--bottom-nav-height, calc(72px + env(safe-area-inset-bottom, 0px))) + var(--install-banner-height, 0px) + 12px);
   /* Centered horizontally via logical properties instead of left: 50% +
      transform: translateX(-50%) — leaves transform free for the hide/show
      slide below instead of the two having to compose in one declaration. */
@@ -2603,13 +2603,15 @@ select {
 
 /* Install App Banner — full-bleed strip sitting directly above the bottom
    tab bar, tinted with the app's accent color rather than floating as a
-   dark pill like .toast. 60px matches the tab bar's own rendered height
-   (10px+10px padding, 22px icon, 4px gap, ~13px label). */
+   dark pill like .toast. --bottom-nav-height is the tab bar's measured
+   height, safe-area padding included (set by syncBottomBarHeights in
+   app.js); the fallback matches its rendered ~71px (10px+10px padding,
+   34px icon chip, 4px gap, ~12px label, 1px border). */
 .install-banner {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--bottom-nav-height, calc(72px + env(safe-area-inset-bottom, 0px)));
   z-index: 90;
   display: flex;
   align-items: center;
@@ -2798,9 +2800,10 @@ select {
    Bottom Tab Bar Layout
    ========================================================================== */
 
-/* Leave room so the fixed bottom bar never covers the last row of content */
+/* Leave room so the fixed bottom bar (and the install banner, when it
+   shows) never covers the last row of content */
 .content {
-  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--bottom-nav-height, calc(72px + env(safe-area-inset-bottom, 0px))) + var(--install-banner-height, 0px) + 12px);
 }
 
 /* Bottom navigation bar */

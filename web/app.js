@@ -81,6 +81,7 @@ class StashApp {
 
     this.bindEvents();
     this.bugReporter.bindEvents();
+    this.watchBottomBars();
     this.installErrorReporting();
 
     // Deep link (also used by the podcast show notes): ?report-bug=1 opens
@@ -970,11 +971,37 @@ class StashApp {
     if (!toast) return;
     localStorage.setItem('stash-pwa-toast-count', String(shownCount + 1));
     toast.classList.remove('hidden');
+    this.syncBottomBarHeights();
     window.StashAnalytics?.capture('pwa_install_toast_shown', { count: shownCount + 1 });
   }
 
   hideInstallToast() {
     document.getElementById('install-toast')?.classList.add('hidden');
+    this.syncBottomBarHeights();
+  }
+
+  // The install banner stacks on top of the bottom tab bar, and the list
+  // needs room for both. Measure the real heights into CSS variables
+  // (--bottom-nav-height, --install-banner-height) instead of hard-coding
+  // them in styles.css: a hard-coded 60px drifted from the tab bar's real
+  // ~71px and the banner ended up over the active tab's chip.
+  syncBottomBarHeights() {
+    const root = document.documentElement.style;
+    const nav = document.querySelector('.bottom-nav');
+    const banner = document.getElementById('install-toast');
+    root.setProperty('--bottom-nav-height', `${nav?.offsetHeight || 0}px`);
+    const bannerShown = banner && !banner.classList.contains('hidden');
+    root.setProperty('--install-banner-height', `${bannerShown ? banner.offsetHeight : 0}px`);
+  }
+
+  watchBottomBars() {
+    this.syncBottomBarHeights();
+    if (typeof ResizeObserver !== 'function') return;
+    const observer = new ResizeObserver(() => this.syncBottomBarHeights());
+    const nav = document.querySelector('.bottom-nav');
+    const banner = document.getElementById('install-toast');
+    if (nav) observer.observe(nav);
+    if (banner) observer.observe(banner);
   }
 
   setupRealtime() {
