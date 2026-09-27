@@ -1555,9 +1555,8 @@ class StashApp {
       if (!horizontal) return;
 
       e.preventDefault();
-      // Left drags archive; right drags select, capped at the threshold
-      // since nothing sits behind the card on that side.
-      dx = Math.min(mx, THRESHOLD);
+      // Left drags archive; right drags select. Both follow the finger.
+      dx = mx;
       cardEl.style.transform = `translateX(${dx}px)`;
       swipeEl.classList.toggle('swiping-right', dx > 0);
       if (dx >= 0) {
@@ -1585,11 +1584,15 @@ class StashApp {
       cardEl.style.transition = 'transform 0.2s ease';
       // Keep the "Select" layer behind the card until it has slid back, so
       // the archive layer doesn't flash through on the way.
-      setTimeout(() => swipeEl.classList.remove('swiping-right'), 220);
       if (dx >= THRESHOLD) {
-        cardEl.style.transform = 'translateX(0)';
-        swipeEl.classList.remove('will-select');
+        // Slide fully off to the right like the archive swipe, then back in
+        // with the card picked.
+        cardEl.style.transform = 'translateX(100%)';
         startSelecting();
+        setTimeout(() => {
+          cardEl.style.transform = 'translateX(0)';
+          setTimeout(() => swipeEl.classList.remove('swiping-right', 'will-select'), 220);
+        }, 200);
       } else if (dx <= -THRESHOLD) {
         cardEl.style.transform = 'translateX(-100%)';
         setTimeout(() => {
@@ -1598,6 +1601,7 @@ class StashApp {
         }, 160);
       } else {
         cardEl.style.transform = 'translateX(0)';
+        setTimeout(() => swipeEl.classList.remove('swiping-right'), 220);
         swipeEl.classList.remove('will-archive', 'will-select');
         if (action) action.style.opacity = '';
       }

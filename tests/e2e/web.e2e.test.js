@@ -359,6 +359,19 @@ describe('Stash Web App — select saves for a custom podcast (#133)', () => {
     expect(await page.$(cardSel(uuid(1)))).not.toBeNull();
   });
 
+  test('a right drag follows the finger past the select threshold', async () => {
+    const x = await page.$eval(cardSel(uuid(1)), (el) => {
+      const opts = (cx) => ({ bubbles: true, button: 0, clientX: cx, clientY: 100 });
+      el.dispatchEvent(new PointerEvent('pointerdown', opts(100)));
+      el.dispatchEvent(new PointerEvent('pointermove', opts(150)));
+      el.dispatchEvent(new PointerEvent('pointermove', opts(350)));
+      const t = el.style.transform;
+      el.dispatchEvent(new PointerEvent('pointerup', opts(350)));
+      return t;
+    });
+    expect(x).toBe('translateX(250px)');
+  });
+
   test('a short right drag does nothing', async () => {
     await page.evaluate(() => { window.__opened = 0; window.stashApp.openReadingPane = () => { window.__opened++; }; });
     await drag(uuid(1), 40);
