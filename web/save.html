@@ -438,6 +438,7 @@
   <script src="analytics.js"></script>
   <script src="db.js"></script>
   <script src="save-lib.js"></script>
+  <script src="platform.js"></script>
   <script>
 
     const saveForm = document.getElementById('save-form');
@@ -500,7 +501,9 @@
     })();
 
     // Ensure the Service Worker controls this page so Background Sync can fire.
-    if ('serviceWorker' in navigator) {
+    // Skipped in the native iOS/Android shells, which have no worker: they
+    // drain the same IndexedDB queue on resume instead (see app.js).
+    if ('serviceWorker' in navigator && window.StashPlatform.shouldRegisterServiceWorker()) {
       navigator.serviceWorker.register('/sw.js').catch(() => {
         // Registration failed; save still works without Background Sync.
       });

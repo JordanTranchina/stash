@@ -8,6 +8,8 @@
     "test:extension": "playwright test",
     "test:all": "jest --testTimeout=30000",
     "sync:firefox-extension": "node scripts/sync-firefox-extension.js",
+    "mobile:build": "npm --prefix mobile run build",
+    "mobile:sync": "npm --prefix mobile run sync",
     "package:extensions": "node scripts/package-extension.js"
   },
   "devDependencies": {
