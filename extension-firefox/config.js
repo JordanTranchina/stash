@@ -9,7 +9,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: "sb_publishable_56A0I5tN0tvybD2yJ81UKQ_Fn2ibI1s",
 
   // Your web app URL (after deploying to Vercel/Netlify)
-  WEB_APP_URL: "https://stash-lemon-zeta.vercel.app",
+  WEB_APP_URL: "https://stash.jordantranchina.com",
 
   // Sentry DSN for error reporting from the background script (see
   // sentry-lite.js). A Sentry DSN isn't a secret, so it's safe to commit
